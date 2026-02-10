@@ -68,7 +68,7 @@ slugswap/
 
 See `slugswap-release.md` for the detailed release plan.
 
-**Current Focus**: Release 1 (Private Alpha)
+**Current Focus**: Release 1
 - Donor onboarding with monthly preferences
 - Requester weekly allowance visibility
 - Claim code generation and redemption
@@ -76,4 +76,4 @@ See `slugswap-release.md` for the detailed release plan.
 
 ## Contributing
 
-This is a university project. For questions, contact the development team.
+For questions, issues, or contribution guidance, contact the development team.
