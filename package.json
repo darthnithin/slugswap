@@ -4,27 +4,47 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "api:dev": "vercel dev",
+    "typecheck": "tsc --noEmit",
+    "ci:check": "npm run typecheck",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@expo/cli": "^54.0.23",
+    "@neondatabase/serverless": "^1.0.2",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@supabase/supabase-js": "^2.95.3",
+    "better-auth": "^1.4.18",
+    "drizzle-orm": "^0.45.1",
     "expo": "~54.0.33",
     "expo-constants": "^18.0.13",
+    "expo-dev-client": "~6.0.20",
     "expo-linking": "^8.0.11",
     "expo-router": "^6.0.23",
     "expo-status-bar": "~3.0.9",
+    "expo-web-browser": "^15.0.10",
     "react": "19.1.0",
     "react-native": "0.81.5",
     "react-native-safe-area-context": "^5.6.2",
-    "react-native-screens": "~4.16.0"
+    "react-native-screens": "~4.16.0",
+    "react-native-url-polyfill": "^3.0.0"
   },
   "private": true,
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/react": "~19.1.10",
     "@types/react-native": "^0.72.8",
     "@vercel/node": "^5.6.0",
+    "cors": "^2.8.6",
+    "drizzle-kit": "^0.31.9",
+    "express": "^5.2.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
 }

@@ -1,0 +1,16 @@
+node_modules
+.expo
+.vercel
+.git
+.cache
+dist
+*.log
+.DS_Store
+scripts
+dev-server.ts
+ios
+android
+coverage
+.turbo
+.idea
+.vscode

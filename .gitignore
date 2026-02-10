@@ -85,3 +85,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# local editor and skill artifacts
+*.swp
+.agents/skills/doc-coauthoring/
+.agents/skills/neon-postgres/
+.claude/skills/neon-postgres
+.cursor/skills/neon-postgres
