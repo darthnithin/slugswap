@@ -15,6 +15,7 @@
     "dashboard:dev": "dotenv -e .env -- npm run dev -w @slugswap/dashboard --",
     "dashboard:build": "npm run build -w @slugswap/dashboard",
     "dashboard:start": "npm run start -w @slugswap/dashboard",
+    "dashboard:deploy": "vercel --cwd apps/dashboard",
     "api:dev": "vercel dev",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "ci:check": "npm run typecheck",
