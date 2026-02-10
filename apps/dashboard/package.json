@@ -1,6 +1,19 @@
 {
   "name": "@slugswap/dashboard",
   "private": true,
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "@supabase/supabase-js": "^2.95.3",
+    "drizzle-orm": "^0.45.1",
+    "next": "^15.5.12",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "~19.1.10",
+    "typescript": "^5.9.3"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

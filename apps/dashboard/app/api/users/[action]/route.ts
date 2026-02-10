@@ -8,10 +8,14 @@ export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
 
-const supabase = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabaseAdminClient() {
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase server environment variables are not configured");
+  }
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 async function dispatch(req: NextRequest, ctx: Ctx) {
   const { action } = await ctx.params;
@@ -44,6 +48,13 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
   }
 
   if (action === "profile") {
+    let supabase;
+    try {
+      supabase = getSupabaseAdminClient();
+    } catch (error: any) {
+      return NextResponse.json({ error: error?.message || "Server misconfigured" }, { status: 500 });
+    }
+
     const authHeader = req.headers.get("authorization");
     if (!authHeader) {
       return NextResponse.json({ error: "Missing authorization header" }, { status: 401 });

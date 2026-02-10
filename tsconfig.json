@@ -11,6 +11,8 @@
     "types": ["node"]
   },
   "include": [
+    "app/**/*.ts",
+    "app/**/*.tsx",
     "api/**/*.ts",
     "db/**/*.ts",
     "scripts/**/*.ts",

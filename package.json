@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "start": "npm run mobile:start",
+    "build": "npm run dashboard:build",
     "mobile:start": "npm run start -w @slugswap/mobile",
     "mobile:android": "npm run android -w @slugswap/mobile",
     "mobile:ios": "npm run ios -w @slugswap/mobile",
