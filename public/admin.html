@@ -1,0 +1,1846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SlugSwap — Control Deck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ============================================
+       CSS VARIABLES & RESET
+       ============================================ */
+    :root {
+      --bg-deep: #0d0b09;
+      --bg-surface: #151311;
+      --bg-card: #1a1714;
+      --bg-elevated: #211e1a;
+      --bg-input: #1e1b17;
+      --border: #2a2621;
+      --border-hover: #3d3730;
+      --text-primary: #f0e8db;
+      --text-secondary: #8a8278;
+      --text-muted: #5c564e;
+      --accent-gold: #c9943e;
+      --accent-gold-bright: #e6b455;
+      --accent-gold-dim: #8a6a30;
+      --accent-gold-glow: rgba(201, 148, 62, 0.15);
+      --success: #5aab7b;
+      --success-dim: #2d4a38;
+      --warning: #c7833a;
+      --warning-dim: #4a3520;
+      --danger: #c75c3a;
+      --danger-dim: #4a2520;
+      --info: #5a8aab;
+      --info-dim: #1e3040;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --font-display: 'Instrument Serif', Georgia, serif;
+      --font-body: 'Outfit', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Grain texture overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.035;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+      background-repeat: repeat;
+      background-size: 200px 200px;
+    }
+
+    /* Warm ambient glow */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -30%;
+      left: -10%;
+      width: 50%;
+      height: 60%;
+      background: radial-gradient(ellipse, rgba(201, 148, 62, 0.04) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ============================================
+       LAYOUT
+       ============================================ */
+    .app {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: 100vh;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ============================================
+       SIDEBAR
+       ============================================ */
+    .sidebar {
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border);
+      padding: 28px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    .sidebar-brand {
+      margin-bottom: 36px;
+    }
+
+    .sidebar-brand h1 {
+      font-family: var(--font-display);
+      font-size: 1.65rem;
+      font-weight: 400;
+      color: var(--text-primary);
+      line-height: 1;
+      letter-spacing: -0.01em;
+    }
+
+    .sidebar-brand h1 span {
+      color: var(--accent-gold);
+    }
+
+    .sidebar-brand p {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-top: 6px;
+      font-weight: 500;
+    }
+
+    .sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+    }
+
+    .nav-section-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      padding: 16px 12px 8px;
+      font-weight: 600;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 0.87rem;
+      font-weight: 400;
+      transition: all 0.2s var(--ease-out);
+      user-select: none;
+    }
+
+    .nav-item:hover {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+    }
+
+    .nav-item.active {
+      background: var(--accent-gold-glow);
+      color: var(--accent-gold-bright);
+    }
+
+    .nav-item.active .nav-icon {
+      color: var(--accent-gold);
+    }
+
+    .nav-icon {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.95rem;
+      flex-shrink: 0;
+    }
+
+    .sidebar-footer {
+      border-top: 1px solid var(--border);
+      padding-top: 16px;
+      margin-top: 12px;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      background: var(--success-dim);
+      font-size: 0.75rem;
+      color: var(--success);
+      font-weight: 500;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    .status-badge.error {
+      background: var(--danger-dim);
+      color: var(--danger);
+    }
+    .status-badge.error .status-dot {
+      background: var(--danger);
+      animation: none;
+    }
+
+    /* ============================================
+       MAIN CONTENT
+       ============================================ */
+    .main {
+      padding: 28px 32px 48px;
+      overflow-y: auto;
+      max-height: 100vh;
+    }
+
+    /* ============================================
+       TOP BAR
+       ============================================ */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+    }
+
+    .top-bar-left h2 {
+      font-family: var(--font-display);
+      font-size: 1.9rem;
+      font-weight: 400;
+      color: var(--text-primary);
+      line-height: 1.1;
+    }
+
+    .top-bar-left p {
+      color: var(--text-secondary);
+      font-size: 0.82rem;
+      margin-top: 4px;
+    }
+
+    .top-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .refresh-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-family: var(--font-body);
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .refresh-btn:hover {
+      border-color: var(--border-hover);
+      color: var(--text-primary);
+    }
+
+    .refresh-btn.loading .refresh-icon {
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .auto-refresh-tag {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-weight: 300;
+    }
+
+    /* ============================================
+       METRIC CARDS
+       ============================================ */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 20px 22px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.3s, transform 0.3s var(--ease-out);
+      animation: card-enter 0.6s var(--ease-out) backwards;
+    }
+
+    .metric-card:nth-child(1) { animation-delay: 0.05s; }
+    .metric-card:nth-child(2) { animation-delay: 0.1s; }
+    .metric-card:nth-child(3) { animation-delay: 0.15s; }
+    .metric-card:nth-child(4) { animation-delay: 0.2s; }
+
+    @keyframes card-enter {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .metric-card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-1px);
+    }
+
+    .metric-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent-gold-dim), transparent);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .metric-card:hover::after { opacity: 1; }
+
+    .metric-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .metric-label .label-icon {
+      font-size: 0.85rem;
+    }
+
+    .metric-value {
+      font-family: var(--font-mono);
+      font-size: 2rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      line-height: 1;
+      margin-bottom: 6px;
+      transition: all 0.5s var(--ease-out);
+    }
+
+    .metric-value.gold { color: var(--accent-gold-bright); }
+    .metric-value.success { color: var(--success); }
+    .metric-value.warning { color: var(--warning); }
+
+    .metric-sub {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      font-weight: 300;
+    }
+
+    .metric-sub span { 
+      font-family: var(--font-mono); 
+      font-weight: 400;
+    }
+
+    /* ============================================
+       POOL HEALTH SECTION
+       ============================================ */
+    .section-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+
+    .section-grid.three-col {
+      grid-template-columns: 2fr 1fr;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      animation: card-enter 0.6s var(--ease-out) backwards;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .card-title {
+      font-family: var(--font-display);
+      font-size: 1.2rem;
+      font-weight: 400;
+      color: var(--text-primary);
+    }
+
+    .card-badge {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      padding: 3px 8px;
+      border-radius: 100px;
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      font-weight: 400;
+    }
+
+    /* Pool gauge */
+    .pool-gauge-container {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+
+    .gauge-ring {
+      width: 140px;
+      height: 140px;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .gauge-ring svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+
+    .gauge-bg {
+      fill: none;
+      stroke: var(--bg-elevated);
+      stroke-width: 10;
+    }
+
+    .gauge-fill {
+      fill: none;
+      stroke: var(--accent-gold);
+      stroke-width: 10;
+      stroke-linecap: round;
+      stroke-dasharray: 377;
+      stroke-dashoffset: 377;
+      transition: stroke-dashoffset 1.5s var(--ease-out), stroke 0.5s;
+    }
+
+    .gauge-fill.warning { stroke: var(--warning); }
+    .gauge-fill.danger { stroke: var(--danger); }
+    .gauge-fill.success { stroke: var(--success); }
+
+    .gauge-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .gauge-pct {
+      font-family: var(--font-mono);
+      font-size: 1.7rem;
+      font-weight: 600;
+      color: var(--accent-gold-bright);
+      line-height: 1;
+    }
+
+    .gauge-pct-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-top: 2px;
+    }
+
+    .pool-details {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .pool-detail-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .pool-detail-row:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .pool-detail-label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      font-weight: 400;
+    }
+
+    .pool-detail-value {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .pool-detail-value.remaining { color: var(--success); }
+    .pool-detail-value.allocated { color: var(--accent-gold); }
+
+    /* ============================================
+       BAR CHART (CSS only)
+       ============================================ */
+    .bar-chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      height: 120px;
+      padding-top: 8px;
+    }
+
+    .bar-group {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      height: 100%;
+      justify-content: flex-end;
+    }
+
+    .bar-stack {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      align-items: center;
+      flex: 1;
+      justify-content: flex-end;
+    }
+
+    .bar {
+      width: 100%;
+      max-width: 32px;
+      border-radius: 3px 3px 0 0;
+      min-height: 2px;
+      transition: height 1s var(--ease-out);
+      position: relative;
+    }
+
+    .bar.total { background: var(--accent-gold-dim); }
+    .bar.allocated { 
+      background: var(--accent-gold);
+      border-radius: 3px 3px 0 0;
+    }
+
+    .bar-label {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    /* ============================================
+       CLAIMS STATUS
+       ============================================ */
+    .claims-breakdown {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .claim-stat {
+      background: var(--bg-elevated);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .claim-stat-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 500;
+    }
+
+    .claim-stat-value {
+      font-family: var(--font-mono);
+      font-size: 1.3rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      line-height: 1;
+    }
+
+    .claim-stat-value.redeemed { color: var(--success); }
+    .claim-stat-value.pending { color: var(--accent-gold); }
+    .claim-stat-value.expired { color: var(--danger); }
+
+    .claim-stat-sub {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-weight: 300;
+    }
+
+    /* ============================================
+       CONFIGURATION PANEL
+       ============================================ */
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .config-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .config-label {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .config-input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .config-input {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      font-weight: 400;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .config-input:focus {
+      border-color: var(--accent-gold-dim);
+      box-shadow: 0 0 0 3px var(--accent-gold-glow);
+    }
+
+    .config-input:hover {
+      border-color: var(--border-hover);
+    }
+
+    .config-unit {
+      position: absolute;
+      right: 12px;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      pointer-events: none;
+    }
+
+    .config-select {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8278' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      transition: border-color 0.2s;
+    }
+
+    .config-select:focus {
+      border-color: var(--accent-gold-dim);
+      box-shadow: 0 0 0 3px var(--accent-gold-glow);
+    }
+
+    .config-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .btn {
+      padding: 9px 20px;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-body);
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      border-color: var(--border);
+      color: var(--text-secondary);
+    }
+
+    .btn-ghost:hover {
+      border-color: var(--border-hover);
+      color: var(--text-primary);
+    }
+
+    .btn-primary {
+      background: var(--accent-gold);
+      color: var(--bg-deep);
+      border-color: var(--accent-gold);
+      font-weight: 600;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-gold-bright);
+      border-color: var(--accent-gold-bright);
+    }
+
+    .btn-primary:active {
+      transform: scale(0.97);
+    }
+
+    /* Save toast */
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--bg-elevated);
+      border: 1px solid var(--accent-gold-dim);
+      color: var(--accent-gold-bright);
+      padding: 10px 24px;
+      border-radius: 100px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      z-index: 1000;
+      opacity: 0;
+      transition: all 0.4s var(--ease-spring);
+      pointer-events: none;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    /* ============================================
+       ACTIVITY TABLE
+       ============================================ */
+    .activity-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .activity-table thead th {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+      padding: 0 12px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .activity-table tbody tr {
+      transition: background 0.15s;
+    }
+
+    .activity-table tbody tr:hover {
+      background: var(--bg-elevated);
+    }
+
+    .activity-table td {
+      padding: 11px 12px;
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    .activity-table .mono {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 400;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 100px;
+      font-size: 0.7rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .status-pill.redeemed { background: var(--success-dim); color: var(--success); }
+    .status-pill.pending { background: rgba(201, 148, 62, 0.12); color: var(--accent-gold); }
+    .status-pill.active { background: var(--info-dim); color: var(--info); }
+    .status-pill.expired { background: var(--danger-dim); color: var(--danger); }
+
+    .status-pill-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* ============================================
+       DONORS TABLE
+       ============================================ */
+    .donor-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .donor-row:last-child { border-bottom: none; }
+
+    .donor-rank {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      width: 20px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .donor-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--bg-elevated);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+      flex-shrink: 0;
+      border: 1px solid var(--border);
+    }
+
+    .donor-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .donor-name {
+      font-size: 0.85rem;
+      color: var(--text-primary);
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .donor-email {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-weight: 300;
+    }
+
+    .donor-amount {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      color: var(--accent-gold);
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+
+    .donor-status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .donor-status-dot.active { background: var(--success); }
+    .donor-status-dot.paused { background: var(--warning); }
+    .donor-status-dot.cancelled { background: var(--danger); }
+
+    /* ============================================
+       PROGRESS BAR
+       ============================================ */
+    .progress-bar-wrap {
+      height: 6px;
+      background: var(--bg-elevated);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: var(--accent-gold);
+      transition: width 1s var(--ease-out);
+    }
+
+    .progress-bar-fill.success { background: var(--success); }
+    .progress-bar-fill.warning { background: var(--warning); }
+    .progress-bar-fill.danger { background: var(--danger); }
+
+    /* ============================================
+       LOADING / ERROR STATES
+       ============================================ */
+    .loading-overlay {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 200px;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      gap: 10px;
+    }
+
+    .loading-spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent-gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .error-state {
+      text-align: center;
+      padding: 40px;
+      color: var(--danger);
+    }
+
+    .error-state h3 {
+      font-family: var(--font-display);
+      font-size: 1.3rem;
+      margin-bottom: 8px;
+    }
+
+    .error-state p {
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 32px 16px;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    /* ============================================
+       RESPONSIVE
+       ============================================ */
+    @media (max-width: 1200px) {
+      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+      .config-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar {
+        position: fixed;
+        left: -260px;
+        width: 260px;
+        z-index: 100;
+        transition: left 0.3s var(--ease-out);
+      }
+      .sidebar.open { left: 0; }
+      .main { max-height: none; }
+      .section-grid { grid-template-columns: 1fr; }
+      .section-grid.three-col { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 600px) {
+      .metrics-grid { grid-template-columns: 1fr; }
+      .config-grid { grid-template-columns: 1fr; }
+      .main { padding: 20px 16px; }
+    }
+
+    /* ============================================
+       SECTION SPACING
+       ============================================ */
+    .section {
+      margin-bottom: 28px;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-size: 1.2rem;
+      color: var(--text-primary);
+      font-weight: 400;
+    }
+
+    .section-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-weight: 300;
+    }
+
+    /* ============================================
+       REDEMPTION RATE ARC
+       ============================================ */
+    .redemption-ring {
+      width: 80px;
+      height: 80px;
+      position: relative;
+      margin: 0 auto 12px;
+    }
+
+    .redemption-ring svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+
+    .redemption-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--success);
+    }
+
+    /* ============================================
+       ALL-TIME STATS ROW
+       ============================================ */
+    .alltime-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      margin-bottom: 24px;
+      animation: card-enter 0.6s var(--ease-out) 0.25s backwards;
+    }
+
+    .alltime-stat {
+      padding: 16px 20px;
+      border-right: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .alltime-stat:last-child { border-right: none; }
+
+    .alltime-label {
+      font-size: 0.62rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .alltime-value {
+      font-family: var(--font-mono);
+      font-size: 1.2rem;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- ============== SIDEBAR ============== -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <h1>Slug<span>Swap</span></h1>
+        <p>Control Deck</p>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-label">Monitor</div>
+        <div class="nav-item active" data-section="overview">
+          <span class="nav-icon">&#9678;</span>
+          Overview
+        </div>
+        <div class="nav-item" data-section="pool">
+          <span class="nav-icon">&#9683;</span>
+          Pool Health
+        </div>
+        <div class="nav-item" data-section="claims">
+          <span class="nav-icon">&#10070;</span>
+          Claims
+        </div>
+
+        <div class="nav-section-label">Manage</div>
+        <div class="nav-item" data-section="config">
+          <span class="nav-icon">&#9881;</span>
+          Configuration
+        </div>
+        <div class="nav-item" data-section="donors">
+          <span class="nav-icon">&#9829;</span>
+          Donors
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-badge" id="system-status">
+          <span class="status-dot"></span>
+          System Healthy
+        </div>
+      </div>
+    </aside>
+
+    <!-- ============== MAIN ============== -->
+    <main class="main" id="main-content">
+      <!-- Top Bar -->
+      <div class="top-bar">
+        <div class="top-bar-left">
+          <h2>Overview</h2>
+          <p id="week-range">Loading week data...</p>
+        </div>
+        <div class="top-bar-right">
+          <span class="auto-refresh-tag" id="last-updated">—</span>
+          <button class="refresh-btn" id="refresh-btn" onclick="fetchData()">
+            <span class="refresh-icon">&#8635;</span>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- LOADING STATE -->
+      <div class="loading-overlay" id="loading-state">
+        <div class="loading-spinner"></div>
+        Connecting to database...
+      </div>
+
+      <!-- ERROR STATE -->
+      <div class="error-state" id="error-state" style="display: none;">
+        <h3>Connection Failed</h3>
+        <p id="error-message">Unable to reach the API. Check your dev server.</p>
+        <button class="btn btn-ghost" style="margin-top: 16px;" onclick="fetchData()">Retry</button>
+      </div>
+
+      <!-- DASHBOARD CONTENT (hidden until loaded) -->
+      <div id="dashboard-content" style="display: none;">
+        <!-- Key Metrics -->
+        <div class="metrics-grid" id="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-label"><span class="label-icon">&#9683;</span> Pool Available</div>
+            <div class="metric-value gold" id="m-pool-remaining">—</div>
+            <div class="metric-sub">of <span id="m-pool-total">—</span> total points</div>
+            <div class="progress-bar-wrap">
+              <div class="progress-bar-fill" id="m-pool-bar" style="width: 0%"></div>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label"><span class="label-icon">&#9829;</span> Active Donors</div>
+            <div class="metric-value" id="m-donors-active">—</div>
+            <div class="metric-sub"><span id="m-donors-paused">0</span> paused &middot; <span id="m-donors-monthly">$0</span>/mo inflow</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label"><span class="label-icon">&#10070;</span> Claims This Week</div>
+            <div class="metric-value" id="m-claims-total">—</div>
+            <div class="metric-sub">Redemption rate: <span id="m-redemption-rate">—</span></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label"><span class="label-icon">&#9734;</span> Total Users</div>
+            <div class="metric-value" id="m-total-users">—</div>
+            <div class="metric-sub"><span id="m-linked-get">0</span> GET accounts linked</div>
+          </div>
+        </div>
+
+        <!-- All-time Stats -->
+        <div class="alltime-row">
+          <div class="alltime-stat">
+            <div class="alltime-label">All-time Claims</div>
+            <div class="alltime-value" id="at-claims">—</div>
+          </div>
+          <div class="alltime-stat">
+            <div class="alltime-label">Points Distributed</div>
+            <div class="alltime-value" id="at-points">—</div>
+          </div>
+          <div class="alltime-stat">
+            <div class="alltime-label">Avg Donation / Mo</div>
+            <div class="alltime-value" id="at-avg-donation">—</div>
+          </div>
+          <div class="alltime-stat">
+            <div class="alltime-label">Avg Pts / Requester</div>
+            <div class="alltime-value" id="at-avg-requester">—</div>
+          </div>
+        </div>
+
+        <!-- Pool Health + Claims Breakdown -->
+        <div class="section-grid three-col">
+          <!-- Pool Gauge -->
+          <div class="card" style="animation-delay: 0.3s;">
+            <div class="card-header">
+              <span class="card-title">Pool Utilization</span>
+              <span class="card-badge" id="pool-week-badge">—</span>
+            </div>
+            <div class="pool-gauge-container">
+              <div class="gauge-ring">
+                <svg viewBox="0 0 140 140">
+                  <circle class="gauge-bg" cx="70" cy="70" r="60"></circle>
+                  <circle class="gauge-fill" id="gauge-fill" cx="70" cy="70" r="60"></circle>
+                </svg>
+                <div class="gauge-center">
+                  <span class="gauge-pct" id="gauge-pct">0%</span>
+                  <span class="gauge-pct-label">utilized</span>
+                </div>
+              </div>
+              <div class="pool-details">
+                <div class="pool-detail-row">
+                  <span class="pool-detail-label">Total Pool</span>
+                  <span class="pool-detail-value" id="pd-total">—</span>
+                </div>
+                <div class="pool-detail-row">
+                  <span class="pool-detail-label">Allocated</span>
+                  <span class="pool-detail-value allocated" id="pd-allocated">—</span>
+                </div>
+                <div class="pool-detail-row">
+                  <span class="pool-detail-label">Remaining</span>
+                  <span class="pool-detail-value remaining" id="pd-remaining">—</span>
+                </div>
+                <div class="pool-detail-row">
+                  <span class="pool-detail-label">Unique Requesters</span>
+                  <span class="pool-detail-value" id="pd-requesters">—</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Claims Breakdown -->
+          <div class="card" style="animation-delay: 0.35s;">
+            <div class="card-header">
+              <span class="card-title">Claims This Week</span>
+            </div>
+            <div class="claims-breakdown" id="claims-breakdown">
+              <div class="claim-stat">
+                <span class="claim-stat-label">Redeemed</span>
+                <span class="claim-stat-value redeemed" id="cb-redeemed">0</span>
+                <span class="claim-stat-sub" id="cb-redeemed-amt">0 pts</span>
+              </div>
+              <div class="claim-stat">
+                <span class="claim-stat-label">Pending</span>
+                <span class="claim-stat-value pending" id="cb-pending">0</span>
+                <span class="claim-stat-sub" id="cb-pending-amt">0 pts</span>
+              </div>
+              <div class="claim-stat">
+                <span class="claim-stat-label">Active</span>
+                <span class="claim-stat-value" id="cb-active">0</span>
+                <span class="claim-stat-sub" id="cb-active-amt">0 pts</span>
+              </div>
+              <div class="claim-stat">
+                <span class="claim-stat-label">Expired</span>
+                <span class="claim-stat-value expired" id="cb-expired">0</span>
+                <span class="claim-stat-sub" id="cb-expired-amt">0 pts</span>
+              </div>
+            </div>
+
+            <div style="margin-top: 20px; text-align: center;">
+              <div class="redemption-ring">
+                <svg viewBox="0 0 80 80">
+                  <circle fill="none" stroke="var(--bg-elevated)" stroke-width="7" cx="40" cy="40" r="34"></circle>
+                  <circle fill="none" stroke="var(--success)" stroke-width="7" stroke-linecap="round"
+                    cx="40" cy="40" r="34" id="redemption-arc"
+                    stroke-dasharray="213.6" stroke-dashoffset="213.6"
+                    style="transition: stroke-dashoffset 1.2s var(--ease-out);"
+                  ></circle>
+                </svg>
+                <div class="redemption-center" id="redemption-pct">0%</div>
+              </div>
+              <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;">Redemption Rate</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pool History Chart -->
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">Weekly Pool History</span>
+            <span class="section-subtitle">Last 8 weeks</span>
+          </div>
+          <div class="card" style="animation-delay: 0.4s;">
+            <div class="bar-chart" id="pool-history-chart">
+              <div class="empty-state">No pool history yet</div>
+            </div>
+            <div style="display: flex; gap: 16px; margin-top: 12px; justify-content: center;">
+              <span style="display: flex; align-items: center; gap: 5px; font-size: 0.7rem; color: var(--text-muted);">
+                <span style="width: 10px; height: 10px; border-radius: 2px; background: var(--accent-gold-dim);"></span> Total
+              </span>
+              <span style="display: flex; align-items: center; gap: 5px; font-size: 0.7rem; color: var(--text-muted);">
+                <span style="width: 10px; height: 10px; border-radius: 2px; background: var(--accent-gold);"></span> Allocated
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Configuration -->
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">Pool Configuration</span>
+            <span class="section-subtitle">Adjust system defaults</span>
+          </div>
+          <div class="card" style="animation-delay: 0.45s;">
+            <div class="config-grid" id="config-grid">
+              <div class="config-item">
+                <label class="config-label">Weekly Allowance / User</label>
+                <div class="config-input-wrap">
+                  <input class="config-input" type="number" id="cfg-weekly-allowance" min="1" max="1000">
+                  <span class="config-unit">pts</span>
+                </div>
+              </div>
+              <div class="config-item">
+                <label class="config-label">Default Claim Amount</label>
+                <div class="config-input-wrap">
+                  <input class="config-input" type="number" id="cfg-claim-amount" min="1" max="500">
+                  <span class="config-unit">pts</span>
+                </div>
+              </div>
+              <div class="config-item">
+                <label class="config-label">Code Expiry</label>
+                <div class="config-input-wrap">
+                  <input class="config-input" type="number" id="cfg-expiry" min="1" max="60">
+                  <span class="config-unit">min</span>
+                </div>
+              </div>
+              <div class="config-item">
+                <label class="config-label">Max Claims / Day</label>
+                <div class="config-input-wrap">
+                  <input class="config-input" type="number" id="cfg-max-claims" min="1" max="50">
+                </div>
+              </div>
+              <div class="config-item">
+                <label class="config-label">Min Donation</label>
+                <div class="config-input-wrap">
+                  <input class="config-input" type="number" id="cfg-min-donation" min="1" max="1000">
+                  <span class="config-unit">pts/mo</span>
+                </div>
+              </div>
+              <div class="config-item">
+                <label class="config-label">Allocation Method</label>
+                <select class="config-select" id="cfg-method">
+                  <option value="equal">Equal Split</option>
+                  <option value="proportional">Proportional</option>
+                </select>
+              </div>
+            </div>
+            <div class="config-actions">
+              <button class="btn btn-ghost" onclick="loadConfig()">Reset</button>
+              <button class="btn btn-primary" onclick="saveConfig()">Save Changes</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Activity + Top Donors -->
+        <div class="section-grid">
+          <!-- Recent Claims -->
+          <div class="card" style="animation-delay: 0.5s;">
+            <div class="card-header">
+              <span class="card-title">Recent Claims</span>
+              <span class="card-badge" id="recent-count">0 recent</span>
+            </div>
+            <div style="max-height: 340px; overflow-y: auto;">
+              <table class="activity-table" id="activity-table">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Time</th>
+                  </tr>
+                </thead>
+                <tbody id="activity-body">
+                  <tr><td colspan="4" class="empty-state">No claims yet</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Top Donors -->
+          <div class="card" style="animation-delay: 0.55s;">
+            <div class="card-header">
+              <span class="card-title">Top Donors</span>
+              <span class="card-badge">by monthly amount</span>
+            </div>
+            <div id="donors-list" style="max-height: 340px; overflow-y: auto;">
+              <div class="empty-state">No donors yet</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">Configuration saved</div>
+
+  <script>
+    // ============================================
+    // STATE
+    // ============================================
+    const API_BASE = window.location.origin;
+    let refreshInterval = null;
+    let statsData = null;
+    let configData = null;
+
+    // ============================================
+    // DATA FETCHING
+    // ============================================
+    async function fetchData() {
+      const btn = document.getElementById('refresh-btn');
+      btn.classList.add('loading');
+
+      try {
+        const [statsRes, configRes] = await Promise.all([
+          fetch(`${API_BASE}/api/admin/stats`),
+          fetch(`${API_BASE}/api/admin/config`),
+        ]);
+
+        if (!statsRes.ok) throw new Error(`Stats API returned ${statsRes.status}`);
+        if (!configRes.ok) throw new Error(`Config API returned ${configRes.status}`);
+
+        statsData = await statsRes.json();
+        configData = await configRes.json();
+
+        document.getElementById('loading-state').style.display = 'none';
+        document.getElementById('error-state').style.display = 'none';
+        document.getElementById('dashboard-content').style.display = 'block';
+        document.getElementById('system-status').className = 'status-badge';
+        document.getElementById('system-status').innerHTML = '<span class="status-dot"></span> System Healthy';
+
+        renderDashboard();
+        renderConfig();
+        updateTimestamp();
+      } catch (err) {
+        console.error('Fetch error:', err);
+        document.getElementById('loading-state').style.display = 'none';
+        document.getElementById('error-state').style.display = 'block';
+        document.getElementById('error-message').textContent = err.message;
+        document.getElementById('system-status').className = 'status-badge error';
+        document.getElementById('system-status').innerHTML = '<span class="status-dot"></span> Connection Error';
+      } finally {
+        btn.classList.remove('loading');
+      }
+    }
+
+    // ============================================
+    // RENDER DASHBOARD
+    // ============================================
+    function renderDashboard() {
+      if (!statsData) return;
+      const d = statsData;
+
+      // Week range
+      const ws = new Date(d.pool.weekStart);
+      const we = new Date(d.pool.weekEnd);
+      const fmt = (dt) => dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      document.getElementById('week-range').textContent = `Week of ${fmt(ws)} — ${fmt(we)}`;
+
+      // Key metrics
+      animateValue('m-pool-remaining', d.pool.remainingAmount);
+      document.getElementById('m-pool-total').textContent = formatNum(d.pool.totalAmount)
+        + (d.pool.isEstimated ? ' (estimated)' : '');
+      const remainPct = d.pool.totalAmount > 0
+        ? Math.round((d.pool.remainingAmount / d.pool.totalAmount) * 100)
+        : 0;
+      const poolBar = document.getElementById('m-pool-bar');
+      poolBar.style.width = remainPct + '%';
+      poolBar.className = 'progress-bar-fill' + (remainPct < 20 ? ' danger' : remainPct < 50 ? ' warning' : ' success');
+
+      animateValue('m-donors-active', d.donors.active);
+      document.getElementById('m-donors-paused').textContent = d.donors.paused;
+      document.getElementById('m-donors-monthly').textContent = formatNum(d.donors.monthlyInflow);
+
+      animateValue('m-claims-total', d.claims.thisWeek.total);
+      document.getElementById('m-redemption-rate').textContent = d.claims.thisWeek.redemptionRate + '%';
+
+      animateValue('m-total-users', d.users.total);
+      document.getElementById('m-linked-get').textContent = d.users.linkedGetAccounts;
+
+      // All-time stats
+      document.getElementById('at-claims').textContent = formatNum(d.claims.allTime.total);
+      document.getElementById('at-points').textContent = formatNum(d.claims.allTime.redeemedAmount);
+      document.getElementById('at-avg-donation').textContent = formatNum(d.donors.avgMonthlyDonation);
+      document.getElementById('at-avg-requester').textContent = formatNum(d.users.avgPointsPerRequesterThisWeek);
+
+      // Pool gauge
+      const pct = d.pool.utilizationPct;
+      const circumference = 2 * Math.PI * 60; // ~377
+      const offset = circumference - (pct / 100) * circumference;
+      const gaugeFill = document.getElementById('gauge-fill');
+      gaugeFill.style.strokeDashoffset = offset;
+      gaugeFill.className = 'gauge-fill' + (pct > 90 ? ' danger' : pct > 70 ? ' warning' : '');
+      document.getElementById('gauge-pct').textContent = pct + '%';
+      document.getElementById('pool-week-badge').textContent = d.pool.isEstimated
+        ? `Week ${getWeekNumber(ws)} · estimated`
+        : `Week ${getWeekNumber(ws)}`;
+
+      const estLabel = d.pool.isEstimated ? ' (est)' : '';
+      document.getElementById('pd-total').textContent = formatNum(d.pool.totalAmount) + ' pts' + estLabel;
+      document.getElementById('pd-allocated').textContent = formatNum(d.pool.allocatedAmount) + ' pts';
+      document.getElementById('pd-remaining').textContent = formatNum(d.pool.remainingAmount) + ' pts';
+      document.getElementById('pd-requesters').textContent = d.users.uniqueRequesters;
+
+      // Claims breakdown
+      const byStatus = d.claims.thisWeek.byStatus;
+      setClaim('cb-redeemed', 'cb-redeemed-amt', byStatus.redeemed);
+      setClaim('cb-pending', 'cb-pending-amt', byStatus.pending);
+      setClaim('cb-active', 'cb-active-amt', byStatus.active);
+      setClaim('cb-expired', 'cb-expired-amt', byStatus.expired);
+
+      // Redemption rate arc
+      const rRate = d.claims.thisWeek.redemptionRate;
+      const rCirc = 2 * Math.PI * 34; // ~213.6
+      const rOffset = rCirc - (rRate / 100) * rCirc;
+      document.getElementById('redemption-arc').style.strokeDashoffset = rOffset;
+      document.getElementById('redemption-pct').textContent = rRate + '%';
+
+      // Pool history chart
+      renderPoolHistory(d.poolHistory);
+
+      // Recent claims table
+      renderRecentClaims(d.recentClaims);
+
+      // Top donors
+      renderTopDonors(d.topDonors);
+    }
+
+    function setClaim(countId, amtId, data) {
+      document.getElementById(countId).textContent = data?.count || 0;
+      document.getElementById(amtId).textContent = formatNum(data?.amount || 0) + ' pts';
+    }
+
+    // ============================================
+    // POOL HISTORY CHART
+    // ============================================
+    function renderPoolHistory(history) {
+      const container = document.getElementById('pool-history-chart');
+      if (!history || history.length === 0) {
+        container.innerHTML = '<div class="empty-state">No pool history yet</div>';
+        return;
+      }
+
+      const sorted = [...history].reverse(); // oldest first
+      const maxVal = Math.max(...sorted.map(p => p.totalAmount), 1);
+
+      container.innerHTML = sorted.map((p, i) => {
+        const totalH = (p.totalAmount / maxVal) * 100;
+        const allocH = (p.allocatedAmount / maxVal) * 100;
+        const ws = new Date(p.weekStart);
+        const label = ws.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return `
+          <div class="bar-group">
+            <div class="bar-stack">
+              <div class="bar total" style="height: ${totalH}%; animation: bar-grow 0.8s var(--ease-out) ${i * 0.08}s backwards;"></div>
+              <div class="bar allocated" style="height: ${allocH}%; margin-top: -${allocH}%; animation: bar-grow 0.8s var(--ease-out) ${i * 0.08 + 0.1}s backwards;"></div>
+            </div>
+            <span class="bar-label">${label}</span>
+          </div>
+        `;
+      }).join('');
+
+      // Add bar animation keyframes if not already added
+      if (!document.getElementById('bar-anim-style')) {
+        const style = document.createElement('style');
+        style.id = 'bar-anim-style';
+        style.textContent = '@keyframes bar-grow { from { height: 0%; } }';
+        document.head.appendChild(style);
+      }
+    }
+
+    // ============================================
+    // RECENT CLAIMS TABLE
+    // ============================================
+    function renderRecentClaims(claims) {
+      const tbody = document.getElementById('activity-body');
+      const countBadge = document.getElementById('recent-count');
+
+      if (!claims || claims.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No claims yet</td></tr>';
+        countBadge.textContent = '0 recent';
+        return;
+      }
+
+      countBadge.textContent = claims.length + ' recent';
+
+      tbody.innerHTML = claims.map(c => {
+        const displayName = c.userName
+          ? c.userName
+          : c.userEmail
+            ? c.userEmail.split('@')[0]
+            : c.userId.substring(0, 8) + '...';
+        const time = timeAgo(new Date(c.createdAt));
+        return `
+          <tr>
+            <td>${displayName}</td>
+            <td class="mono">${formatNum(c.amount)} pts</td>
+            <td><span class="status-pill ${c.status}"><span class="status-pill-dot"></span>${c.status}</span></td>
+            <td style="color: var(--text-muted); font-size: 0.78rem;">${time}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // ============================================
+    // TOP DONORS LIST
+    // ============================================
+    function renderTopDonors(donors) {
+      const container = document.getElementById('donors-list');
+
+      if (!donors || donors.length === 0) {
+        container.innerHTML = '<div class="empty-state">No donors yet</div>';
+        return;
+      }
+
+      container.innerHTML = donors.map((d, i) => {
+        const initials = getInitials(d.name);
+        const email = d.email ? d.email.split('@')[0] : '—';
+        return `
+          <div class="donor-row">
+            <span class="donor-rank">${i + 1}</span>
+            <div class="donor-avatar">${initials}</div>
+            <div class="donor-info">
+              <div class="donor-name">${d.name}</div>
+              <div class="donor-email">${email}</div>
+            </div>
+            <span class="donor-amount">${formatNum(d.amount)}</span>
+            <span class="donor-status-dot ${d.status}" title="${d.status}"></span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // ============================================
+    // CONFIGURATION
+    // ============================================
+    function renderConfig() {
+      if (!configData) return;
+      const c = configData.config;
+      document.getElementById('cfg-weekly-allowance').value = c.defaultWeeklyAllowance;
+      document.getElementById('cfg-claim-amount').value = c.defaultClaimAmount;
+      document.getElementById('cfg-expiry').value = c.codeExpiryMinutes;
+      document.getElementById('cfg-max-claims').value = c.maxClaimsPerDay;
+      document.getElementById('cfg-min-donation').value = c.minDonationAmount;
+      document.getElementById('cfg-method').value = c.poolCalculationMethod;
+    }
+
+    function loadConfig() {
+      renderConfig();
+    }
+
+    async function saveConfig() {
+      const payload = {
+        defaultWeeklyAllowance: Number(document.getElementById('cfg-weekly-allowance').value),
+        defaultClaimAmount: Number(document.getElementById('cfg-claim-amount').value),
+        codeExpiryMinutes: Number(document.getElementById('cfg-expiry').value),
+        maxClaimsPerDay: Number(document.getElementById('cfg-max-claims').value),
+        minDonationAmount: Number(document.getElementById('cfg-min-donation').value),
+        poolCalculationMethod: document.getElementById('cfg-method').value,
+      };
+
+      try {
+        const res = await fetch(`${API_BASE}/api/admin/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) throw new Error('Save failed');
+        configData = await res.json();
+        showToast('Configuration saved');
+      } catch (err) {
+        showToast('Failed to save — ' + err.message);
+      }
+    }
+
+    // ============================================
+    // UTILITIES
+    // ============================================
+    function formatNum(n) {
+      if (n === undefined || n === null) return '0';
+      const num = Number(n);
+      if (num >= 1000) return num.toLocaleString('en-US', { maximumFractionDigits: 0 });
+      if (Number.isInteger(num)) return num.toString();
+      return num.toFixed(1);
+    }
+
+    function animateValue(elementId, targetValue) {
+      const el = document.getElementById(elementId);
+      const target = Number(targetValue) || 0;
+      const start = Number(el.textContent.replace(/[^0-9.-]/g, '')) || 0;
+      const diff = target - start;
+      const duration = 800;
+      const startTime = performance.now();
+
+      function step(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+        const current = start + diff * eased;
+        el.textContent = formatNum(Math.round(current));
+        if (progress < 1) requestAnimationFrame(step);
+      }
+
+      requestAnimationFrame(step);
+    }
+
+    function timeAgo(date) {
+      const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+      if (seconds < 60) return seconds + 's ago';
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return minutes + 'm ago';
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return hours + 'h ago';
+      const days = Math.floor(hours / 24);
+      return days + 'd ago';
+    }
+
+    function getWeekNumber(d) {
+      const start = new Date(d.getFullYear(), 0, 1);
+      const diff = d - start;
+      return Math.ceil(((diff / 86400000) + start.getDay() + 1) / 7);
+    }
+
+    function getInitials(name) {
+      if (!name || name === 'Anonymous') return '?';
+      return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+    }
+
+    function updateTimestamp() {
+      const now = new Date();
+      const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      document.getElementById('last-updated').textContent = `Updated ${time}`;
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2500);
+    }
+
+    // ============================================
+    // NAV
+    // ============================================
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        item.classList.add('active');
+        const section = item.dataset.section;
+        // Scroll to section if exists, otherwise just highlight
+        const sectionMap = {
+          'overview': 0,
+          'pool': document.querySelector('.section-grid.three-col'),
+          'claims': document.querySelector('.section-grid.three-col'),
+          'config': document.querySelector('.section:nth-of-type(2)'),
+          'donors': document.querySelector('.section-grid:last-of-type'),
+        };
+        if (section === 'overview') {
+          document.getElementById('main-content').scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          const el = sectionMap[section];
+          if (el && el.scrollIntoView) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+      });
+    });
+
+    // ============================================
+    // INIT
+    // ============================================
+    fetchData();
+
+    // Auto-refresh every 30 seconds
+    refreshInterval = setInterval(fetchData, 30000);
+  </script>
+</body>
+</html>
