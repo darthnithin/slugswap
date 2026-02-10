@@ -1,23 +1,112 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '../../lib/supabase';
+import { getRequesterAllowance, generateClaimCode, getClaimHistory } from '../../lib/api';
+
+interface ClaimCode {
+  id: string;
+  code: string;
+  amount: number;
+  expiresAt: string;
+}
 
 export default function RequesterScreen() {
-  const [weeklyAllowance] = useState(50); // TODO: Fetch from backend
-  const [remainingAllowance, setRemainingAllowance] = useState(50);
-  const [currentCode, setCurrentCode] = useState<string | null>(null);
+  const [weeklyAllowance, setWeeklyAllowance] = useState(0);
+  const [remainingAllowance, setRemainingAllowance] = useState(0);
+  const [daysUntilReset, setDaysUntilReset] = useState(0);
+  const [currentCode, setCurrentCode] = useState<ClaimCode | null>(null);
   const [claimHistory, setClaimHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<string>('');
 
-  const handleGenerateCode = () => {
-    // TODO: Call API to generate code via GET Tools
-    const code = `SLUG${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    setCurrentCode(code);
+  useEffect(() => {
+    loadUserAndAllowance();
+  }, []);
 
-    // Simulate countdown/expiry (5 minutes)
-    setTimeout(() => {
-      setCurrentCode(null);
-    }, 5 * 60 * 1000);
+  useEffect(() => {
+    if (currentCode) {
+      const interval = setInterval(() => {
+        const now = new Date();
+        const expiresAt = new Date(currentCode.expiresAt);
+        const diff = expiresAt.getTime() - now.getTime();
+
+        if (diff <= 0) {
+          setCurrentCode(null);
+          setTimeRemaining('');
+          loadUserAndAllowance(); // Refresh data
+        } else {
+          const minutes = Math.floor(diff / 60000);
+          const seconds = Math.floor((diff % 60000) / 1000);
+          setTimeRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [currentCode]);
+
+  async function loadUserAndAllowance() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert('Error', 'Please sign in first');
+        return;
+      }
+
+      setUserId(user.id);
+
+      // Fetch allowance
+      const allowanceData = await getRequesterAllowance(user.id);
+      setWeeklyAllowance(allowanceData.weeklyLimit);
+      setRemainingAllowance(allowanceData.remainingAmount);
+      setDaysUntilReset(allowanceData.daysUntilReset);
+
+      // Fetch history
+      const historyData = await getClaimHistory(user.id);
+      setClaimHistory(historyData.claims);
+    } catch (error) {
+      console.error('Error loading allowance:', error);
+      Alert.alert('Error', 'Failed to load your allowance data');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleGenerateCode = async () => {
+    if (!userId) return;
+
+    const DEFAULT_CLAIM_AMOUNT = 10; // Points per claim
+
+    if (remainingAllowance < DEFAULT_CLAIM_AMOUNT) {
+      Alert.alert('Insufficient Allowance', `You need at least ${DEFAULT_CLAIM_AMOUNT} points remaining`);
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      const result = await generateClaimCode(userId, DEFAULT_CLAIM_AMOUNT);
+      setCurrentCode(result.claimCode);
+      await loadUserAndAllowance();
+    } catch (error: any) {
+      console.error('Error generating code:', error);
+      Alert.alert('Error', error.message || 'Failed to generate claim code');
+    } finally {
+      setGenerating(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.content, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color="#007AFF" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -35,27 +124,31 @@ export default function RequesterScreen() {
               <Text style={styles.totalText}>of {weeklyAllowance}</Text>
             </View>
           </View>
-          <Text style={styles.resetText}>Resets in 3 days</Text>
+          <Text style={styles.resetText}>Resets in {daysUntilReset} {daysUntilReset === 1 ? 'day' : 'days'}</Text>
         </View>
 
         {currentCode ? (
           <View style={styles.codeCard}>
             <Text style={styles.cardTitle}>Your Claim Code</Text>
             <View style={styles.codeContainer}>
-              <Text style={styles.codeText}>{currentCode}</Text>
+              <Text style={styles.codeText}>{currentCode.code}</Text>
             </View>
-            <Text style={styles.expiryText}>Expires in 4:32</Text>
+            <Text style={styles.expiryText}>Expires in {timeRemaining}</Text>
             <Text style={styles.instructionsText}>
               Show this code at the dining hall to redeem your points
             </Text>
           </View>
         ) : (
           <TouchableOpacity
-            style={styles.generateButton}
+            style={[styles.generateButton, (remainingAllowance === 0 || generating) && styles.generateButtonDisabled]}
             onPress={handleGenerateCode}
-            disabled={remainingAllowance === 0}
+            disabled={remainingAllowance === 0 || generating}
           >
-            <Text style={styles.generateButtonText}>Generate Claim Code</Text>
+            {generating ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.generateButtonText}>Generate Claim Code</Text>
+            )}
           </TouchableOpacity>
         )}
 
@@ -64,10 +157,24 @@ export default function RequesterScreen() {
           {claimHistory.length === 0 ? (
             <Text style={styles.emptyText}>No claims yet</Text>
           ) : (
-            claimHistory.map((claim, index) => (
-              <View key={index} style={styles.historyItem}>
-                <Text>{claim.code}</Text>
-                <Text>{claim.status}</Text>
+            claimHistory.map((claim) => (
+              <View key={claim.id} style={styles.historyItem}>
+                <View>
+                  <Text style={styles.historyCode}>{claim.code}</Text>
+                  <Text style={styles.historyDate}>
+                    {new Date(claim.createdAt).toLocaleDateString()}
+                  </Text>
+                </View>
+                <View style={styles.historyStatus}>
+                  <Text style={[
+                    styles.statusBadge,
+                    claim.status === 'redeemed' && styles.statusRedeemed,
+                    claim.status === 'expired' && styles.statusExpired,
+                  ]}>
+                    {claim.status.toUpperCase()}
+                  </Text>
+                  <Text style={styles.historyAmount}>{claim.amount} pts</Text>
+                </View>
               </View>
             ))
           )}
@@ -200,5 +307,37 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  generateButtonDisabled: {
+    opacity: 0.5,
+  },
+  historyCode: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  historyDate: {
+    fontSize: 12,
+    color: '#999',
+  },
+  historyStatus: {
+    alignItems: 'flex-end',
+  },
+  statusBadge: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 4,
+  },
+  statusRedeemed: {
+    color: '#34C759',
+  },
+  statusExpired: {
+    color: '#FF3B30',
+  },
+  historyAmount: {
+    fontSize: 12,
+    color: '#666',
   },
 });

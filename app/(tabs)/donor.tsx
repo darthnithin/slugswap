@@ -1,16 +1,99 @@
-import { View, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '../../lib/supabase';
+import { setDonation, getDonorImpact, pauseDonation } from '../../lib/api';
 
 export default function DonorScreen() {
   const [monthlyAmount, setMonthlyAmount] = useState('');
   const [isActive, setIsActive] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [impact, setImpact] = useState({ peopleHelped: 0, pointsContributed: 0 });
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
-  const handleSetContribution = () => {
-    // TODO: Save monthly contribution to backend
-    console.log('Set contribution:', monthlyAmount);
-    setIsActive(true);
+  useEffect(() => {
+    loadUserAndImpact();
+  }, []);
+
+  async function loadUserAndImpact() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert('Error', 'Please sign in first');
+        return;
+      }
+
+      setUserId(user.id);
+      setUserEmail(user.email ?? null);
+
+      // Fetch donor impact data
+      const impactData = await getDonorImpact(user.id);
+      setIsActive(impactData.isActive);
+      setMonthlyAmount(impactData.monthlyAmount > 0 ? impactData.monthlyAmount.toString() : '');
+      setImpact({
+        peopleHelped: impactData.peopleHelped,
+        pointsContributed: impactData.pointsContributed,
+      });
+    } catch (error) {
+      console.error('Error loading impact:', error);
+      Alert.alert('Error', 'Failed to load your donation data');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleSetContribution = async () => {
+    if (!userId) return;
+
+    const amount = parseFloat(monthlyAmount);
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid amount');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await setDonation(userId, amount, userEmail);
+      setIsActive(true);
+      Alert.alert('Success', 'Your contribution has been set!');
+      await loadUserAndImpact();
+    } catch (error) {
+      console.error('Error setting donation:', error);
+      Alert.alert('Error', 'Failed to set contribution. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const handlePause = async () => {
+    if (!userId) return;
+
+    const shouldPause = isActive;
+
+    setSaving(true);
+    try {
+      await pauseDonation(userId, shouldPause);
+      setIsActive(!isActive);
+      Alert.alert('Success', isActive ? 'Donation paused' : 'Donation resumed');
+    } catch (error) {
+      console.error('Error pausing donation:', error);
+      Alert.alert('Error', 'Failed to update donation status');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.content, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color="#007AFF" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -35,8 +118,16 @@ export default function DonorScreen() {
               />
             </View>
 
-            <TouchableOpacity style={styles.button} onPress={handleSetContribution}>
-              <Text style={styles.buttonText}>Start Sharing</Text>
+            <TouchableOpacity
+              style={[styles.button, saving && styles.buttonDisabled]}
+              onPress={handleSetContribution}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Start Sharing</Text>
+              )}
             </TouchableOpacity>
           </View>
         ) : (
@@ -44,7 +135,7 @@ export default function DonorScreen() {
             <Text style={styles.cardTitle}>Your Impact</Text>
             <View style={styles.statsRow}>
               <View style={styles.stat}>
-                <Text style={styles.statValue}>0</Text>
+                <Text style={styles.statValue}>{impact.peopleHelped}</Text>
                 <Text style={styles.statLabel}>People Helped</Text>
               </View>
               <View style={styles.stat}>
@@ -53,8 +144,16 @@ export default function DonorScreen() {
               </View>
             </View>
 
-            <TouchableOpacity style={styles.pauseButton}>
-              <Text style={styles.pauseButtonText}>Pause Sharing</Text>
+            <TouchableOpacity
+              style={[styles.pauseButton, saving && styles.buttonDisabled]}
+              onPress={handlePause}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color="#007AFF" />
+              ) : (
+                <Text style={styles.pauseButtonText}>{isActive ? 'Pause' : 'Resume'} Sharing</Text>
+              )}
             </TouchableOpacity>
           </View>
         )}
@@ -163,5 +262,8 @@ const styles = StyleSheet.create({
     color: '#007AFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
 });
