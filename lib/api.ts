@@ -91,6 +91,30 @@ export async function getClaimHistory(userId: string) {
   return response.json();
 }
 
+export async function refreshClaimCode(userId: string, claimCodeId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/claims/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, claimCodeId }),
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to refresh claim code');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{
+    success: boolean;
+    claimCode: {
+      id: string;
+      code: string;
+      amount: number;
+      expiresAt: string;
+      status: string;
+    };
+  }>;
+}
+
 export async function getGetLoginUrl() {
   const response = await fetch(`${API_BASE_URL}/api/get/login-url`);
 

@@ -3,8 +3,7 @@ import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { eq, and } from 'drizzle-orm';
 import * as schema from '../../db/schema';
-import { callGetApi } from '../get/_lib/get-tools';
-import { getActiveGetSession } from '../get/_lib/get-session';
+import { fetchLiveClaimCodeFromGet, resolveLinkedDonorUserId } from './_lib/get-claim-code';
 
 const sql = neon(process.env.DATABASE_URL!);
 const db = drizzle(sql, { schema });
@@ -23,61 +22,6 @@ function getCurrentWeek() {
   weekEnd.setDate(weekStart.getDate() + 7);
 
   return { weekStart, weekEnd };
-}
-
-// Generate random claim code (mock - would call GET Tools API in production)
-function generateCode(): string {
-  return `SLUG${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-}
-
-function sanitizeCode(raw: string): string {
-  return raw.replace(/[^A-Za-z0-9]/g, '').slice(0, 24).toUpperCase();
-}
-
-// GET-backed claim bootstrap.
-// We validate the linked GET session and use barcode payload if available.
-async function callGetToolsAPI(userId: string): Promise<{ code: string; expiresAt: Date }> {
-  const { sessionId } = await getActiveGetSession(userId);
-  const payload = await callGetApi<{ sessionId: string }, unknown>(
-    'authentication',
-    'retrievePatronBarcodePayload',
-    { sessionId }
-  );
-
-  let code = '';
-  if (typeof payload === 'string') {
-    code = sanitizeCode(payload);
-  } else if (payload && typeof payload === 'object') {
-    const maybePayload = payload as { payload?: string; barcodePayload?: string };
-    code = sanitizeCode(maybePayload.payload || maybePayload.barcodePayload || '');
-  }
-
-  if (!code) {
-    // Fallback keeps development functional if institution payload format differs.
-    code = generateCode();
-  }
-
-  const expiresAt = new Date();
-  expiresAt.setMinutes(expiresAt.getMinutes() + 5);
-  return { code, expiresAt };
-}
-
-async function resolveLinkedDonorUserId(): Promise<string> {
-  const linkedDonors = await db
-    .select({ userId: schema.donations.userId })
-    .from(schema.donations)
-    .innerJoin(
-      schema.getCredentials,
-      eq(schema.getCredentials.userId, schema.donations.userId)
-    )
-    .where(eq(schema.donations.status, 'active'))
-    .limit(1);
-
-  if (linkedDonors.length === 0) {
-    throw new Error('No linked donor GET account available. Ask a donor to link GET in Share tab.');
-  }
-
-  return linkedDonors[0].userId;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -138,8 +82,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Generate code using an active donor's linked GET account.
-    const donorUserId = await resolveLinkedDonorUserId();
-    const { code, expiresAt } = await callGetToolsAPI(donorUserId);
+    const donorUserId = await resolveLinkedDonorUserId(db);
+    const { code, expiresAt } = await fetchLiveClaimCodeFromGet(donorUserId);
 
     // Create claim code record
     const [claimCode] = await db

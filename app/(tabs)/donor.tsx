@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { setDonation, getDonorImpact, pauseDonation, getGetAccounts, getGetLinkStatus, getGetLoginUrl, linkGetAccount, unlinkGetAccount } from '../../lib/api';
 import * as WebBrowser from 'expo-web-browser';
@@ -127,7 +128,20 @@ export default function DonorScreen() {
     }
   };
 
+  const completeGetLink = async (validatedUrl: string) => {
+    if (!userId) return;
+    await linkGetAccount({
+      userId,
+      userEmail,
+      validatedUrl: validatedUrl.trim(),
+    });
+    setGetLoginUrlInput('');
+    Alert.alert('Success', 'Your GET account is now linked for sharing.');
+    await loadUserAndImpact();
+  };
+
   const handleOpenGetLogin = async () => {
+    if (!userId) return;
     try {
       const { loginUrl } = await getGetLoginUrl();
       await WebBrowser.openBrowserAsync(loginUrl);
@@ -137,7 +151,6 @@ export default function DonorScreen() {
   };
 
   const handleLinkGet = async () => {
-    if (!userId) return;
     if (!getLoginUrlInput.trim()) {
       Alert.alert('Missing URL', 'Paste the validated GET URL after logging in.');
       return;
@@ -145,14 +158,7 @@ export default function DonorScreen() {
 
     setLinkingGet(true);
     try {
-      await linkGetAccount({
-        userId,
-        userEmail,
-        validatedUrl: getLoginUrlInput.trim(),
-      });
-      setGetLoginUrlInput('');
-      Alert.alert('Success', 'Your GET account is now linked for sharing.');
-      await loadUserAndImpact();
+      await completeGetLink(getLoginUrlInput);
     } catch (error: any) {
       Alert.alert('Link Failed', error.message || 'Unable to link GET account');
     } finally {
@@ -257,10 +263,22 @@ export default function DonorScreen() {
           ) : (
             <>
               <Text style={styles.getDetailText}>
-                1) Open GET login, 2) sign in, 3) paste the validated URL. This links donor funding for requester claim codes.
+                Continue to GET and sign in. Once it says 'validated', tap{' '}
+                <Ionicons name="share-outline" size={13} color="#666" style={{ marginHorizontal: 2 }} />
+                {' '}then{' '}
+                <Ionicons name="copy-outline" size={13} color="#666" style={{ marginHorizontal: 2 }} />
+                {' '}to copy the URL, then paste it below to finish linking.
               </Text>
-              <TouchableOpacity style={styles.secondaryButton} onPress={handleOpenGetLogin}>
-                <Text style={styles.secondaryButtonText}>Open GET Login</Text>
+              <TouchableOpacity
+                style={[styles.secondaryButton, linkingGet && styles.buttonDisabled]}
+                onPress={handleOpenGetLogin}
+                disabled={linkingGet}
+              >
+                {linkingGet ? (
+                  <ActivityIndicator color="#007AFF" />
+                ) : (
+                  <Text style={styles.secondaryButtonText}>Open GET Login</Text>
+                )}
               </TouchableOpacity>
               <TextInput
                 style={styles.input}
@@ -278,7 +296,7 @@ export default function DonorScreen() {
                 {linkingGet ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.buttonText}>Link Donor GET Account</Text>
+                  <Text style={styles.buttonText}>Link from Pasted URL</Text>
                 )}
               </TouchableOpacity>
             </>
@@ -381,6 +399,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#666',
     marginBottom: 12,
+    lineHeight: 20,
   },
   balanceList: {
     marginBottom: 12,

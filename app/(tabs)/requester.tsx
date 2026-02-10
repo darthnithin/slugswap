@@ -1,8 +1,8 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { getRequesterAllowance, generateClaimCode, getClaimHistory } from '../../lib/api';
+import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode } from '../../lib/api';
 
 interface ClaimCode {
   id: string;
@@ -21,6 +21,8 @@ export default function RequesterScreen() {
   const [generating, setGenerating] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
+  const [refreshingCode, setRefreshingCode] = useState(false);
+  const refreshingCodeRef = useRef(false);
 
   useEffect(() => {
     loadUserAndAllowance();
@@ -47,6 +49,33 @@ export default function RequesterScreen() {
       return () => clearInterval(interval);
     }
   }, [currentCode]);
+
+  useEffect(() => {
+    if (!currentCode || !userId) return;
+
+    const interval = setInterval(async () => {
+      if (refreshingCodeRef.current) return;
+      refreshingCodeRef.current = true;
+      setRefreshingCode(true);
+      try {
+        const result = await refreshClaimCode(userId, currentCode.id);
+        setCurrentCode(result.claimCode);
+      } catch (error: any) {
+        const message = error?.message || 'Failed to refresh claim code';
+        console.warn('Claim code refresh failed:', message);
+        if (typeof message === 'string' && (message.includes('expired') || message.includes('not active'))) {
+          setCurrentCode(null);
+          setTimeRemaining('');
+          void loadUserAndAllowance();
+        }
+      } finally {
+        refreshingCodeRef.current = false;
+        setRefreshingCode(false);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [currentCode, userId]);
 
   async function loadUserAndAllowance() {
     try {
@@ -136,6 +165,9 @@ export default function RequesterScreen() {
             <Text style={styles.expiryText}>Expires in {timeRemaining}</Text>
             <Text style={styles.instructionsText}>
               Show this code at the dining hall to redeem your points
+            </Text>
+            <Text style={styles.refreshText}>
+              Refreshing every 5s{refreshingCode ? ' ...' : ''}
             </Text>
           </View>
         ) : (
@@ -273,6 +305,12 @@ const styles = StyleSheet.create({
   instructionsText: {
     textAlign: 'center',
     fontSize: 12,
+    color: '#666',
+  },
+  refreshText: {
+    marginTop: 8,
+    textAlign: 'center',
+    fontSize: 11,
     color: '#666',
   },
   generateButton: {

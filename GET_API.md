@@ -313,6 +313,18 @@ Result:
 
 - `response` is barcode payload data consumable by barcode renderer
 
+Observed refresh cadence and TTL notes:
+
+- `get-tools` refreshes barcode payload on a 10-second loop in its share flow.
+- Maintainer anecdote suggests the official app refreshes closer to every 5 seconds.
+- Maintainer anecdote also suggests code validity may be around 60 seconds (based on headers).
+
+Implementation guidance for SlugSwap:
+
+- Start with a 10-second refresh interval for parity with `get-tools`.
+- If scan failure rates are high, test a 5-second interval.
+- Treat TTL as unknown/unstable until validated against UCSC behavior in production logs.
+
 ## Method Inventory (Observed)
 
 | Service | Method | Typical Use |
