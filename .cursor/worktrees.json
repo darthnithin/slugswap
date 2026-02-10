@@ -1,0 +1,11 @@
+{
+  "setup-worktree-unix": [
+    "npm ci",
+    "if [ -f \"$ROOT_WORKTREE_PATH/.env\" ]; then cp \"$ROOT_WORKTREE_PATH/.env\" .env; elif [ -f \"$ROOT_WORKTREE_PATH/.env.example\" ]; then cp \"$ROOT_WORKTREE_PATH/.env.example\" .env; fi",
+    "if [ -f \"$ROOT_WORKTREE_PATH/.vercel/project.json\" ]; then mkdir -p .vercel && cp \"$ROOT_WORKTREE_PATH/.vercel/project.json\" .vercel/project.json; fi",
+    "if command -v vercel >/dev/null 2>&1; then vercel pull --yes || true; fi"
+  ],
+  "setup-worktree": [
+    "npm ci"
+  ]
+}
