@@ -85,6 +85,12 @@ yarn-error.*
 # generated native folders
 ios/
 android/
+apps/mobile/ios/
+apps/mobile/android/
+
+# Next.js
+.next/
+apps/dashboard/.next/
 
 # local editor and skill artifacts
 *.swp

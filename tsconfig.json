@@ -1,9 +1,19 @@
 {
-  "extends": "expo/tsconfig.base",
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "strict": true,
-    "paths": {
-      "@/*": ["./app/*"]
-    }
-  }
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "types": ["node"]
+  },
+  "include": [
+    "api/**/*.ts",
+    "db/**/*.ts",
+    "scripts/**/*.ts",
+    "drizzle.config.ts",
+    "dev-server.ts"
+  ]
 }
