@@ -1,8 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
-import { eq, and, gte } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import * as schema from '../../db/schema';
+import { callGetApi } from '../get/_lib/get-tools';
+import { getActiveGetSession } from '../get/_lib/get-session';
 
 const sql = neon(process.env.DATABASE_URL!);
 const db = drizzle(sql, { schema });
@@ -28,24 +30,54 @@ function generateCode(): string {
   return `SLUG${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 }
 
-// Mock GET Tools API call (replace with real integration)
-async function callGetToolsAPI(amount: number): Promise<{ code: string; expiresAt: Date }> {
-  // TODO: Replace with real GET Tools API integration
-  // const response = await fetch(process.env.GET_TOOLS_API_URL, {
-  //   method: 'POST',
-  //   headers: {
-  //     'Authorization': `Bearer ${process.env.GET_TOOLS_API_KEY}`,
-  //     'Content-Type': 'application/json',
-  //   },
-  //   body: JSON.stringify({ amount }),
-  // });
+function sanitizeCode(raw: string): string {
+  return raw.replace(/[^A-Za-z0-9]/g, '').slice(0, 24).toUpperCase();
+}
 
-  // For now, generate mock code that expires in 5 minutes
-  const code = generateCode();
+// GET-backed claim bootstrap.
+// We validate the linked GET session and use barcode payload if available.
+async function callGetToolsAPI(userId: string): Promise<{ code: string; expiresAt: Date }> {
+  const { sessionId } = await getActiveGetSession(userId);
+  const payload = await callGetApi<{ sessionId: string }, unknown>(
+    'authentication',
+    'retrievePatronBarcodePayload',
+    { sessionId }
+  );
+
+  let code = '';
+  if (typeof payload === 'string') {
+    code = sanitizeCode(payload);
+  } else if (payload && typeof payload === 'object') {
+    const maybePayload = payload as { payload?: string; barcodePayload?: string };
+    code = sanitizeCode(maybePayload.payload || maybePayload.barcodePayload || '');
+  }
+
+  if (!code) {
+    // Fallback keeps development functional if institution payload format differs.
+    code = generateCode();
+  }
+
   const expiresAt = new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + 5);
-
   return { code, expiresAt };
+}
+
+async function resolveLinkedDonorUserId(): Promise<string> {
+  const linkedDonors = await db
+    .select({ userId: schema.donations.userId })
+    .from(schema.donations)
+    .innerJoin(
+      schema.getCredentials,
+      eq(schema.getCredentials.userId, schema.donations.userId)
+    )
+    .where(eq(schema.donations.status, 'active'))
+    .limit(1);
+
+  if (linkedDonors.length === 0) {
+    throw new Error('No linked donor GET account available. Ask a donor to link GET in Share tab.');
+  }
+
+  return linkedDonors[0].userId;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -105,8 +137,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Generate code via GET Tools API (currently mocked)
-    const { code, expiresAt } = await callGetToolsAPI(claimAmount);
+    // Generate code using an active donor's linked GET account.
+    const donorUserId = await resolveLinkedDonorUserId();
+    const { code, expiresAt } = await callGetToolsAPI(donorUserId);
 
     // Create claim code record
     const [claimCode] = await db
@@ -141,8 +174,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         status: claimCode.status,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error generating claim code:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
   }
 }

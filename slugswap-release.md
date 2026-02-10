@@ -105,6 +105,7 @@ Required product behavior:
 1. The app can request code generation via GET Tools.
 2. The app can handle unavailable/degraded GET Tools responses gracefully.
 3. User messaging is clear when school systems are temporarily unavailable.
+4. For UCSC, donor-visible available balance is computed from the sum of `Flexi Dollars`, `Banana Bucks`, and `Slug Points`.
 
 Out of scope for this doc:
 - Endpoint-level contract details.
@@ -144,6 +145,8 @@ Scope:
 2. Pause/resume donor controls.
 3. Improved history and transparency views.
 4. Basic anti-abuse guardrails.
+5. Low-points notifications so requesters know before allowance is nearly exhausted.
+6. Add discrete GET account reporting so users can separately view tracked balances and non-tracked tenders.
 
 ## Release 3: General Availability readiness (2-4 weeks)
 
@@ -154,6 +157,7 @@ Scope:
 1. Operational playbooks for incidents/support.
 2. Admin-facing visibility for pool health and anomalies.
 3. Final UX polish on onboarding and error recovery.
+4. Institution-specific account mapping config (for example UCSC tracked accounts) with auditable versioning and migration notes.
 
 ## 8. Prioritization Framework
 

@@ -68,3 +68,13 @@ export const userAllowances = pgTable("user_allowances", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// GET credentials table - stores per-user device credentials for GET API access
+export const getCredentials = pgTable("get_credentials", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id).notNull().unique(),
+  deviceId: text("device_id").notNull(),
+  encryptedPin: text("encrypted_pin").notNull(),
+  linkedAt: timestamp("linked_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

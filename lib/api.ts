@@ -90,3 +90,68 @@ export async function getClaimHistory(userId: string) {
 
   return response.json();
 }
+
+export async function getGetLoginUrl() {
+  const response = await fetch(`${API_BASE_URL}/api/get/login-url`);
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to load GET login URL');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{ loginUrl: string }>;
+}
+
+export async function getGetLinkStatus(userId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/get/link-status?userId=${userId}`);
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to fetch GET link status');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{ linked: boolean; linkedAt: string | null }>;
+}
+
+export async function linkGetAccount(params: {
+  userId: string;
+  validatedUrl: string;
+  userEmail?: string | null;
+}) {
+  const response = await fetch(`${API_BASE_URL}/api/get/link`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to link GET account');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{ success: boolean; linked: boolean }>;
+}
+
+export async function unlinkGetAccount(userId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/get/link?userId=${userId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to unlink GET account');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{ success: boolean; linked: boolean }>;
+}
+
+export async function getGetAccounts(userId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/get/accounts?userId=${userId}`);
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to fetch GET accounts');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{ linked: boolean; accounts: Array<{ id: string; accountDisplayName: string; balance: number | null }> }>;
+}

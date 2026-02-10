@@ -124,4 +124,5 @@ EXPO_PUBLIC_API_URL=http://localhost:3000
 - Default weekly allowance is currently hardcoded to 50 points per user
 - Default claim amount is 10 points per code
 - These should be made configurable or calculated based on pool health
+- Future plan: add low-points notifications before a requester's weekly allowance is nearly exhausted
 - Code expiry is set to 5 minutes (configurable in `/api/claims/generate.ts`)

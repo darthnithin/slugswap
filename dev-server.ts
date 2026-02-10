@@ -15,6 +15,10 @@ import donationsPause from './api/donations/pause';
 import requestersAllowance from './api/requesters/allowance';
 import claimsGenerate from './api/claims/generate';
 import claimsHistory from './api/claims/history';
+import getLoginUrl from './api/get/login-url';
+import getLink from './api/get/link';
+import getLinkStatus from './api/get/link-status';
+import getAccounts from './api/get/accounts';
 
 // Wrap Vercel handlers for Express
 const wrapHandler = (handler: any) => async (req: express.Request, res: express.Response) => {
@@ -34,6 +38,11 @@ app.patch('/api/donations/pause', wrapHandler(donationsPause));
 app.get('/api/requesters/allowance', wrapHandler(requestersAllowance));
 app.post('/api/claims/generate', wrapHandler(claimsGenerate));
 app.get('/api/claims/history', wrapHandler(claimsHistory));
+app.get('/api/get/login-url', wrapHandler(getLoginUrl));
+app.post('/api/get/link', wrapHandler(getLink));
+app.delete('/api/get/link', wrapHandler(getLink));
+app.get('/api/get/link-status', wrapHandler(getLinkStatus));
+app.get('/api/get/accounts', wrapHandler(getAccounts));
 
 // Health check
 app.get('/api/health', (req, res) => {

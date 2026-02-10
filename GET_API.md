@@ -86,6 +86,29 @@ Some methods return primitive `response` values (`true`, string session id, etc.
 
 ## Authentication + Session Lifecycle
 
+### 0) Obtain a validated GET web session id
+
+Before `user.createPIN`, the user must complete GET's hosted web login flow.
+
+Observed pattern from `get-tools`:
+
+- open the institution GET login URL
+- user authenticates with school credentials
+- GET redirects to a "validated" URL
+- app extracts a UUID-like `sessionId` from that validated URL
+
+Observed UCSC login URL:
+
+```
+https://get.cbord.com/ucsc/full/login.php?mobileapp=1
+```
+
+Portability note:
+
+- keep this URL configurable per school; default it to UCSC for now
+
+This validated web `sessionId` is then passed into `user.createPIN`.
+
 ### 1) Create a device PIN (`user.createPIN`)
 
 Used after obtaining a valid GET web session id from the login flow.
@@ -178,12 +201,61 @@ Observed request:
 Observed account fields include:
 
 - `id`
+- `institutionId`
+- `paymentSystemId`
+- `userId`
 - `accountDisplayName`
+- `accountTender`
+- `accountType`
+- `paymentSystemType`
 - `isActive`
 - `isAccountTenderActive`
 - `depositAccepted`
 - `balance`
+- `mealEquivValue`
 - card-like metadata (`lastFour`, `nameOnMedia`, etc.)
+
+Observed top-level payload shape from production-like traffic:
+
+```json
+{
+  "accounts": [
+    {
+      "accountDisplayName": "Flexi Dollars",
+      "accountType": 3,
+      "depositAccepted": true,
+      "balance": 50
+    },
+    {
+      "accountDisplayName": "Board",
+      "accountType": 1,
+      "depositAccepted": false,
+      "balance": 0
+    }
+  ],
+  "planName": "STAGING"
+}
+```
+
+Observed account labels from UCSC sample payload include:
+
+- `Flexi Dollars`
+- `Banana Bucks`
+- `Second Harvest Flexi`
+- `Slug Points`
+- `Board`
+- `Donated Meal`
+- `Pending Donated Meal`
+- `Second Harvest Meals`
+
+Observed interpretation notes from sample:
+
+- `accountType: 3` appears on stored-value style balances (for example `Flexi Dollars`, `Slug Points`).
+- `accountType: 1` appears on meal-plan style balances (for example `Board`, `Donated Meal`).
+- `depositAccepted: true` is present on depositable tenders (for example flexi/bucks/points).
+- `depositAccepted: false` is present on non-deposit meal tenders.
+- `isActive` and `isAccountTenderActive` should both be checked before presenting an account as usable.
+- `planName` is returned at the top level and can help annotate institution-specific plan context.
 
 ### `commerce.retrieveTransactionHistoryWithinDateRange`
 
@@ -337,3 +409,4 @@ export type GetTransaction = {
 ## Change Log
 
 - 2026-02-09: Initial version created from `cabalex/get-tools` investigation.
+- 2026-02-10: Added concrete `retrieveAccounts` payload findings (account labels, field inventory, and observed account-type patterns) from local runtime logs.
