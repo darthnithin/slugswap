@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ApiQuerySection } from "./api-query-section";
 
-type NavSection = "overview" | "pool" | "claims" | "config" | "donors";
+type NavSection = "overview" | "pool" | "claims" | "config" | "donors" | "api";
 type ClaimStatus = "redeemed" | "pending" | "active" | "expired";
 
 type ClaimAggregate = {
@@ -99,6 +100,7 @@ const SECTION_TITLES: Record<NavSection, string> = {
   claims: "Claims",
   config: "Configuration",
   donors: "Donors",
+  api: "API Query",
 };
 
 function formatNum(n: number | string | null | undefined): string {
@@ -170,6 +172,7 @@ export default function DashboardHomePage() {
   const poolSectionRef = useRef<HTMLDivElement | null>(null);
   const configSectionRef = useRef<HTMLDivElement | null>(null);
   const donorsSectionRef = useRef<HTMLDivElement | null>(null);
+  const apiSectionRef = useRef<HTMLDivElement | null>(null);
   const hasLoadedRef = useRef(false);
 
   const [statsData, setStatsData] = useState<AdminStatsResponse | null>(null);
@@ -286,6 +289,11 @@ export default function DashboardHomePage() {
 
     if (section === "config") {
       configSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (section === "api") {
+      apiSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
 
@@ -488,6 +496,16 @@ export default function DashboardHomePage() {
             >
               <span className="nav-icon">♥</span>
               Donors
+            </button>
+
+            <div className="nav-section-label">Developer</div>
+            <button
+              type="button"
+              className={`nav-item${activeSection === "api" ? " active" : ""}`}
+              onClick={() => handleNavClick("api")}
+            >
+              <span className="nav-icon">⌘</span>
+              API Query
             </button>
           </nav>
 
@@ -975,6 +993,16 @@ export default function DashboardHomePage() {
                       {isSaving ? "Saving..." : "Save Changes"}
                     </button>
                   </div>
+                </div>
+              </div>
+
+              <div className="section" ref={apiSectionRef}>
+                <div className="section-header">
+                  <span className="section-title">API Observatory</span>
+                  <span className="section-subtitle">Direct backend query interface</span>
+                </div>
+                <div style={{ animationDelay: "0.5s" }}>
+                  <ApiQuerySection />
                 </div>
               </div>
 
