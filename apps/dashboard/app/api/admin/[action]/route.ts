@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, desc, eq, gte, lte, sql as sqlOp } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
+import {
+  authenticateAdminBearerToken,
+  clearAdminSessionCookie,
+  getAdminIdentityFromRequest,
+  isAdminRequestAuthenticated,
+  withAdminSessionCookie,
+} from "@/lib/server/admin-auth";
 
 export const runtime = "nodejs";
 
@@ -28,8 +35,104 @@ function getWeekBounds() {
   return { weekStart, weekEnd };
 }
 
+function unauthorizedResponse() {
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+function authMisconfiguredResponse(error: unknown) {
+  const message = error instanceof Error ? error.message : "Admin auth is misconfigured";
+  return NextResponse.json({ error: message }, { status: 500 });
+}
+
+function requireAdminAuth(req: NextRequest): NextResponse | null {
+  try {
+    if (!isAdminRequestAuthenticated(req)) {
+      return unauthorizedResponse();
+    }
+    return null;
+  } catch (error) {
+    return authMisconfiguredResponse(error);
+  }
+}
+
+function extractBearerToken(req: NextRequest): string | null {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader) {
+    return null;
+  }
+
+  const [scheme, token] = authHeader.split(" ");
+  if (!scheme || !token || scheme.toLowerCase() !== "bearer") {
+    return null;
+  }
+
+  return token.trim() || null;
+}
+
 async function dispatch(req: NextRequest, ctx: Ctx) {
   const { action } = await ctx.params;
+
+  if (action === "login") {
+    if (req.method !== "POST") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    try {
+      const token = extractBearerToken(req);
+      if (!token) {
+        return NextResponse.json({ error: "Missing bearer token" }, { status: 401 });
+      }
+
+      const result = await authenticateAdminBearerToken(token);
+      if (result.status === "invalid_token") {
+        return unauthorizedResponse();
+      }
+      if (result.status === "forbidden") {
+        return NextResponse.json(
+          { error: "Signed in account is not authorized for admin access" },
+          { status: 403 }
+        );
+      }
+
+      const response = NextResponse.json(
+        { authenticated: true, email: result.identity.email },
+        { status: 200 }
+      );
+      return withAdminSessionCookie(response, result.identity);
+    } catch (error) {
+      return authMisconfiguredResponse(error);
+    }
+  }
+
+  if (action === "logout") {
+    if (req.method !== "POST") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    const response = NextResponse.json({ authenticated: false }, { status: 200 });
+    return clearAdminSessionCookie(response);
+  }
+
+  if (action === "session") {
+    if (req.method !== "GET") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    try {
+      const identity = getAdminIdentityFromRequest(req);
+      return NextResponse.json(
+        { authenticated: !!identity, email: identity?.email ?? null },
+        { status: 200 }
+      );
+    } catch (error) {
+      return authMisconfiguredResponse(error);
+    }
+  }
+
+  const authFailure = requireAdminAuth(req);
+  if (authFailure) {
+    return authFailure;
+  }
 
   if (action === "config") {
     if (req.method === "GET") {
