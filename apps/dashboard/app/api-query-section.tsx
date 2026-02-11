@@ -24,11 +24,17 @@ type RequestHistoryItem = {
 };
 
 const API_ENDPOINTS: ApiEndpoint[] = [
-  { path: "/api/admin/stats", method: "GET", description: "Fetch admin statistics", requiresAuth: true },
+  // Health
+  { path: "/api/health", method: "GET", description: "Health check", requiresAuth: false },
+  // Admin (auth via session cookie)
+  { path: "/api/admin/session", method: "GET", description: "Check admin session", requiresAuth: false },
+  { path: "/api/admin/login", method: "POST", description: "Admin login (Bearer token)", requiresAuth: false },
+  { path: "/api/admin/logout", method: "POST", description: "Admin logout", requiresAuth: false },
+  { path: "/api/admin/stats", method: "GET", description: "Admin statistics (pool, donors, claims, users)", requiresAuth: true },
   { path: "/api/admin/config", method: "GET", description: "Get pool configuration", requiresAuth: true },
   {
     path: "/api/admin/config",
-    method: "POST",
+    method: "PATCH",
     description: "Update pool configuration",
     requiresAuth: true,
     bodyExample: JSON.stringify(
@@ -36,15 +42,109 @@ const API_ENDPOINTS: ApiEndpoint[] = [
         defaultWeeklyAllowance: 50,
         defaultClaimAmount: 10,
         codeExpiryMinutes: 5,
+        maxClaimsPerDay: 5,
+        minDonationAmount: 10,
+        maxDonationAmount: 500,
+        poolCalculationMethod: "equal",
       },
       null,
       2
     ),
   },
-  { path: "/api/health", method: "GET", description: "Health check endpoint", requiresAuth: false },
-  { path: "/api/donations/list", method: "GET", description: "List all donations", requiresAuth: false },
-  { path: "/api/claims/list", method: "GET", description: "List claim codes", requiresAuth: false },
-  { path: "/api/users/list", method: "GET", description: "List all users", requiresAuth: false },
+  // Claims
+  {
+    path: "/api/claims/generate",
+    method: "POST",
+    description: "Generate claim code for user",
+    requiresAuth: true,
+    bodyExample: JSON.stringify({ userId: "<user-id>", amount: 10 }, null, 2),
+  },
+  {
+    path: "/api/claims/history",
+    method: "GET",
+    description: "Claim history for user (?userId=)",
+    requiresAuth: true,
+  },
+  {
+    path: "/api/claims/refresh",
+    method: "POST",
+    description: "Refresh existing claim code",
+    requiresAuth: true,
+    bodyExample: JSON.stringify({ userId: "<user-id>", claimCodeId: "<claim-id>" }, null, 2),
+  },
+  // Donations
+  {
+    path: "/api/donations/set",
+    method: "POST",
+    description: "Set or update donor monthly amount",
+    requiresAuth: true,
+    bodyExample: JSON.stringify(
+      { userId: "<user-id>", amount: 25, userEmail: "donor@example.com" },
+      null,
+      2
+    ),
+  },
+  {
+    path: "/api/donations/impact",
+    method: "GET",
+    description: "Donor impact stats (?userId=)",
+    requiresAuth: true,
+  },
+  {
+    path: "/api/donations/pause",
+    method: "PATCH",
+    description: "Pause or resume donor",
+    requiresAuth: true,
+    bodyExample: JSON.stringify({ userId: "<user-id>", paused: true }, null, 2),
+  },
+  // GET (school point system)
+  { path: "/api/get/login-url", method: "GET", description: "GET Tools login URL", requiresAuth: false },
+  {
+    path: "/api/get/link-status",
+    method: "GET",
+    description: "GET link status (?userId=)",
+    requiresAuth: true,
+  },
+  {
+    path: "/api/get/accounts",
+    method: "GET",
+    description: "GET accounts for user (?userId=)",
+    requiresAuth: true,
+  },
+  {
+    path: "/api/get/link",
+    method: "POST",
+    description: "Link GET account (validatedUrl from GET redirect)",
+    requiresAuth: true,
+    bodyExample: JSON.stringify(
+      { userId: "<user-id>", userEmail: "user@example.com", validatedUrl: "https://..." },
+      null,
+      2
+    ),
+  },
+  {
+    path: "/api/get/link",
+    method: "DELETE",
+    description: "Unlink GET account (?userId=)",
+    requiresAuth: true,
+  },
+  // Requesters
+  {
+    path: "/api/requesters/allowance",
+    method: "GET",
+    description: "Current week allowance (user auth)",
+    requiresAuth: true,
+  },
+  // Users (app user profile; requires Bearer token)
+  { path: "/api/users/me", method: "GET", description: "Current user (Bearer token)", requiresAuth: true },
+  { path: "/api/users/profile", method: "GET", description: "User profile (Bearer token)", requiresAuth: true },
+  {
+    path: "/api/users/profile",
+    method: "PATCH",
+    description: "Update profile (Bearer token)",
+    requiresAuth: true,
+    bodyExample: JSON.stringify({ name: "Display Name", avatar_url: "https://..." }, null, 2),
+  },
 ];
 
 const METHOD_COLORS: Record<HttpMethod, { bg: string; text: string; border: string }> = {
