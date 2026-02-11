@@ -22,6 +22,10 @@ export default function SignIn() {
         options: {
           redirectTo: redirectUrl,
           skipBrowserRedirect: true,
+          queryParams: {
+            // Force Google to show account picker every time (don't reuse last account after logout)
+            prompt: 'select_account',
+          },
         },
       });
 
