@@ -1,0 +1,30 @@
+# Files and directories to include in git worktrees
+# These files will be copied from the main worktree to new worktrees
+
+# Environment configuration
+.env
+.env.example
+apps/dashboard/.env.local
+apps/dashboard/.env.example
+
+# Vercel configuration
+.vercel/
+.vercel/project.json
+apps/dashboard/.vercel/
+apps/dashboard/.vercel/project.json
+
+# Node modules (will be reinstalled via npm ci)
+# node_modules/
+
+# Package locks for consistent dependencies
+package-lock.json
+apps/dashboard/package-lock.json
+apps/mobile/package-lock.json
+
+# TypeScript configuration
+tsconfig.json
+apps/dashboard/tsconfig.json
+apps/mobile/tsconfig.json
+
+# Build configuration
+turbo.json
