@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 async function readApiError(response: Response, fallback: string): Promise<string> {
@@ -11,6 +13,17 @@ async function readApiError(response: Response, fallback: string): Promise<strin
     // Some upstream failures return plain text (for example, Vercel 502 pages).
     return bodyText.slice(0, 200) || fallback;
   }
+}
+
+async function getAuthHeaders(): Promise<HeadersInit> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`;
+  }
+
+  return headers;
 }
 
 export async function setDonation(userId: string, amount: number, userEmail?: string | null) {
@@ -55,7 +68,10 @@ export async function pauseDonation(userId: string, paused: boolean) {
 }
 
 export async function getRequesterAllowance(userId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/requesters/allowance?userId=${userId}`);
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/requesters/allowance?userId=${userId}`, {
+    headers,
+  });
 
   if (!response.ok) {
     const errorMessage = await readApiError(response, 'Failed to fetch allowance');

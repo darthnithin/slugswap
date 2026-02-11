@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
+import { createClient } from "@supabase/supabase-js";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 
 export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
+
+function getSupabaseClient() {
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase environment variables not configured");
+  }
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 function getCurrentWeek() {
   const now = new Date();
@@ -32,12 +42,40 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
   }
 
   try {
-    const userId = new URL(req.url).searchParams.get("userId");
-    if (!userId) {
-      return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+    // Verify auth token
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const supabase = getSupabaseClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
     }
 
     const { weekStart, weekEnd } = getCurrentWeek();
+
+    // Sync user from Supabase Auth to local database
+    await db
+      .insert(schema.users)
+      .values({
+        id: user.id,
+        email: user.email || `${user.id}@unknown.local`,
+        name: user.user_metadata?.name || null,
+        avatarUrl: user.user_metadata?.avatar_url || null,
+      })
+      .onConflictDoUpdate({
+        target: schema.users.id,
+        set: {
+          email: user.email || `${user.id}@unknown.local`,
+          name: user.user_metadata?.name || null,
+          avatarUrl: user.user_metadata?.avatar_url || null,
+          updatedAt: new Date(),
+        },
+      });
 
     let weeklyPool = await db
       .select()
@@ -64,7 +102,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       .from(schema.userAllowances)
       .where(
         and(
-          eq(schema.userAllowances.userId, userId),
+          eq(schema.userAllowances.userId, user.id),
           eq(schema.userAllowances.weeklyPoolId, weeklyPool[0].id)
         )
       )
@@ -75,7 +113,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       const [newAllowance] = await db
         .insert(schema.userAllowances)
         .values({
-          userId,
+          userId: user.id,
           weeklyPoolId: weeklyPool[0].id,
           weeklyLimit: DEFAULT_WEEKLY_LIMIT.toString(),
           usedAmount: "0",
