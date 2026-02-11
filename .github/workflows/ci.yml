@@ -32,7 +32,7 @@ jobs:
         run: npm run ci:check
 
   vercel-build-check:
-    name: Vercel Build Check
+    name: Vercel Dashboard Build Check
     runs-on: ubuntu-latest
 
     steps:
@@ -62,16 +62,16 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: Pull Vercel environment
+      - name: Pull Vercel dashboard environment
         if: steps.vercel-secrets.outputs.configured == 'true'
-        run: npx vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel pull --yes --environment=preview --cwd apps/dashboard --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: Build with Vercel
+      - name: Build dashboard with Vercel
         if: steps.vercel-secrets.outputs.configured == 'true'
-        run: npx vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel build --cwd apps/dashboard --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

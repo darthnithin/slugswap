@@ -4,10 +4,11 @@ A mobile app that helps university students share dining points.
 
 ## Tech Stack
 
-- **Frontend**: Expo Router (React Native) - iOS/Android mobile app
+- **Frontend (mobile)**: Expo Router (React Native)
+- **Frontend + API (web)**: Next.js (`apps/dashboard`)
 - **Database**: Neon (serverless Postgres) + Drizzle ORM
 - **Auth**: Supabase Auth with Google OAuth
-- **API Layer**: Vercel serverless functions
+- **Hosting**: Vercel
 - **External**: GET Tools API (school point system)
 
 ## Getting Started
@@ -34,9 +35,9 @@ A mobile app that helps university students share dining points.
 
 ### Development
 
-Start the Expo development server:
+Start the mobile app:
 ```bash
-npm start
+npm run mobile:start
 ```
 
 Then press:
@@ -44,24 +45,34 @@ Then press:
 - `a` for Android emulator
 - `w` for web
 
-### Project Structure
+Start the dashboard app:
+
+```bash
+npm run dashboard:dev -- -p 3001
+```
+
+Deploy dashboard preview:
+
+```bash
+npm run dashboard:deploy
+```
+
+Deploy dashboard production:
+
+```bash
+npm run dashboard:deploy:prod
+```
+
+### Project Structure (Current)
 
 ```
 slugswap/
-├── app/                    # Expo Router app directory
-│   ├── (tabs)/            # Tab navigation screens
-│   │   ├── donor.tsx      # Donor flow
-│   │   └── requester.tsx  # Requester flow
-│   ├── auth/              # Authentication screens
-│   ├── components/        # Shared components
-│   ├── lib/               # Utilities and helpers
-│   └── types/             # TypeScript types
-├── api/                    # Vercel serverless functions
-│   ├── auth/              # Auth endpoints
-│   ├── pool/              # Pool management
-│   └── claims/            # Claim code generation/redemption
-├── assets/                # Images, fonts, etc.
-└── CLAUDE.md             # Project instructions for AI assistants
+├── apps/
+│   ├── mobile/             # Expo mobile app
+│   └── dashboard/          # Next.js dashboard + API routes
+├── db/                     # Drizzle schema + migrations
+├── scripts/                # Project scripts
+└── .github/workflows/      # CI/CD workflows
 ```
 
 ## Product Releases
