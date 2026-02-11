@@ -1348,3 +1348,28 @@ body {
     border-right: none;
   }
 }
+
+/* Button utilities */
+.admin-root .btn-icon {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  background: transparent;
+}
+
+.admin-root .btn-icon:hover {
+  background: var(--hover-bg);
+}
+
+.admin-root .btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-root .btn-danger:hover {
+  background: #fee;
+  color: #d00;
+}

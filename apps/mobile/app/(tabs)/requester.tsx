@@ -3,6 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../../lib/supabase';
 import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode } from '../../../../lib/api';
+import { PDF417Barcode } from '../../components/PDF417Barcode';
 
 interface ClaimCode {
   id: string;
@@ -23,6 +24,7 @@ export default function RequesterScreen() {
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [refreshingCode, setRefreshingCode] = useState(false);
   const refreshingCodeRef = useRef(false);
+  const [isRefreshingData, setIsRefreshingData] = useState(false);
 
   useEffect(() => {
     loadUserAndAllowance();
@@ -101,8 +103,14 @@ export default function RequesterScreen() {
       Alert.alert('Error', 'Failed to load your allowance data');
     } finally {
       setLoading(false);
+      setIsRefreshingData(false);
     }
   }
+
+  const handleRefresh = async () => {
+    setIsRefreshingData(true);
+    await loadUserAndAllowance();
+  };
 
   const handleGenerateCode = async () => {
     if (!userId) return;
@@ -140,7 +148,20 @@ export default function RequesterScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.content}>
-        <Text style={styles.header}>Request Points</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.header}>Request Points</Text>
+          <TouchableOpacity
+            onPress={handleRefresh}
+            disabled={isRefreshingData}
+            style={styles.refreshButton}
+          >
+            {isRefreshingData ? (
+              <ActivityIndicator size="small" color="#007AFF" />
+            ) : (
+              <Text style={styles.refreshIcon}>↻</Text>
+            )}
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.allowanceCard}>
           <Text style={styles.cardTitle}>Weekly Allowance</Text>
@@ -159,9 +180,10 @@ export default function RequesterScreen() {
         {currentCode ? (
           <View style={styles.codeCard}>
             <Text style={styles.cardTitle}>Your Claim Code</Text>
-            <View style={styles.codeContainer}>
-              <Text style={styles.codeText}>{currentCode.code}</Text>
+            <View style={styles.barcodeContainer}>
+              <PDF417Barcode value={currentCode.code} width={280} height={100} />
             </View>
+            <Text style={styles.codeValueText}>{currentCode.code}</Text>
             <Text style={styles.expiryText}>Expires in {timeRemaining}</Text>
             <Text style={styles.instructionsText}>
               Show this code at the dining hall to redeem your points
@@ -225,10 +247,27 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 24,
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
   header: {
     fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 24,
+  },
+  refreshButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  refreshIcon: {
+    fontSize: 24,
+    color: '#007AFF',
   },
   allowanceCard: {
     backgroundColor: '#fff',
@@ -283,18 +322,22 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-  codeContainer: {
-    backgroundColor: '#f5f5f5',
-    padding: 24,
+  barcodeContainer: {
+    backgroundColor: '#fff',
+    padding: 16,
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
-  codeText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    letterSpacing: 4,
-    color: '#007AFF',
+  codeValueText: {
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 2,
+    color: '#666',
+    marginBottom: 12,
+    fontFamily: 'monospace',
   },
   expiryText: {
     textAlign: 'center',
