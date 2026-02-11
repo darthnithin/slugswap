@@ -1,0 +1,46 @@
+# THIS FILE IS BASED ON THE CODEX LOCAL ENVIRONMENTS FORMAT
+# See: https://developers.openai.com/codex/app/local-environments
+version = 1
+name = "slugswap"
+
+[setup]
+script = '''
+ROOT_WORKTREE_PATH="$(git worktree list --porcelain | awk '$1=="worktree"{print $2}' | grep -v '/\.codex/worktrees/' | head -n1)"
+
+npm ci
+
+if [ -n "$ROOT_WORKTREE_PATH" ] && [ -f "$ROOT_WORKTREE_PATH/.env" ]; then
+  cp "$ROOT_WORKTREE_PATH/.env" .env
+elif [ -f ".env.example" ]; then
+  cp ".env.example" .env
+fi
+
+if [ -n "$ROOT_WORKTREE_PATH" ] && [ -f "$ROOT_WORKTREE_PATH/.vercel/project.json" ]; then
+  mkdir -p .vercel
+  cp "$ROOT_WORKTREE_PATH/.vercel/project.json" .vercel/project.json
+fi
+
+if command -v vercel >/dev/null 2>&1; then
+  vercel pull --yes || true
+fi
+'''
+
+[[actions]]
+name = "Dashboard Dev"
+icon = "run"
+command = "npm run dev:dashboard"
+
+[[actions]]
+name = "Mobile Start"
+icon = "run"
+command = "npm run dev:mobile"
+
+[[actions]]
+name = "Typecheck"
+icon = "test"
+command = "npm run typecheck"
+
+[[actions]]
+name = "Drizzle Studio"
+icon = "tool"
+command = "npm run db:studio"

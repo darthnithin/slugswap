@@ -37,7 +37,7 @@ A mobile app that helps university students share dining points.
 
 Start the mobile app:
 ```bash
-npm run mobile:start
+npm run dev:mobile
 ```
 
 Then press:
@@ -48,19 +48,19 @@ Then press:
 Start the dashboard app:
 
 ```bash
-npm run dashboard:dev -- -p 3001
+npm run dev:dashboard -- -p 3001
 ```
 
 Deploy dashboard preview:
 
 ```bash
-npm run dashboard:deploy
+npm run deploy:dashboard
 ```
 
 Deploy dashboard production:
 
 ```bash
-npm run dashboard:deploy:prod
+npm run deploy:dashboard:prod
 ```
 
 ### Project Structure (Current)
