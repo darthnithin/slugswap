@@ -28,8 +28,6 @@
   },
   "include": [
     "api/**/*.ts",
-    "app/**/*.ts",
-    "app/**/*.tsx",
     "db/**/*.ts",
     "dev-server.ts",
     "drizzle.config.ts",
