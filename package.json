@@ -39,21 +39,23 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "@expo/cli": "^54.0.23",
+    "@expo/cli": "^55.0.0",
     "@neondatabase/serverless": "^1.0.2",
     "@supabase/supabase-js": "^2.95.3",
     "better-auth": "^1.4.18",
     "drizzle-orm": "^0.45.1",
     "next": "^15.5.6",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "vercel": "^50.14.0"
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "vercel": "^50.14.0",
+    "expo": "~55.0.0-preview.10",
+    "react-native": "0.83.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^24.3.0",
-    "@types/react": "~19.1.10",
+    "@types/react": "~19.2.2",
     "@vercel/node": "^5.6.0",
     "cors": "^2.8.6",
     "dotenv-cli": "^11.0.0",
