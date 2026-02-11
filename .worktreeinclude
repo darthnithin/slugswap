@@ -3,6 +3,7 @@
 
 # Environment configuration
 .env
+.env.*
 .env.example
 apps/dashboard/.env.local
 apps/dashboard/.env.example
