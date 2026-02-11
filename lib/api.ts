@@ -131,6 +131,21 @@ export async function refreshClaimCode(userId: string, claimCodeId: string) {
   }>;
 }
 
+export async function deleteClaimCode(userId: string, claimCodeId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/claims/delete`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, claimCodeId }),
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to delete claim');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{ success: boolean; message: string }>;
+}
+
 export async function getGetLoginUrl() {
   const response = await fetch(`${API_BASE_URL}/api/get/login-url`);
 
@@ -194,4 +209,35 @@ export async function getGetAccounts(userId: string) {
   }
 
   return response.json() as Promise<{ linked: boolean; accounts: Array<{ id: string; accountDisplayName: string; balance: number | null }> }>;
+}
+
+export async function getUserBalance(params: { name?: string; email?: string; userId?: string }) {
+  const headers = await getAuthHeaders();
+  const searchParams = new URLSearchParams();
+  if (params.name) searchParams.set('name', params.name);
+  if (params.email) searchParams.set('email', params.email);
+  if (params.userId) searchParams.set('userId', params.userId);
+
+  const response = await fetch(`${API_BASE_URL}/api/admin/user-balance?${searchParams.toString()}`, {
+    headers,
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to fetch user balance');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{
+    user: {
+      id: string;
+      email: string | null;
+      name: string | null;
+    };
+    getBalance: Array<{ id: string; accountDisplayName: string; balance: number | null }> | null;
+    weeklyAllowance: {
+      weeklyLimit: number;
+      usedAmount: number;
+      remainingAmount: number;
+    } | null;
+  }>;
 }

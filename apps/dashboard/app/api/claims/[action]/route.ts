@@ -233,11 +233,105 @@ async function handleRefresh(req: NextRequest) {
   }
 }
 
+async function handleDelete(req: NextRequest) {
+  if (req.method !== "DELETE") {
+    return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+  }
+
+  try {
+    const { userId, claimCodeId } = (await req.json()) as {
+      userId?: string;
+      claimCodeId?: string;
+    };
+
+    if (!userId || !claimCodeId) {
+      return NextResponse.json(
+        { error: "Missing userId or claimCodeId" },
+        { status: 400 }
+      );
+    }
+
+    // Fetch the claim to verify ownership and get amount
+    const claim = await db
+      .select()
+      .from(schema.claimCodes)
+      .where(and(eq(schema.claimCodes.id, claimCodeId), eq(schema.claimCodes.userId, userId)))
+      .limit(1);
+
+    if (claim.length === 0) {
+      return NextResponse.json({ error: "Claim code not found" }, { status: 404 });
+    }
+
+    const currentClaim = claim[0];
+
+    // Prevent deleting active or redeemed claims (only allow expired/cancelled)
+    if (currentClaim.status === "redeemed") {
+      return NextResponse.json(
+        { error: "Cannot delete redeemed claims" },
+        { status: 400 }
+      );
+    }
+
+    // If claim is still active, refund the allowance
+    if (currentClaim.status === "active" && currentClaim.expiresAt > new Date()) {
+      const claimAmount = parseFloat(currentClaim.amount);
+
+      // Find user's allowance for this week
+      const userAllowance = await db
+        .select()
+        .from(schema.userAllowances)
+        .where(
+          and(
+            eq(schema.userAllowances.userId, userId),
+            eq(schema.userAllowances.weeklyPoolId, currentClaim.weeklyPoolId)
+          )
+        )
+        .limit(1);
+
+      if (userAllowance.length > 0) {
+        const allowance = userAllowance[0];
+        const usedAmount = parseFloat(allowance.usedAmount);
+        const remainingAmount = parseFloat(allowance.remainingAmount);
+
+        // Refund the points
+        await db
+          .update(schema.userAllowances)
+          .set({
+            usedAmount: Math.max(0, usedAmount - claimAmount).toString(),
+            remainingAmount: (remainingAmount + claimAmount).toString(),
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.userAllowances.id, allowance.id));
+      }
+    }
+
+    // Delete the claim
+    await db
+      .delete(schema.claimCodes)
+      .where(eq(schema.claimCodes.id, claimCodeId));
+
+    return NextResponse.json(
+      {
+        success: true,
+        message: "Claim deleted successfully",
+      },
+      { status: 200 }
+    );
+  } catch (error: any) {
+    console.error("Error deleting claim:", error);
+    return NextResponse.json(
+      { error: error?.message || "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
 async function dispatch(req: NextRequest, ctx: Ctx) {
   const { action } = await ctx.params;
   if (action === "generate") return handleGenerate(req);
   if (action === "history") return handleHistory(req);
   if (action === "refresh") return handleRefresh(req);
+  if (action === "delete") return handleDelete(req);
   return NextResponse.json({ error: "Not found" }, { status: 404 });
 }
 

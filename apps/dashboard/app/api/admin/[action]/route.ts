@@ -500,6 +500,226 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     }
   }
 
+  if (action === "user-balance") {
+    if (req.method !== "GET") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    try {
+      const url = new URL(req.url);
+      const name = url.searchParams.get("name");
+      const email = url.searchParams.get("email");
+      const userId = url.searchParams.get("userId");
+
+      if (!name && !email && !userId) {
+        return NextResponse.json(
+          { error: "Must provide name, email, or userId" },
+          { status: 400 }
+        );
+      }
+
+      // Find user by name, email, or userId
+      let user;
+      if (userId) {
+        user = await db.query.users.findFirst({
+          where: eq(schema.users.id, userId),
+        });
+      } else if (email) {
+        user = await db.query.users.findFirst({
+          where: eq(schema.users.email, email),
+        });
+      } else if (name) {
+        // For name search, we need to use a raw query or filter manually
+        const allUsers = await db
+          .select()
+          .from(schema.users)
+          .where(sqlOp`LOWER(${schema.users.name}) LIKE LOWER(${`%${name}%`})`);
+        user = allUsers[0];
+      }
+
+      if (!user) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      // Get GET account balance
+      const getCredential = await db.query.getCredentials.findFirst({
+        where: eq(schema.getCredentials.userId, user.id),
+      });
+
+      let getBalance = null;
+      if (getCredential) {
+        try {
+          // Call the internal GET accounts API
+          const accountsResponse = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/api/get/accounts?userId=${user.id}`
+          );
+          if (accountsResponse.ok) {
+            const data = (await accountsResponse.json()) as {
+              accounts: Array<{ id: string; accountDisplayName: string; balance: number | null }>;
+            };
+            getBalance = data.accounts;
+          }
+        } catch (error) {
+          console.warn("Failed to fetch GET balance:", error);
+        }
+      }
+
+      // Get weekly allowance
+      const { weekStart, weekEnd } = getWeekBounds();
+      const currentPool = await db
+        .select()
+        .from(schema.weeklyPools)
+        .where(
+          and(
+            lte(schema.weeklyPools.weekStart, new Date()),
+            gte(schema.weeklyPools.weekEnd, new Date())
+          )
+        )
+        .limit(1);
+
+      let allowanceInfo = null;
+      if (currentPool.length > 0) {
+        const userAllowance = await db.query.userAllowances.findFirst({
+          where: and(
+            eq(schema.userAllowances.userId, user.id),
+            eq(schema.userAllowances.weeklyPoolId, currentPool[0].id)
+          ),
+        });
+        if (userAllowance) {
+          allowanceInfo = {
+            weeklyLimit: parseFloat(userAllowance.weeklyLimit),
+            usedAmount: parseFloat(userAllowance.usedAmount),
+            remainingAmount: parseFloat(userAllowance.remainingAmount),
+          };
+        }
+      }
+
+      return NextResponse.json(
+        {
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+          },
+          getBalance: getBalance,
+          weeklyAllowance: allowanceInfo,
+        },
+        { status: 200 }
+      );
+    } catch (error: any) {
+      console.error("Error fetching user balance:", error);
+      return NextResponse.json(
+        { error: error?.message || "Internal server error" },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (action === "update-allowance") {
+    if (req.method !== "POST") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    try {
+      const body = (await req.json()) as { userId: string; availablePoints: number };
+      const { userId, availablePoints } = body;
+
+      if (!userId || typeof availablePoints !== "number" || availablePoints < 0) {
+        return NextResponse.json(
+          { error: "Invalid userId or availablePoints" },
+          { status: 400 }
+        );
+      }
+
+      const { weekStart, weekEnd } = getWeekBounds();
+
+      // Find current weekly pool
+      const currentPool = await db
+        .select()
+        .from(schema.weeklyPools)
+        .where(
+          and(
+            lte(schema.weeklyPools.weekStart, new Date()),
+            gte(schema.weeklyPools.weekEnd, new Date())
+          )
+        )
+        .limit(1);
+
+      if (!currentPool.length) {
+        return NextResponse.json(
+          { error: "No active weekly pool found" },
+          { status: 404 }
+        );
+      }
+
+      const poolId = currentPool[0].id;
+
+      // Find existing allowance for this user and week
+      const existingAllowances = await db
+        .select()
+        .from(schema.userAllowances)
+        .where(
+          and(
+            eq(schema.userAllowances.userId, userId),
+            eq(schema.userAllowances.weeklyPoolId, poolId)
+          )
+        )
+        .limit(1);
+
+      let result;
+      if (existingAllowances.length > 0) {
+        // Update existing allowance - set remaining amount directly
+        const currentAllowance = existingAllowances[0];
+        const currentUsed = parseFloat(currentAllowance.usedAmount);
+
+        // Calculate new weekly limit based on available points + used amount
+        const newWeeklyLimit = availablePoints + currentUsed;
+
+        result = await db
+          .update(schema.userAllowances)
+          .set({
+            weeklyLimit: newWeeklyLimit.toString(),
+            remainingAmount: availablePoints.toString(),
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.userAllowances.id, currentAllowance.id))
+          .returning();
+      } else {
+        // Create new allowance
+        result = await db
+          .insert(schema.userAllowances)
+          .values({
+            userId,
+            weeklyPoolId: poolId,
+            weeklyLimit: availablePoints.toString(),
+            usedAmount: "0",
+            remainingAmount: availablePoints.toString(),
+          })
+          .returning();
+      }
+
+      return NextResponse.json(
+        {
+          message: "Allowance updated successfully",
+          allowance: {
+            id: result[0].id,
+            userId: result[0].userId,
+            weeklyLimit: parseFloat(result[0].weeklyLimit),
+            usedAmount: parseFloat(result[0].usedAmount),
+            remainingAmount: parseFloat(result[0].remainingAmount),
+          },
+        },
+        { status: 200 }
+      );
+    } catch (error: any) {
+      console.error("Error updating allowance:", error);
+      return NextResponse.json(
+        { error: error?.message || "Internal server error" },
+        { status: 500 }
+      );
+    }
+  }
+
   if (!action) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
