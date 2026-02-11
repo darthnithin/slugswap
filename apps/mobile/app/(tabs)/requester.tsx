@@ -1,8 +1,8 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '../../lib/supabase';
-import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode } from '../../lib/api';
+import { supabase } from '../../../../lib/supabase';
+import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode } from '../../../../lib/api';
 
 interface ClaimCode {
   id: string;

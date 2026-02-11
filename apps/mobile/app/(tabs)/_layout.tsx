@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Pressable, Text } from 'react-native';
-import { useAuth } from '../../lib/auth-context';
+import { useAuth } from '../../../../lib/auth-context';
 import { useState } from 'react';
 
 export default function TabsLayout() {

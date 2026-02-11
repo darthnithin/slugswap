@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { AuthProvider } from '../lib/auth-context';
+import { AuthProvider } from '../../../lib/auth-context';
 import { useEffect } from 'react';
 import { Text, View } from 'react-native';
 

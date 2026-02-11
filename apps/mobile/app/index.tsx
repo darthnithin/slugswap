@@ -1,5 +1,5 @@
 import { View, ActivityIndicator, Text } from 'react-native';
-import { useAuth } from '../lib/auth-context';
+import { useAuth } from '../../../lib/auth-context';
 
 export default function Index() {
   const { isLoading } = useAuth();
