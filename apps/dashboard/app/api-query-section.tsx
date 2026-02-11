@@ -31,6 +31,12 @@ const API_ENDPOINTS: ApiEndpoint[] = [
   { path: "/api/admin/login", method: "POST", description: "Admin login (Bearer token)", requiresAuth: false },
   { path: "/api/admin/logout", method: "POST", description: "Admin logout", requiresAuth: false },
   { path: "/api/admin/stats", method: "GET", description: "Admin statistics (pool, donors, claims, users)", requiresAuth: true },
+  {
+    path: "/api/admin/users",
+    method: "GET",
+    description: "List users (?limit=50&offset=0)",
+    requiresAuth: true,
+  },
   { path: "/api/admin/config", method: "GET", description: "Get pool configuration", requiresAuth: true },
   {
     path: "/api/admin/config",

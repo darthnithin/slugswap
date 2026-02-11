@@ -200,6 +200,58 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
   }
 
+  if (action === "users") {
+    if (req.method !== "GET") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+    try {
+      const url = new URL(req.url);
+      const limit = Math.min(500, Math.max(1, parseInt(url.searchParams.get("limit") ?? "50", 10) || 50));
+      const offset = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10) || 0);
+
+      const [rows, countResult] = await Promise.all([
+        db
+          .select({
+            id: schema.users.id,
+            email: schema.users.email,
+            name: schema.users.name,
+            avatarUrl: schema.users.avatarUrl,
+            createdAt: schema.users.createdAt,
+            updatedAt: schema.users.updatedAt,
+          })
+          .from(schema.users)
+          .orderBy(desc(schema.users.updatedAt))
+          .limit(limit)
+          .offset(offset),
+        db.select({ count: sqlOp<number>`count(*)` }).from(schema.users),
+      ]);
+
+      const total = Number(countResult[0]?.count ?? 0);
+      return NextResponse.json(
+        {
+          users: rows.map((u) => ({
+            id: u.id,
+            email: u.email,
+            name: u.name ?? null,
+            avatarUrl: u.avatarUrl ?? null,
+            createdAt: u.createdAt.toISOString(),
+            updatedAt: u.updatedAt.toISOString(),
+          })),
+          total,
+          limit,
+          offset,
+        },
+        { status: 200 }
+      );
+    } catch (error: unknown) {
+      console.error("Error listing users:", error);
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Internal server error" },
+        { status: 500 }
+      );
+    }
+  }
+
   if (action === "stats") {
     if (req.method !== "GET") {
       return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
