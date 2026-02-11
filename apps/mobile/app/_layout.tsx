@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '../../../lib/auth-context';
 import { useEffect } from 'react';
 import { Text, View } from 'react-native';
@@ -15,15 +16,17 @@ export default function RootLayout() {
   // Error boundary for debugging
   try {
     return (
-      <AuthProvider>
-        <StatusBar style="auto" />
+      <SafeAreaProvider>
+        <AuthProvider>
+          <StatusBar style="auto" />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="auth/sign-in" />
           <Stack.Screen name="auth/callback" />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         </Stack>
-      </AuthProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
     );
   } catch (error) {
     console.error('Error in RootLayout:', error);
