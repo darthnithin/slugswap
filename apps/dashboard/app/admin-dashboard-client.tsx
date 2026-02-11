@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiQuerySection } from "./api-query-section";
 
-type NavSection = "overview" | "pool" | "claims" | "config" | "donors" | "api";
+type NavSection = "overview" | "pool" | "claims" | "config" | "donors" | "api" | "users";
 type ClaimStatus = "redeemed" | "pending" | "active" | "expired";
 
 type ClaimAggregate = {
@@ -101,6 +101,7 @@ const SECTION_TITLES: Record<NavSection, string> = {
   config: "Configuration",
   donors: "Donors",
   api: "API Query",
+  users: "User Management",
 };
 
 function formatNum(n: number | string | null | undefined): string {
@@ -173,6 +174,7 @@ export default function DashboardHomePage() {
   const configSectionRef = useRef<HTMLDivElement | null>(null);
   const donorsSectionRef = useRef<HTMLDivElement | null>(null);
   const apiSectionRef = useRef<HTMLDivElement | null>(null);
+  const usersSectionRef = useRef<HTMLDivElement | null>(null);
   const hasLoadedRef = useRef(false);
 
   const [statsData, setStatsData] = useState<AdminStatsResponse | null>(null);
@@ -187,6 +189,11 @@ export default function DashboardHomePage() {
   const [lastUpdated, setLastUpdated] = useState("—");
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [users, setUsers] = useState<Array<{ id: string; email: string; name: string | null }>>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [newAllowance, setNewAllowance] = useState<string>("");
+  const [isUpdatingAllowance, setIsUpdatingAllowance] = useState(false);
+  const [deletingClaimId, setDeletingClaimId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setIsRefreshing(true);
@@ -239,8 +246,26 @@ export default function DashboardHomePage() {
     }
   }, [router]);
 
+  const fetchUsers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/users?limit=100", { cache: "no-store" });
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(await readApiError(res));
+      }
+      const data = (await res.json()) as { users: Array<{ id: string; email: string; name: string | null }> };
+      setUsers(data.users);
+    } catch (err) {
+      console.error("Error fetching users:", err);
+    }
+  }, [router]);
+
   useEffect(() => {
     void fetchData();
+    void fetchUsers();
     const interval = window.setInterval(() => {
       void fetchData();
     }, 30_000);
@@ -248,7 +273,7 @@ export default function DashboardHomePage() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [fetchData]);
+  }, [fetchData, fetchUsers]);
 
   useEffect(() => {
     if (!toast) return;
@@ -294,6 +319,11 @@ export default function DashboardHomePage() {
 
     if (section === "api") {
       apiSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (section === "users") {
+      usersSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
 
@@ -369,6 +399,83 @@ export default function DashboardHomePage() {
       setIsLoggingOut(false);
     }
   }, []);
+
+  const handleUpdateAllowance = useCallback(async () => {
+    if (!selectedUserId || !newAllowance) {
+      setToast("Please select a user and enter an allowance");
+      return;
+    }
+
+    const allowanceNum = parseFloat(newAllowance);
+    if (Number.isNaN(allowanceNum) || allowanceNum < 0) {
+      setToast("Invalid allowance amount");
+      return;
+    }
+
+    setIsUpdatingAllowance(true);
+    try {
+      const res = await fetch("/api/admin/update-allowance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: selectedUserId,
+          availablePoints: allowanceNum,
+        }),
+      });
+
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(await readApiError(res));
+      }
+
+      const result = await res.json();
+      setToast(`Available points updated to ${allowanceNum} points`);
+      setSelectedUserId("");
+      setNewAllowance("");
+      void fetchData(); // Refresh to show updated data
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Update failed";
+      setToast(`Failed to update allowance — ${message}`);
+    } finally {
+      setIsUpdatingAllowance(false);
+    }
+  }, [selectedUserId, newAllowance, router, fetchData]);
+
+  const handleDeleteClaim = useCallback(async (claimId: string, userId: string) => {
+    if (!window.confirm("Are you sure you want to delete this claim? If it hasn't been redeemed, the points will be refunded.")) {
+      return;
+    }
+
+    setDeletingClaimId(claimId);
+    try {
+      const res = await fetch("/api/claims/delete", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, claimCodeId: claimId }),
+      });
+
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(await readApiError(res));
+      }
+
+      setToast("Claim deleted successfully");
+      void fetchData();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Delete failed";
+      setToast(`Failed to delete claim — ${message}`);
+    } finally {
+      setDeletingClaimId(null);
+    }
+  }, [router, fetchData]);
 
   const poolMetrics = useMemo(() => {
     if (!statsData) {
@@ -488,6 +595,14 @@ export default function DashboardHomePage() {
             >
               <span className="nav-icon">⚙</span>
               Configuration
+            </button>
+            <button
+              type="button"
+              className={`nav-item${activeSection === "users" ? " active" : ""}`}
+              onClick={() => handleNavClick("users")}
+            >
+              <span className="nav-icon">👤</span>
+              User Allowances
             </button>
             <button
               type="button"
@@ -996,6 +1111,76 @@ export default function DashboardHomePage() {
                 </div>
               </div>
 
+              <div className="section" ref={usersSectionRef}>
+                <div className="section-header">
+                  <span className="section-title">User Allowance Management</span>
+                  <span className="section-subtitle">Set available points for users (updates remaining allowance)</span>
+                </div>
+                <div className="card" style={{ animationDelay: "0.48s" }}>
+                  <div className="config-grid">
+                    <div className="config-item">
+                      <label className="config-label" htmlFor="user-select">
+                        Select User
+                      </label>
+                      <select
+                        id="user-select"
+                        className="config-select"
+                        value={selectedUserId}
+                        onChange={(event) => setSelectedUserId(event.target.value)}
+                      >
+                        <option value="">Choose a user...</option>
+                        {users.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.name || user.email}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="config-item">
+                      <label className="config-label" htmlFor="new-allowance">
+                        Available Points (Remaining This Week)
+                      </label>
+                      <div className="config-input-wrap">
+                        <input
+                          id="new-allowance"
+                          className="config-input"
+                          type="number"
+                          min={0}
+                          max={1000}
+                          value={newAllowance}
+                          onChange={(event) => setNewAllowance(event.target.value)}
+                          placeholder="Enter points"
+                        />
+                        <span className="config-unit">pts</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="config-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => {
+                        setSelectedUserId("");
+                        setNewAllowance("");
+                      }}
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => {
+                        void handleUpdateAllowance();
+                      }}
+                      disabled={isUpdatingAllowance || !selectedUserId || !newAllowance}
+                    >
+                      {isUpdatingAllowance ? "Updating..." : "Update Allowance"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div className="section" ref={apiSectionRef}>
                 <div className="section-header">
                   <span className="section-title">API Observatory</span>
@@ -1020,6 +1205,7 @@ export default function DashboardHomePage() {
                           <th>Amount</th>
                           <th>Status</th>
                           <th>Time</th>
+                          <th></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1048,12 +1234,23 @@ export default function DashboardHomePage() {
                                 <td style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
                                   {timeAgo(claim.createdAt)}
                                 </td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="btn-icon btn-danger"
+                                    onClick={() => handleDeleteClaim(claim.id, claim.userId)}
+                                    disabled={deletingClaimId === claim.id}
+                                    title="Delete claim"
+                                  >
+                                    {deletingClaimId === claim.id ? "..." : "🗑️"}
+                                  </button>
+                                </td>
                               </tr>
                             );
                           })
                         ) : (
                           <tr>
-                            <td colSpan={4} className="empty-state">
+                            <td colSpan={5} className="empty-state">
                               No claims yet
                             </td>
                           </tr>
