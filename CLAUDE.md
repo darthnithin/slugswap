@@ -103,6 +103,10 @@ Copy `.env.example` to `.env` and fill in values. Key groups:
 - `GET_*` — GET Tools API credentials and encryption secret
 - `ADMIN_EMAIL_ALLOWLIST` / `ADMIN_SESSION_SECRET` — Dashboard admin auth
 
+## Pull Requests
+
+When creating PRs, include "Coäuthored with Claude" in the PR body.
+
 ## Prioritization (from product spec)
 
 When making implementation decisions, follow this order:
