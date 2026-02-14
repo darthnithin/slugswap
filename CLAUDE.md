@@ -42,6 +42,13 @@ npm run mobile:eas:testflight  # Build iOS + submit to TestFlight
 npm run mobile:eas:update      # OTA update to production channel
 ```
 
+### Troubleshooting
+```bash
+npx expo-doctor                # Check for dependency issues, version mismatches, and configuration problems
+```
+
+Run `expo-doctor` when you encounter build errors or after upgrading packages to validate the setup.
+
 No test framework is configured. No linter is configured.
 
 ## Architecture

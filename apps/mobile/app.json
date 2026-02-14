@@ -7,6 +7,9 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -14,7 +17,11 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.slugswap"
+      "bundleIdentifier": "com.anonymous.slugswap",
+      "buildNumber": "5",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -30,6 +37,16 @@
     "scheme": "slugswap",
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a0a8a9f3-0326-4767-b97d-d610d058d094"
+      }
+    },
+    "owner": "darthnithin",
+    "updates": {
+      "url": "https://u.expo.dev/a0a8a9f3-0326-4767-b97d-d610d058d094"
+    }
   }
 }
