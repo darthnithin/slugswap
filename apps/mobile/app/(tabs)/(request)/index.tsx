@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../../../lib/supabase';
 import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode } from '../../../../../lib/api';
 import { PDF417Barcode } from '../../../components/PDF417Barcode';
+import { useTabCache } from '../../../../../lib/tab-cache-context';
 
 interface ClaimCode {
   id: string;
@@ -37,15 +38,14 @@ function Card({ children, style }: { children: React.ReactNode; style?: any }) {
   );
 }
 
-let hasLoadedOnce = false;
-
 export default function RequesterScreen() {
+  const { hasLoadedRequest, markRequestLoaded } = useTabCache();
   const [weeklyAllowance, setWeeklyAllowance] = useState(0);
   const [remainingAllowance, setRemainingAllowance] = useState(0);
   const [daysUntilReset, setDaysUntilReset] = useState(0);
   const [currentCode, setCurrentCode] = useState<ClaimCode | null>(null);
   const [claimHistory, setClaimHistory] = useState<any[]>([]);
-  const [loading, setLoading] = useState(!hasLoadedOnce);
+  const [loading, setLoading] = useState(!hasLoadedRequest);
   const [generating, setGenerating] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
@@ -55,7 +55,7 @@ export default function RequesterScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    if (hasLoadedOnce) return;
+    if (hasLoadedRequest) return;
     loadUserAndAllowance();
   }, []);
 
@@ -131,7 +131,7 @@ export default function RequesterScreen() {
     } finally {
       setLoading(false);
       setIsRefreshingData(false);
-      hasLoadedOnce = true;
+      markRequestLoaded();
     }
   }
 

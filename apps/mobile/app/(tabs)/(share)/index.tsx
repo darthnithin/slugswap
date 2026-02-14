@@ -7,6 +7,7 @@ import { useAuth } from '../../../../../lib/auth-context';
 import { supabase } from '../../../../../lib/supabase';
 import { setDonation, getDonorImpact, pauseDonation, getGetAccounts, getGetLinkStatus, getGetLoginUrl, linkGetAccount, unlinkGetAccount } from '../../../../../lib/api';
 import * as WebBrowser from 'expo-web-browser';
+import { useTabCache } from '../../../../../lib/tab-cache-context';
 
 interface GetAccountBalance {
   id: string;
@@ -43,13 +44,12 @@ function Card({ children, style }: { children: React.ReactNode; style?: any }) {
   );
 }
 
-let hasLoadedOnce = false;
-
 export default function DonorScreen() {
   const { signOut } = useAuth();
+  const { hasLoadedShare, markShareLoaded } = useTabCache();
   const [monthlyAmount, setMonthlyAmount] = useState('');
   const [isActive, setIsActive] = useState(false);
-  const [loading, setLoading] = useState(!hasLoadedOnce);
+  const [loading, setLoading] = useState(!hasLoadedShare);
   const [saving, setSaving] = useState(false);
   const [impact, setImpact] = useState({ peopleHelped: 0, pointsContributed: 0 });
   const [userId, setUserId] = useState<string | null>(null);
@@ -79,7 +79,7 @@ export default function DonorScreen() {
   }, 0);
 
   useEffect(() => {
-    if (hasLoadedOnce) return;
+    if (hasLoadedShare) return;
     loadUserAndImpact();
   }, []);
 
@@ -120,7 +120,7 @@ export default function DonorScreen() {
       Alert.alert('Error', 'Failed to load your donation data');
     } finally {
       setLoading(false);
-      hasLoadedOnce = true;
+      markShareLoaded();
     }
   }
 
