@@ -27,6 +27,7 @@
     "mobile:start": "npm run start:mobile",
     "mobile:android": "npm run android",
     "mobile:ios": "npm run ios",
+    "mobile:ios:release": "dotenv -e .env -- npm run ios:release -w @slugswap/mobile --",
     "mobile:web": "npm run web",
     "dashboard:dev": "npm run dev:dashboard",
     "dashboard:build": "npm run build:dashboard",
