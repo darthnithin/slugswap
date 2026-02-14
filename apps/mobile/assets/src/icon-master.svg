@@ -1,0 +1,12 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='1024' height='1024' viewBox='0 0 1024 1024'>
+  <rect width='1024' height='1024' fill='#111217'/>
+  <g aria-label='SS monogram'>
+    <text x='512' dx='-60' y='700' text-anchor='middle' fill='#F3F4F6' font-family='Instrument Serif' font-size='700'>S</text>
+    <text x='512' dx='60' y='700' text-anchor='middle' fill='#C99A3A' font-family='Instrument Serif' font-size='700'>S</text>
+    <!-- Bring white stroke above gold only at the lower crossing to create an interlock effect -->
+    <clipPath id='lower-crossing'>
+      <rect x='360' y='580' width='320' height='220'/>
+    </clipPath>
+    <text x='512' dx='-60' y='700' text-anchor='middle' fill='#F3F4F6' font-family='Instrument Serif' font-size='700' clip-path='url(#lower-crossing)'>S</text>
+  </g>
+</svg>
