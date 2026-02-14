@@ -85,17 +85,17 @@ export default function DonorScreen() {
     loadUserAndImpact();
   }, []);
 
-  // Reload GET link status when tab comes back into focus
+  // Reload all data when tab comes back into focus (workaround for component remounting)
   useFocusEffect(
     useCallback(() => {
       if (!hasLoadedShare) return; // Don't reload if initial load hasn't happened
 
-      // Only refresh GET link status, not everything
       (async () => {
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) return;
 
+          // Reload GET link status
           const linkState = await getGetLinkStatus(user.id);
           setIsGetLinked(linkState.linked);
           setGetLinkedAt(linkState.linkedAt);
@@ -110,8 +110,17 @@ export default function DonorScreen() {
           } else {
             setGetAccounts([]);
           }
+
+          // Reload donation/impact data
+          const impactData = await getDonorImpact(user.id);
+          setIsActive(impactData.isActive);
+          setMonthlyAmount(impactData.monthlyAmount > 0 ? impactData.monthlyAmount.toString() : '');
+          setImpact({
+            peopleHelped: impactData.peopleHelped,
+            pointsContributed: impactData.pointsContributed,
+          });
         } catch (error) {
-          console.error('Error refreshing GET status:', error);
+          console.error('Error refreshing data on focus:', error);
         }
       })();
     }, [hasLoadedShare])
