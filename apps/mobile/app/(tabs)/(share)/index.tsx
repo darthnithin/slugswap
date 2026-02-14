@@ -8,6 +8,7 @@ import { supabase } from '../../../../../lib/supabase';
 import { setDonation, getDonorImpact, pauseDonation, getGetAccounts, getGetLinkStatus, getGetLoginUrl, linkGetAccount, unlinkGetAccount } from '../../../../../lib/api';
 import * as WebBrowser from 'expo-web-browser';
 import { useTabCache } from '../../../../../lib/tab-cache-context';
+import { useFocusEffect } from 'expo-router';
 
 interface GetAccountBalance {
   id: string;
@@ -78,10 +79,43 @@ export default function DonorScreen() {
     return sum + account.balance;
   }, 0);
 
+  // Load on first mount
   useEffect(() => {
     if (hasLoadedShare) return;
     loadUserAndImpact();
   }, []);
+
+  // Reload GET link status when tab comes back into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasLoadedShare) return; // Don't reload if initial load hasn't happened
+
+      // Only refresh GET link status, not everything
+      (async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+
+          const linkState = await getGetLinkStatus(user.id);
+          setIsGetLinked(linkState.linked);
+          setGetLinkedAt(linkState.linkedAt);
+
+          if (linkState.linked) {
+            try {
+              const accounts = await getGetAccounts(user.id);
+              setGetAccounts(accounts.accounts || []);
+            } catch {
+              setGetAccounts([]);
+            }
+          } else {
+            setGetAccounts([]);
+          }
+        } catch (error) {
+          console.error('Error refreshing GET status:', error);
+        }
+      })();
+    }, [hasLoadedShare])
+  );
 
   async function loadUserAndImpact() {
     try {
