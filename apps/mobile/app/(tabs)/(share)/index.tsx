@@ -265,6 +265,111 @@ export default function DonorScreen() {
         contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 32 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
+        {/* Show Contribution/Impact first if GET is already linked */}
+        {isGetLinked && !isActive && (
+          <Card>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 4 }}>
+              Set Monthly Contribution
+            </Text>
+            <Text style={{ fontSize: 14, color: PlatformColor('secondaryLabel'), marginBottom: 20 }}>
+              Your contribution goes to a weekly pool that helps fellow students
+            </Text>
+
+            <View style={{ gap: 8, marginBottom: 20 }}>
+              <Text style={{ fontSize: 14, fontWeight: '500', color: PlatformColor('label') }}>Monthly Amount (points)</Text>
+              <TextInput
+                style={{
+                  borderWidth: 0.5,
+                  borderColor: PlatformColor('separator'),
+                  borderRadius: 10,
+                  borderCurve: 'continuous',
+                  padding: 12,
+                  fontSize: 16,
+                  color: PlatformColor('label'),
+                  backgroundColor: PlatformColor('secondarySystemGroupedBackground'),
+                }}
+                value={monthlyAmount}
+                onChangeText={setMonthlyAmount}
+                keyboardType="numeric"
+                placeholder="e.g., 100"
+                placeholderTextColor={PlatformColor('placeholderText')}
+              />
+            </View>
+
+            <Pressable
+              onPress={handleSetContribution}
+              disabled={saving}
+              style={({ pressed }) => ({
+                alignItems: 'center',
+                paddingVertical: 14,
+                borderRadius: 10,
+                borderCurve: 'continuous',
+                backgroundColor: PlatformColor('systemBlue'),
+                opacity: pressed ? 0.7 : saving ? 0.5 : 1,
+              })}
+            >
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Start Sharing</Text>
+              )}
+            </Pressable>
+          </Card>
+        )}
+
+        {isGetLinked && isActive && (
+          <Card>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 16 }}>
+              Your Impact
+            </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20 }}>
+              <View style={{ alignItems: 'center' }}>
+                <Text selectable style={{ fontSize: 32, fontWeight: 'bold', color: PlatformColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
+                  {impact.peopleHelped}
+                </Text>
+                <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel'), marginTop: 4 }}>People Helped</Text>
+              </View>
+              <View style={{ alignItems: 'center' }}>
+                <Text selectable style={{ fontSize: 32, fontWeight: 'bold', color: PlatformColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
+                  {monthlyAmount}
+                </Text>
+                <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel'), marginTop: 4 }}>Points/Month</Text>
+              </View>
+            </View>
+
+            <Pressable
+              onPress={handlePause}
+              disabled={saving}
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                paddingVertical: 14,
+                borderRadius: 10,
+                borderCurve: 'continuous',
+                backgroundColor: PlatformColor('tertiarySystemFill'),
+                opacity: pressed ? 0.7 : saving ? 0.5 : 1,
+              })}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color={PlatformColor('systemBlue')} />
+              ) : (
+                <>
+                  <SymbolView
+                    name={isActive ? 'pause.fill' : 'play.fill'}
+                    tintColor={PlatformColor('systemBlue')}
+                    size={14}
+                  />
+                  <Text style={{ color: PlatformColor('systemBlue'), fontSize: 16, fontWeight: '600' }}>
+                    {isActive ? 'Pause' : 'Resume'} Sharing
+                  </Text>
+                </>
+              )}
+            </Pressable>
+          </Card>
+        )}
+
         {/* GET Account Balance Card */}
         <Card>
           <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 12 }}>
@@ -434,109 +539,6 @@ export default function DonorScreen() {
             </View>
           )}
         </Card>
-
-        {/* Contribution / Impact Card */}
-        {!isActive ? (
-          <Card>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 4 }}>
-              Set Monthly Contribution
-            </Text>
-            <Text style={{ fontSize: 14, color: PlatformColor('secondaryLabel'), marginBottom: 20 }}>
-              Your contribution goes to a weekly pool that helps fellow students
-            </Text>
-
-            <View style={{ gap: 8, marginBottom: 20 }}>
-              <Text style={{ fontSize: 14, fontWeight: '500', color: PlatformColor('label') }}>Monthly Amount (points)</Text>
-              <TextInput
-                style={{
-                  borderWidth: 0.5,
-                  borderColor: PlatformColor('separator'),
-                  borderRadius: 10,
-                  borderCurve: 'continuous',
-                  padding: 12,
-                  fontSize: 16,
-                  color: PlatformColor('label'),
-                  backgroundColor: PlatformColor('secondarySystemGroupedBackground'),
-                }}
-                value={monthlyAmount}
-                onChangeText={setMonthlyAmount}
-                keyboardType="numeric"
-                placeholder="e.g., 100"
-                placeholderTextColor={PlatformColor('placeholderText')}
-              />
-            </View>
-
-            <Pressable
-              onPress={handleSetContribution}
-              disabled={saving}
-              style={({ pressed }) => ({
-                alignItems: 'center',
-                paddingVertical: 14,
-                borderRadius: 10,
-                borderCurve: 'continuous',
-                backgroundColor: PlatformColor('systemBlue'),
-                opacity: pressed ? 0.7 : saving ? 0.5 : 1,
-              })}
-            >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Start Sharing</Text>
-              )}
-            </Pressable>
-          </Card>
-        ) : (
-          <Card>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 16 }}>
-              Your Impact
-            </Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20 }}>
-              <View style={{ alignItems: 'center' }}>
-                <Text selectable style={{ fontSize: 32, fontWeight: 'bold', color: PlatformColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
-                  {impact.peopleHelped}
-                </Text>
-                <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel'), marginTop: 4 }}>People Helped</Text>
-              </View>
-              <View style={{ alignItems: 'center' }}>
-                <Text selectable style={{ fontSize: 32, fontWeight: 'bold', color: PlatformColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
-                  {monthlyAmount}
-                </Text>
-                <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel'), marginTop: 4 }}>Points/Month</Text>
-              </View>
-            </View>
-
-            <Pressable
-              onPress={handlePause}
-              disabled={saving}
-              style={({ pressed }) => ({
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                paddingVertical: 14,
-                borderRadius: 10,
-                borderCurve: 'continuous',
-                backgroundColor: PlatformColor('tertiarySystemFill'),
-                opacity: pressed ? 0.7 : saving ? 0.5 : 1,
-              })}
-            >
-              {saving ? (
-                <ActivityIndicator size="small" color={PlatformColor('systemBlue')} />
-              ) : (
-                <>
-                  <SymbolView
-                    name={isActive ? 'pause.fill' : 'play.fill'}
-                    tintColor={PlatformColor('systemBlue')}
-                    size={14}
-                  />
-                  <Text style={{ color: PlatformColor('systemBlue'), fontSize: 16, fontWeight: '600' }}>
-                    {isActive ? 'Pause' : 'Resume'} Sharing
-                  </Text>
-                </>
-              )}
-            </Pressable>
-          </Card>
-        )}
 
         {/* Log Out */}
         <Pressable
