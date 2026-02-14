@@ -76,8 +76,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('Redirecting to sign-in');
       router.replace('/auth/sign-in');
     } else if (session && (inAuthGroup || pathname === '/')) {
-      console.log('Redirecting to donor tab');
-      router.replace('/(tabs)/donor');
+      console.log('Redirecting to share tab');
+      router.replace('/(tabs)/(share)');
     }
   }, [session, segments, isLoading, initialized, pathname]);
 

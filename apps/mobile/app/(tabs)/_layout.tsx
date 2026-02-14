@@ -1,52 +1,20 @@
-import { Tabs } from 'expo-router';
-import { Pressable, Text } from 'react-native';
-import { useAuth } from '../../../../lib/auth-context';
-import { useState } from 'react';
+import {
+  NativeTabs,
+  Icon,
+  Label,
+} from "expo-router/unstable-native-tabs";
 
-export default function TabsLayout() {
-  const { signOut } = useAuth();
-  const [isSigningOut, setIsSigningOut] = useState(false);
-
-  const handleSignOut = async () => {
-    if (isSigningOut) return;
-    setIsSigningOut(true);
-    try {
-      await signOut();
-    } finally {
-      setIsSigningOut(false);
-    }
-  };
-
+export default function TabLayout() {
   return (
-    <Tabs screenOptions={{
-      headerShown: true,
-      tabBarActiveTintColor: '#007AFF',
-      headerRight: () => (
-        <Pressable
-          onPress={handleSignOut}
-          style={{ paddingHorizontal: 12, paddingVertical: 6, opacity: isSigningOut ? 0.6 : 1 }}
-          disabled={isSigningOut}
-        >
-          <Text style={{ color: '#007AFF', fontWeight: '600' }}>
-            {isSigningOut ? 'Logging out...' : 'Log out'}
-          </Text>
-        </Pressable>
-      ),
-    }}>
-      <Tabs.Screen
-        name="donor"
-        options={{
-          title: 'Share',
-          tabBarIcon: () => null, // TODO: Add icons
-        }}
-      />
-      <Tabs.Screen
-        name="requester"
-        options={{
-          title: 'Request',
-          tabBarIcon: () => null,
-        }}
-      />
-    </Tabs>
+    <NativeTabs minimizeBehavior="onScrollDown">
+      <NativeTabs.Trigger name="(share)">
+        <Icon sf={{ default: "heart", selected: "heart.fill" }} />
+        <Label>Share</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="(request)">
+        <Icon sf={{ default: "hand.raised", selected: "hand.raised.fill" }} />
+        <Label>Request</Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }

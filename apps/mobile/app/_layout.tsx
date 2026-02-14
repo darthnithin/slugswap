@@ -1,32 +1,27 @@
-import { Stack } from 'expo-router';
+import { Stack } from 'expo-router/stack';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '../../../lib/auth-context';
 import { useEffect } from 'react';
 import { Text, View } from 'react-native';
 
 export default function RootLayout() {
-  // Debug: Check if env vars are loaded
   useEffect(() => {
     console.log('Environment check:');
     console.log('SUPABASE_URL:', process.env.EXPO_PUBLIC_SUPABASE_URL ? 'SET' : 'MISSING');
     console.log('SUPABASE_KEY:', process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ? 'SET' : 'MISSING');
   }, []);
 
-  // Error boundary for debugging
   try {
     return (
-      <SafeAreaProvider>
-        <AuthProvider>
-          <StatusBar style="auto" />
+      <AuthProvider>
+        <StatusBar style="auto" />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="auth/sign-in" />
           <Stack.Screen name="auth/callback" />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" />
         </Stack>
-        </AuthProvider>
-      </SafeAreaProvider>
+      </AuthProvider>
     );
   } catch (error) {
     console.error('Error in RootLayout:', error);
