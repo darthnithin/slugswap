@@ -34,6 +34,34 @@ type RetrieveAccountsResponse =
       planName?: string;
     };
 
+function formatGetLinkError(error: any): { status: number; message: string } {
+  const cause = error?.cause;
+  const code = cause?.code as string | undefined;
+  const constraint = cause?.constraint as string | undefined;
+  const message = error?.message as string | undefined;
+
+  if (message === "Missing user email for first-time setup") {
+    return { status: 400, message: "Missing account email. Please sign in again and retry." };
+  }
+
+  if (message?.startsWith("Account sync issue:")) {
+    return { status: 409, message };
+  }
+
+  if (code === "23503" && constraint === "get_credentials_user_id_users_id_fk") {
+    return {
+      status: 409,
+      message:
+        "Account sync issue: your profile could not be matched in our database. Please sign out and sign back in, then try linking again.",
+    };
+  }
+
+  return {
+    status: 500,
+    message: "Unable to link GET account right now. Please try again.",
+  };
+}
+
 async function ensureUserExists(userId: string, userEmail?: string | null) {
   const existing = await db.query.users.findFirst({
     where: eq(users.id, userId),
@@ -51,6 +79,24 @@ async function ensureUserExists(userId: string, userEmail?: string | null) {
       email: userEmail,
     })
     .onConflictDoNothing();
+
+  const syncedById = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+  });
+
+  if (syncedById) return;
+
+  const existingByEmail = await db.query.users.findFirst({
+    where: eq(users.email, userEmail),
+  });
+
+  if (existingByEmail && existingByEmail.id !== userId) {
+    throw new Error(
+      "Account sync issue: this email is linked to a different internal user record."
+    );
+  }
+
+  throw new Error("Account sync issue: unable to initialize your user profile.");
 }
 
 function generatePin(): string {
@@ -223,11 +269,12 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       await db.delete(getCredentials).where(eq(getCredentials.userId, userId));
       return NextResponse.json({ success: true, linked: false }, { status: 200 });
     } catch (error: any) {
-      console.error("Error handling GET link:", error);
-      return NextResponse.json(
-        { error: error?.message || "Internal server error" },
-        { status: 500 }
-      );
+      const { status, message } = formatGetLinkError(error);
+      console.error("Error handling GET link:", {
+        message: error?.message,
+        cause: error?.cause,
+      });
+      return NextResponse.json({ error: message }, { status });
     }
   }
 
