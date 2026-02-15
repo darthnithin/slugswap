@@ -18,6 +18,16 @@ export type DonorImpact = {
   timezone: string;
 };
 
+export type MobileUpdatePolicyResponse = {
+  updatePolicy: {
+    iosRequiredVersion: string;
+    androidRequiredVersion: string;
+    iosStoreUrl: string | null;
+    androidStoreUrl: string | null;
+  };
+  updatedAt: string;
+};
+
 async function readApiError(response: Response, fallback: string): Promise<string> {
   const bodyText = await response.text();
   if (!bodyText) return fallback;
@@ -306,4 +316,17 @@ export async function getUserBalance(params: { name?: string; email?: string; us
       allTimeRedeemedCount: number;
     } | null;
   }>;
+}
+
+export async function getMobileAppConfig() {
+  const response = await fetch(`${API_BASE_URL}/api/mobile/config`, {
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to fetch mobile update policy');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<MobileUpdatePolicyResponse>;
 }

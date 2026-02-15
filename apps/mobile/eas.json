@@ -1,13 +1,12 @@
 {
   "cli": {
     "version": ">= 16.0.0",
-    "appVersionSource": "remote"
+    "appVersionSource": "local"
   },
   "build": {
     "production": {
       "distribution": "store",
       "channel": "production",
-      "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://htaktvkkxeylaelyvxoz.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0YWt0dmtreGV5bGFlbHl2eG96Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2ODYxMDEsImV4cCI6MjA4NjI2MjEwMX0.0AJ5zxTCC2rYJ9O3Ea-3zvtZmSxL9mO78uPZHf-sMHY",

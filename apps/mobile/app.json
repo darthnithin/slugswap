@@ -2,7 +2,7 @@
   "expo": {
     "name": "SlugSwap",
     "slug": "slugswap",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -18,7 +18,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.slugswap",
-      "buildNumber": "12",
+      "buildNumber": "14",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -46,7 +46,12 @@
     },
     "owner": "darthnithin",
     "updates": {
-      "url": "https://u.expo.dev/a0a8a9f3-0326-4767-b97d-d610d058d094"
+      "url": "https://u.expo.dev/a0a8a9f3-0326-4767-b97d-d610d058d094",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      },
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
     }
   }
 }

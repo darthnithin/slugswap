@@ -25,9 +25,27 @@ type PoolConfig = {
   poolCalculationMethod: "equal" | "proportional";
   maxClaimsPerDay: number;
   minDonationAmount: number;
-  maxDonationAmount?: number;
+  maxDonationAmount: number;
   donorSelectionPolicy: DonorSelectionPolicy;
+  iosRequiredVersion: string;
+  androidRequiredVersion: string;
+  iosStoreUrl: string | null;
+  androidStoreUrl: string | null;
 };
+
+type NumericConfigField =
+  | "defaultWeeklyAllowance"
+  | "defaultClaimAmount"
+  | "codeExpiryMinutes"
+  | "maxClaimsPerDay"
+  | "minDonationAmount"
+  | "maxDonationAmount";
+
+type TextConfigField =
+  | "iosRequiredVersion"
+  | "androidRequiredVersion"
+  | "iosStoreUrl"
+  | "androidStoreUrl";
 
 type AdminStatsResponse = {
   timestamp: string;
@@ -446,12 +464,25 @@ export default function DashboardHomePage() {
   }, []);
 
   const handleConfigNumberChange = useCallback(
-    (field: keyof PoolConfig, value: string) => {
+    (field: NumericConfigField, value: string) => {
       setConfigDraft((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
           [field]: Number(value),
+        };
+      });
+    },
+    []
+  );
+
+  const handleConfigTextChange = useCallback(
+    (field: TextConfigField, value: string) => {
+      setConfigDraft((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          [field]: value,
         };
       });
     },
@@ -472,8 +503,13 @@ export default function DashboardHomePage() {
       codeExpiryMinutes: Number(configDraft.codeExpiryMinutes),
       maxClaimsPerDay: Number(configDraft.maxClaimsPerDay),
       minDonationAmount: Number(configDraft.minDonationAmount),
+      maxDonationAmount: Number(configDraft.maxDonationAmount),
       poolCalculationMethod: configDraft.poolCalculationMethod,
       donorSelectionPolicy: configDraft.donorSelectionPolicy,
+      iosRequiredVersion: configDraft.iosRequiredVersion.trim(),
+      androidRequiredVersion: configDraft.androidRequiredVersion.trim(),
+      iosStoreUrl: configDraft.iosStoreUrl?.trim() || null,
+      androidStoreUrl: configDraft.androidStoreUrl?.trim() || null,
     };
 
     setIsSaving(true);
@@ -1185,6 +1221,26 @@ export default function DashboardHomePage() {
                     </div>
 
                     <div className="config-item">
+                      <label className="config-label" htmlFor="cfg-max-donation">
+                        Max Donation
+                      </label>
+                      <div className="config-input-wrap">
+                        <input
+                          id="cfg-max-donation"
+                          className="config-input"
+                          type="number"
+                          min={1}
+                          max={10000}
+                          value={configDraft?.maxDonationAmount ?? ""}
+                          onChange={(event) =>
+                            handleConfigNumberChange("maxDonationAmount", event.target.value)
+                          }
+                        />
+                        <span className="config-unit">pts/wk</span>
+                      </div>
+                    </div>
+
+                    <div className="config-item">
                       <label className="config-label" htmlFor="cfg-method">
                         Allocation Method
                       </label>
@@ -1234,7 +1290,89 @@ export default function DashboardHomePage() {
                         <option value="highest_balance">Highest Balance</option>
                       </select>
                     </div>
+
+                    <div className="config-item">
+                      <label className="config-label" htmlFor="cfg-ios-required-version">
+                        iOS Required Version
+                      </label>
+                      <div className="config-input-wrap">
+                        <input
+                          id="cfg-ios-required-version"
+                          className="config-input"
+                          type="text"
+                          value={configDraft?.iosRequiredVersion ?? ""}
+                          onChange={(event) =>
+                            handleConfigTextChange("iosRequiredVersion", event.target.value)
+                          }
+                          placeholder="1.0.0"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="config-item">
+                      <label className="config-label" htmlFor="cfg-android-required-version">
+                        Android Required Version
+                      </label>
+                      <div className="config-input-wrap">
+                        <input
+                          id="cfg-android-required-version"
+                          className="config-input"
+                          type="text"
+                          value={configDraft?.androidRequiredVersion ?? ""}
+                          onChange={(event) =>
+                            handleConfigTextChange("androidRequiredVersion", event.target.value)
+                          }
+                          placeholder="1.0.0"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="config-item">
+                      <label className="config-label" htmlFor="cfg-ios-store-url">
+                        iOS Update URL
+                      </label>
+                      <div className="config-input-wrap">
+                        <input
+                          id="cfg-ios-store-url"
+                          className="config-input"
+                          type="url"
+                          value={configDraft?.iosStoreUrl ?? ""}
+                          onChange={(event) =>
+                            handleConfigTextChange("iosStoreUrl", event.target.value)
+                          }
+                          placeholder="https://testflight.apple.com/join/..."
+                        />
+                      </div>
+                    </div>
+
+                    <div className="config-item">
+                      <label className="config-label" htmlFor="cfg-android-store-url">
+                        Android Update URL
+                      </label>
+                      <div className="config-input-wrap">
+                        <input
+                          id="cfg-android-store-url"
+                          className="config-input"
+                          type="url"
+                          value={configDraft?.androidStoreUrl ?? ""}
+                          onChange={(event) =>
+                            handleConfigTextChange("androidStoreUrl", event.target.value)
+                          }
+                          placeholder="https://play.google.com/store/apps/details?id=..."
+                        />
+                      </div>
+                    </div>
                   </div>
+                  <p
+                    style={{
+                      marginTop: 10,
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    Required app versions are enforced gates. Users below the platform version
+                    will be blocked until they update.
+                  </p>
                   <div className="config-actions">
                     <button type="button" className="btn btn-ghost" onClick={loadConfig}>
                       Reset

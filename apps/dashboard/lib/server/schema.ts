@@ -111,5 +111,9 @@ export const adminConfig = pgTable("admin_config", {
   donorSelectionPolicy: text("donor_selection_policy")
     .notNull()
     .default("least_utilized"),
+  iosRequiredVersion: text("ios_required_version").notNull().default("1.0.0"),
+  androidRequiredVersion: text("android_required_version").notNull().default("1.0.0"),
+  iosStoreUrl: text("ios_store_url"),
+  androidStoreUrl: text("android_store_url"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

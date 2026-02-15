@@ -59,10 +59,20 @@ const API_ENDPOINTS: ApiEndpoint[] = [
         maxDonationAmount: 500,
         poolCalculationMethod: "equal",
         donorSelectionPolicy: "least_utilized",
+        iosRequiredVersion: "1.0.0",
+        androidRequiredVersion: "1.0.0",
+        iosStoreUrl: "https://testflight.apple.com/join/<code>",
+        androidStoreUrl: "https://play.google.com/store/apps/details?id=<package>",
       },
       null,
       2
     ),
+  },
+  {
+    path: "/api/mobile/config",
+    method: "GET",
+    description: "Public mobile update policy",
+    requiresAuth: false,
   },
   // Claims
   {

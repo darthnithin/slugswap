@@ -18,6 +18,10 @@ export type AdminConfig = {
   minDonationAmount: number;
   maxDonationAmount: number;
   donorSelectionPolicy: DonorSelectionPolicy;
+  iosRequiredVersion: string;
+  androidRequiredVersion: string;
+  iosStoreUrl: string | null;
+  androidStoreUrl: string | null;
 };
 
 export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
@@ -29,6 +33,10 @@ export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
   minDonationAmount: 10,
   maxDonationAmount: 500,
   donorSelectionPolicy: "least_utilized",
+  iosRequiredVersion: "1.0.0",
+  androidRequiredVersion: "1.0.0",
+  iosStoreUrl: null,
+  androidStoreUrl: null,
 };
 
 const ADMIN_CONFIG_ID = "global";
@@ -60,6 +68,38 @@ function normalizeNonNegativeInteger(field: string, value: unknown): number {
   return Math.floor(numeric);
 }
 
+function normalizeVersion(field: string, value: unknown): string {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) {
+    throw new Error(`Invalid value for ${field}`);
+  }
+
+  if (!/^\d+(?:\.\d+){0,2}$/.test(trimmed)) {
+    throw new Error(
+      `${field} must be a numeric dot-separated version like "1", "1.2", or "1.2.3"`
+    );
+  }
+
+  return trimmed;
+}
+
+function normalizeOptionalUrl(field: string, value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new Error("invalid");
+    }
+    return trimmed;
+  } catch {
+    throw new Error(`${field} must be a valid http(s) URL`);
+  }
+}
+
 function rowToConfig(row: typeof adminConfig.$inferSelect): AdminConfig {
   return {
     defaultWeeklyAllowance: row.defaultWeeklyAllowance,
@@ -70,6 +110,13 @@ function rowToConfig(row: typeof adminConfig.$inferSelect): AdminConfig {
     minDonationAmount: row.minDonationAmount,
     maxDonationAmount: row.maxDonationAmount,
     donorSelectionPolicy: normalizeDonorSelectionPolicy(row.donorSelectionPolicy),
+    iosRequiredVersion: normalizeVersion("iosRequiredVersion", row.iosRequiredVersion),
+    androidRequiredVersion: normalizeVersion(
+      "androidRequiredVersion",
+      row.androidRequiredVersion
+    ),
+    iosStoreUrl: normalizeOptionalUrl("iosStoreUrl", row.iosStoreUrl),
+    androidStoreUrl: normalizeOptionalUrl("androidStoreUrl", row.androidStoreUrl),
   };
 }
 
@@ -164,6 +211,31 @@ export async function updateAdminConfig(
     );
   }
 
+  if (updates.iosRequiredVersion !== undefined) {
+    merged.iosRequiredVersion = normalizeVersion(
+      "iosRequiredVersion",
+      updates.iosRequiredVersion
+    );
+  }
+
+  if (updates.androidRequiredVersion !== undefined) {
+    merged.androidRequiredVersion = normalizeVersion(
+      "androidRequiredVersion",
+      updates.androidRequiredVersion
+    );
+  }
+
+  if (updates.iosStoreUrl !== undefined) {
+    merged.iosStoreUrl = normalizeOptionalUrl("iosStoreUrl", updates.iosStoreUrl);
+  }
+
+  if (updates.androidStoreUrl !== undefined) {
+    merged.androidStoreUrl = normalizeOptionalUrl(
+      "androidStoreUrl",
+      updates.androidStoreUrl
+    );
+  }
+
   const [saved] = await db
     .insert(adminConfig)
     .values({
@@ -182,6 +254,10 @@ export async function updateAdminConfig(
         minDonationAmount: merged.minDonationAmount,
         maxDonationAmount: merged.maxDonationAmount,
         donorSelectionPolicy: merged.donorSelectionPolicy,
+        iosRequiredVersion: merged.iosRequiredVersion,
+        androidRequiredVersion: merged.androidRequiredVersion,
+        iosStoreUrl: merged.iosStoreUrl,
+        androidStoreUrl: merged.androidStoreUrl,
         updatedAt: new Date(),
       },
     })
