@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, sql as sqlOp } from "drizzle-orm";
+import { and, eq, gte, lt, sql as sqlOp } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
+import { getPacificWeekWindow } from "@/lib/server/timezone";
 
 export const runtime = "nodejs";
 
@@ -19,12 +20,12 @@ async function handleSet(req: NextRequest) {
       userEmail?: string | null;
     };
 
-    if (!userId || !amount) {
+    if (!userId || amount === undefined || amount === null) {
       return NextResponse.json({ error: "Missing userId or amount" }, { status: 400 });
     }
 
-    const monthlyAmount = parseFloat(String(amount));
-    if (Number.isNaN(monthlyAmount) || monthlyAmount <= 0) {
+    const weeklyAmount = parseFloat(String(amount));
+    if (Number.isNaN(weeklyAmount) || weeklyAmount <= 0) {
       return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
     }
 
@@ -58,7 +59,7 @@ async function handleSet(req: NextRequest) {
       const [updated] = await db
         .update(schema.donations)
         .set({
-          amount: monthlyAmount.toString(),
+          amount: weeklyAmount.toString(),
           status: "active",
           updatedAt: new Date(),
         })
@@ -70,7 +71,7 @@ async function handleSet(req: NextRequest) {
         .insert(schema.donations)
         .values({
           userId,
-          amount: monthlyAmount.toString(),
+          amount: weeklyAmount.toString(),
           startDate: new Date(),
           status: "active",
         })
@@ -105,29 +106,96 @@ async function handleImpact(req: NextRequest) {
       .limit(1);
 
     if (donations.length === 0) {
+      const weekWindow = getPacificWeekWindow();
       return NextResponse.json(
-        { isActive: false, monthlyAmount: 0, peopleHelped: 0, pointsContributed: 0 },
+        {
+          isActive: false,
+          weeklyAmount: 0,
+          status: "paused",
+          peopleHelped: 0,
+          pointsContributed: 0,
+          capAmount: 0,
+          redeemedThisWeek: 0,
+          reservedThisWeek: 0,
+          remainingThisWeek: 0,
+          capReached: false,
+          weekStart: weekWindow.weekStart.toISOString(),
+          weekEnd: weekWindow.weekEnd.toISOString(),
+          timezone: weekWindow.timezone,
+        },
         { status: 200 }
       );
     }
 
     const donation = donations[0];
-    const peopleHelped = await db
-      .select({ count: sqlOp<number>`count(distinct ${schema.claimCodes.userId})` })
-      .from(schema.claimCodes)
-      .where(eq(schema.claimCodes.status, "redeemed"));
-    const pointsContributed = await db
-      .select({ total: sqlOp<string>`sum(${schema.claimCodes.amount})` })
-      .from(schema.claimCodes)
-      .where(eq(schema.claimCodes.status, "redeemed"));
+    const weeklyAmount = parseFloat(donation.amount);
+    const now = new Date();
+    const weekWindow = getPacificWeekWindow(now);
+
+    const [peopleHelped, allTimeContributed, redeemedThisWeek, reservedThisWeek] =
+      await Promise.all([
+        db
+          .select({ count: sqlOp<number>`count(distinct ${schema.claimCodes.userId})` })
+          .from(schema.claimCodes)
+          .where(
+            and(
+              eq(schema.claimCodes.status, "redeemed"),
+              eq(schema.claimCodes.donorUserId, userId)
+            )
+          ),
+        db
+          .select({ total: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')` })
+          .from(schema.claimCodes)
+          .where(
+            and(
+              eq(schema.claimCodes.status, "redeemed"),
+              eq(schema.claimCodes.donorUserId, userId)
+            )
+          ),
+        db
+          .select({ total: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')` })
+          .from(schema.claimCodes)
+          .where(
+            and(
+              eq(schema.claimCodes.status, "redeemed"),
+              eq(schema.claimCodes.donorUserId, userId),
+              gte(schema.claimCodes.redeemedAt, weekWindow.weekStart),
+              lt(schema.claimCodes.redeemedAt, weekWindow.weekEnd)
+            )
+          ),
+        db
+          .select({ total: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')` })
+          .from(schema.claimCodes)
+          .where(
+            and(
+              eq(schema.claimCodes.status, "active"),
+              eq(schema.claimCodes.donorUserId, userId),
+              gte(schema.claimCodes.createdAt, weekWindow.weekStart),
+              lt(schema.claimCodes.createdAt, weekWindow.weekEnd),
+              gte(schema.claimCodes.expiresAt, now)
+            )
+          ),
+      ]);
+
+    const redeemedWeekAmount = parseFloat(redeemedThisWeek[0]?.total || "0");
+    const reservedWeekAmount = parseFloat(reservedThisWeek[0]?.total || "0");
+    const remainingThisWeek = weeklyAmount - (redeemedWeekAmount + reservedWeekAmount);
 
     return NextResponse.json(
       {
         isActive: donation.status === "active",
-        monthlyAmount: parseFloat(donation.amount),
+        weeklyAmount,
         status: donation.status,
         peopleHelped: peopleHelped[0]?.count || 0,
-        pointsContributed: parseFloat(pointsContributed[0]?.total || "0"),
+        pointsContributed: parseFloat(allTimeContributed[0]?.total || "0"),
+        capAmount: weeklyAmount,
+        redeemedThisWeek: redeemedWeekAmount,
+        reservedThisWeek: reservedWeekAmount,
+        remainingThisWeek,
+        capReached: remainingThisWeek <= 0,
+        weekStart: weekWindow.weekStart.toISOString(),
+        weekEnd: weekWindow.weekEnd.toISOString(),
+        timezone: weekWindow.timezone,
       },
       { status: 200 }
     );

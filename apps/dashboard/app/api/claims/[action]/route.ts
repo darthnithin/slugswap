@@ -4,8 +4,13 @@ import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 import {
   fetchLiveClaimCodeFromGet,
-  resolveLinkedDonorUserId,
 } from "@/lib/server/claims/get-claim-code";
+import {
+  getDonorUsageForDonor,
+  rankDonorCandidatesForClaim,
+} from "@/lib/server/claims/donor-selection";
+import { retrieveAccounts, type GetAccount } from "@/lib/server/get/tools";
+import { getActiveGetSession } from "@/lib/server/get/session";
 
 export const runtime = "nodejs";
 
@@ -84,48 +89,105 @@ async function handleGenerate(req: NextRequest) {
       );
     }
 
-    const donorUserId = await resolveLinkedDonorUserId(db);
-    const { code, expiresAt } = await fetchLiveClaimCodeFromGet(donorUserId);
+    const ranked = await rankDonorCandidatesForClaim(claimAmount);
+    let hadCapReject = false;
+    const fetchFailures: string[] = [];
 
-    const [claimCode] = await db
-      .insert(schema.claimCodes)
-      .values({
-        userId,
-        weeklyPoolId: weeklyPool[0].id,
-        code,
-        amount: claimAmount.toString(),
-        status: "active",
-        expiresAt,
-      })
-      .returning();
+    for (const candidate of ranked.candidates) {
+      // Re-check usage before reserving this donor to reduce race oversubscription.
+      const usage = await getDonorUsageForDonor(
+        candidate.donorUserId,
+        candidate.weeklyAmount,
+        new Date(),
+        ranked.weekWindow
+      );
 
-    await db
-      .update(schema.userAllowances)
-      .set({
-        usedAmount: (parseFloat(allowance.usedAmount) + claimAmount).toString(),
-        remainingAmount: (remaining - claimAmount).toString(),
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.userAllowances.id, allowance.id));
+      if (usage.remainingThisWeek < claimAmount) {
+        hadCapReject = true;
+        continue;
+      }
+
+      try {
+        const { code, expiresAt, sessionId: donorSessionId } =
+          await fetchLiveClaimCodeFromGet(candidate.donorUserId);
+
+        let balanceSnapshot: string | null = null;
+        try {
+          const accounts = await retrieveAccounts(donorSessionId);
+          balanceSnapshot = JSON.stringify(
+            accounts.map((a) => ({
+              id: a.id,
+              name: a.accountDisplayName,
+              balance: a.balance,
+            }))
+          );
+        } catch (error) {
+          console.warn("Failed to snapshot donor balances:", error);
+        }
+
+        const [claimCode] = await db
+          .insert(schema.claimCodes)
+          .values({
+            userId,
+            weeklyPoolId: weeklyPool[0].id,
+            donorUserId: candidate.donorUserId,
+            code,
+            amount: claimAmount.toString(),
+            status: "active",
+            expiresAt,
+            balanceSnapshot,
+          })
+          .returning();
+
+        // Allowance is NOT deducted here — it's only deducted when redemption
+        // is confirmed via balance drop (the actual amount spent may differ).
+
+        return NextResponse.json(
+          {
+            success: true,
+            claimCode: {
+              id: claimCode.id,
+              code: claimCode.code,
+              amount: parseFloat(claimCode.amount),
+              expiresAt: claimCode.expiresAt,
+              status: claimCode.status,
+            },
+          },
+          { status: 200 }
+        );
+      } catch (error: any) {
+        fetchFailures.push(error?.message || "Unknown donor barcode fetch error");
+      }
+    }
+
+    if (hadCapReject && fetchFailures.length === 0) {
+      return NextResponse.json(
+        { error: "No eligible donors available under weekly cap limits." },
+        { status: 400 }
+      );
+    }
 
     return NextResponse.json(
       {
-        success: true,
-        claimCode: {
-          id: claimCode.id,
-          code: claimCode.code,
-          amount: parseFloat(claimCode.amount),
-          expiresAt: claimCode.expiresAt,
-          status: claimCode.status,
-        },
+        error:
+          fetchFailures.length > 0
+            ? `All donor barcode attempts failed: ${fetchFailures[0]}`
+            : "No eligible donors available.",
       },
-      { status: 200 }
+      { status: 500 }
     );
   } catch (error: any) {
     console.error("Error generating claim code:", error);
+    const message = error?.message || "Internal server error";
+    const status =
+      typeof message === "string" &&
+      (message.includes("No eligible donors available") ||
+        message.includes("No linked donor GET account available"))
+        ? 400
+        : 500;
     return NextResponse.json(
-      { error: error?.message || "Internal server error" },
-      { status: 500 }
+      { error: message },
+      { status }
     );
   }
 }
@@ -204,12 +266,44 @@ async function handleRefresh(req: NextRequest) {
       return NextResponse.json({ error: "Claim code has expired" }, { status: 400 });
     }
 
-    const donorUserId = await resolveLinkedDonorUserId(db);
-    const { code, expiresAt } = await fetchLiveClaimCodeFromGet(donorUserId);
-    await db
-      .update(schema.claimCodes)
-      .set({ expiresAt })
-      .where(eq(schema.claimCodes.id, currentClaim.id));
+    // Check for redemption via balance change before refreshing
+    const redemptionResult = await detectRedemption(currentClaim);
+    if (redemptionResult) {
+      return NextResponse.json(
+        {
+          success: true,
+          claimCode: {
+            id: currentClaim.id,
+            code: currentClaim.code,
+            amount: parseFloat(currentClaim.amount),
+            expiresAt: currentClaim.expiresAt,
+            status: "redeemed",
+            redeemedAt: redemptionResult.redeemedAt,
+            redemptionAmount: redemptionResult.amount,
+            redemptionAccount: redemptionResult.accountName,
+          },
+        },
+        { status: 200 }
+      );
+    }
+
+    let effectiveDonorUserId = currentClaim.donorUserId;
+    if (!effectiveDonorUserId) {
+      const claimAmount = parseFloat(currentClaim.amount);
+      const ranked = await rankDonorCandidatesForClaim(claimAmount);
+      effectiveDonorUserId = ranked.candidates[0]?.donorUserId;
+      if (!effectiveDonorUserId) {
+        return NextResponse.json(
+          { error: "No donor available for legacy claim refresh" },
+          { status: 400 }
+        );
+      }
+    }
+    const { code } = await fetchLiveClaimCodeFromGet(effectiveDonorUserId);
+
+    // Do NOT update expiresAt — the original 60-second window is the hard deadline.
+    // We only fetch a fresh barcode payload (the GET barcode itself is short-lived),
+    // but the claim's expiry stays fixed from generation time.
 
     return NextResponse.json(
       {
@@ -218,7 +312,7 @@ async function handleRefresh(req: NextRequest) {
           id: currentClaim.id,
           code,
           amount: parseFloat(currentClaim.amount),
-          expiresAt,
+          expiresAt: currentClaim.expiresAt,
           status: currentClaim.status,
         },
       },
@@ -272,39 +366,6 @@ async function handleDelete(req: NextRequest) {
       );
     }
 
-    // If claim is still active, refund the allowance
-    if (currentClaim.status === "active" && currentClaim.expiresAt > new Date()) {
-      const claimAmount = parseFloat(currentClaim.amount);
-
-      // Find user's allowance for this week
-      const userAllowance = await db
-        .select()
-        .from(schema.userAllowances)
-        .where(
-          and(
-            eq(schema.userAllowances.userId, userId),
-            eq(schema.userAllowances.weeklyPoolId, currentClaim.weeklyPoolId)
-          )
-        )
-        .limit(1);
-
-      if (userAllowance.length > 0) {
-        const allowance = userAllowance[0];
-        const usedAmount = parseFloat(allowance.usedAmount);
-        const remainingAmount = parseFloat(allowance.remainingAmount);
-
-        // Refund the points
-        await db
-          .update(schema.userAllowances)
-          .set({
-            usedAmount: Math.max(0, usedAmount - claimAmount).toString(),
-            remainingAmount: (remainingAmount + claimAmount).toString(),
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.userAllowances.id, allowance.id));
-      }
-    }
-
     // Delete the claim
     await db
       .delete(schema.claimCodes)
@@ -326,11 +387,160 @@ async function handleDelete(req: NextRequest) {
   }
 }
 
+type BalanceSnapshotEntry = { id: string; name: string; balance: number | null };
+
+async function detectRedemption(
+  claim: typeof schema.claimCodes.$inferSelect
+): Promise<{ amount: number; accountName: string; redeemedAt: Date } | null> {
+  if (!claim.donorUserId || !claim.balanceSnapshot) return null;
+
+  let snapshot: BalanceSnapshotEntry[];
+  try {
+    snapshot = JSON.parse(claim.balanceSnapshot) as BalanceSnapshotEntry[];
+  } catch {
+    return null;
+  }
+
+  let currentAccounts: GetAccount[];
+  try {
+    const { sessionId } = await getActiveGetSession(claim.donorUserId);
+    currentAccounts = await retrieveAccounts(sessionId);
+  } catch (error) {
+    console.warn("Failed to poll donor balances for redemption check:", error);
+    return null;
+  }
+
+  for (const snap of snapshot) {
+    if (snap.balance == null) continue;
+    const current = currentAccounts.find((a) => a.id === snap.id);
+    if (!current || current.balance == null) continue;
+
+    const delta = snap.balance - current.balance;
+    if (delta > 0) {
+      const now = new Date();
+
+      await db
+        .update(schema.claimCodes)
+        .set({ status: "redeemed", redeemedAt: now, amount: delta.toString() })
+        .where(eq(schema.claimCodes.id, claim.id));
+
+      await db.insert(schema.redemptions).values({
+        claimCodeId: claim.id,
+        userId: claim.userId,
+        amount: delta.toString(),
+        redeemedAt: now,
+        getToolsTransactionId: `balance_delta:${snap.id}`,
+      });
+
+      // Deduct the actual amount spent from the requester's allowance
+      const userAllowance = await db
+        .select()
+        .from(schema.userAllowances)
+        .where(
+          and(
+            eq(schema.userAllowances.userId, claim.userId),
+            eq(schema.userAllowances.weeklyPoolId, claim.weeklyPoolId)
+          )
+        )
+        .limit(1);
+
+      if (userAllowance.length > 0) {
+        const allowance = userAllowance[0];
+        const remaining = parseFloat(allowance.remainingAmount);
+        await db
+          .update(schema.userAllowances)
+          .set({
+            usedAmount: (parseFloat(allowance.usedAmount) + delta).toString(),
+            remainingAmount: Math.max(0, remaining - delta).toString(),
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.userAllowances.id, allowance.id));
+      }
+
+      return { amount: delta, accountName: snap.name, redeemedAt: now };
+    }
+  }
+
+  return null;
+}
+
+async function handleCheckRedemption(req: NextRequest) {
+  if (req.method !== "POST") {
+    return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+  }
+
+  try {
+    const { userId, claimCodeId } = (await req.json()) as {
+      userId?: string;
+      claimCodeId?: string;
+    };
+    if (!userId || !claimCodeId) {
+      return NextResponse.json(
+        { error: "Missing userId or claimCodeId" },
+        { status: 400 }
+      );
+    }
+
+    const claim = await db
+      .select()
+      .from(schema.claimCodes)
+      .where(
+        and(
+          eq(schema.claimCodes.id, claimCodeId),
+          eq(schema.claimCodes.userId, userId)
+        )
+      )
+      .limit(1);
+
+    if (claim.length === 0) {
+      return NextResponse.json(
+        { error: "Claim code not found" },
+        { status: 404 }
+      );
+    }
+
+    const currentClaim = claim[0];
+
+    if (currentClaim.status === "redeemed") {
+      return NextResponse.json(
+        { redeemed: true, amount: parseFloat(currentClaim.amount) },
+        { status: 200 }
+      );
+    }
+
+    if (currentClaim.status !== "active") {
+      return NextResponse.json({ redeemed: false }, { status: 200 });
+    }
+
+    // Try to detect redemption via balance change
+    const result = await detectRedemption(currentClaim);
+    if (result) {
+      return NextResponse.json(
+        {
+          redeemed: true,
+          amount: result.amount,
+          accountName: result.accountName,
+        },
+        { status: 200 }
+      );
+    }
+
+    return NextResponse.json({ redeemed: false }, { status: 200 });
+  } catch (error: any) {
+    console.error("Error checking redemption:", error);
+    return NextResponse.json(
+      { error: error?.message || "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
 async function dispatch(req: NextRequest, ctx: Ctx) {
   const { action } = await ctx.params;
   if (action === "generate") return handleGenerate(req);
   if (action === "history") return handleHistory(req);
   if (action === "refresh") return handleRefresh(req);
+  if (action === "check-redemption") return handleCheckRedemption(req);
   if (action === "delete") return handleDelete(req);
   return NextResponse.json({ error: "Not found" }, { status: 404 });
 }

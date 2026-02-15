@@ -158,6 +158,33 @@ export async function verifyPin(sessionId: string, deviceId: string, pin: string
   }
 }
 
+export type GetAccount = {
+  id: string;
+  accountDisplayName: string;
+  isActive: boolean;
+  isAccountTenderActive: boolean;
+  depositAccepted: boolean;
+  balance: number | null;
+};
+
+type RetrieveAccountsResponse =
+  | GetAccount[]
+  | { accounts?: GetAccount[]; planName?: string };
+
+export async function retrieveAccounts(sessionId: string): Promise<GetAccount[]> {
+  const raw = await callGetApi<{ sessionId: string }, RetrieveAccountsResponse>(
+    "commerce",
+    "retrieveAccounts",
+    { sessionId }
+  );
+
+  return Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.accounts)
+      ? raw.accounts
+      : [];
+}
+
 export async function revokePin(sessionId: string, deviceId: string) {
   const response = await callGetApi<{ deviceId: string; sessionId: string }, boolean>(
     "user",

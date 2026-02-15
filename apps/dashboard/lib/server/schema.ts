@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, decimal } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, decimal, integer } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey(),
@@ -47,11 +47,13 @@ export const claimCodes = pgTable("claim_codes", {
   weeklyPoolId: uuid("weekly_pool_id")
     .references(() => weeklyPools.id)
     .notNull(),
+  donorUserId: uuid("donor_user_id").references(() => users.id),
   code: text("code").notNull().unique(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   status: text("status").notNull().default("pending"),
   expiresAt: timestamp("expires_at").notNull(),
   redeemedAt: timestamp("redeemed_at"),
+  balanceSnapshot: text("balance_snapshot"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -94,5 +96,20 @@ export const getCredentials = pgTable("get_credentials", {
   deviceId: text("device_id").notNull(),
   encryptedPin: text("encrypted_pin").notNull(),
   linkedAt: timestamp("linked_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const adminConfig = pgTable("admin_config", {
+  id: text("id").primaryKey().default("global"),
+  defaultWeeklyAllowance: integer("default_weekly_allowance").notNull().default(50),
+  defaultClaimAmount: integer("default_claim_amount").notNull().default(10),
+  codeExpiryMinutes: integer("code_expiry_minutes").notNull().default(5),
+  poolCalculationMethod: text("pool_calculation_method").notNull().default("equal"),
+  maxClaimsPerDay: integer("max_claims_per_day").notNull().default(5),
+  minDonationAmount: integer("min_donation_amount").notNull().default(10),
+  maxDonationAmount: integer("max_donation_amount").notNull().default(500),
+  donorSelectionPolicy: text("donor_selection_policy")
+    .notNull()
+    .default("least_utilized"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

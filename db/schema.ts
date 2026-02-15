@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, timestamp, boolean, decimal } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, timestamp, decimal } from "drizzle-orm/pg-core";
 
 // Users table - syncs with Supabase Auth
 export const users = pgTable("users", {
@@ -39,11 +39,13 @@ export const claimCodes = pgTable("claim_codes", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").references(() => users.id).notNull(), // Requester who gets the code
   weeklyPoolId: uuid("weekly_pool_id").references(() => weeklyPools.id).notNull(),
+  donorUserId: uuid("donor_user_id").references(() => users.id), // Donor whose GET account was used
   code: text("code").notNull().unique(), // The actual claim code from GET Tools API
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(), // Points value of this code
   status: text("status").notNull().default("pending"), // pending, active, redeemed, expired
   expiresAt: timestamp("expires_at").notNull(), // Short-lived expiry
   redeemedAt: timestamp("redeemed_at"),
+  balanceSnapshot: text("balance_snapshot"), // JSON snapshot of donor account balances at generation time
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -76,5 +78,19 @@ export const getCredentials = pgTable("get_credentials", {
   deviceId: text("device_id").notNull(),
   encryptedPin: text("encrypted_pin").notNull(),
   linkedAt: timestamp("linked_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Admin config table - persistent global settings
+export const adminConfig = pgTable("admin_config", {
+  id: text("id").primaryKey().default("global"),
+  defaultWeeklyAllowance: integer("default_weekly_allowance").notNull().default(50),
+  defaultClaimAmount: integer("default_claim_amount").notNull().default(10),
+  codeExpiryMinutes: integer("code_expiry_minutes").notNull().default(5),
+  poolCalculationMethod: text("pool_calculation_method").notNull().default("equal"),
+  maxClaimsPerDay: integer("max_claims_per_day").notNull().default(5),
+  minDonationAmount: integer("min_donation_amount").notNull().default(10),
+  maxDonationAmount: integer("max_donation_amount").notNull().default(500),
+  donorSelectionPolicy: text("donor_selection_policy").notNull().default("least_utilized"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

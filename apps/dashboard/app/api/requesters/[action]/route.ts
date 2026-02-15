@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { createClient } from "@supabase/supabase-js";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
+import { getAdminConfig } from "@/lib/server/config";
 
 export const runtime = "nodejs";
 
@@ -109,15 +110,16 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       .limit(1);
 
     if (userAllowance.length === 0) {
-      const DEFAULT_WEEKLY_LIMIT = 50;
+      const { config } = await getAdminConfig();
+      const defaultWeeklyLimit = config.defaultWeeklyAllowance;
       const [newAllowance] = await db
         .insert(schema.userAllowances)
         .values({
           userId: user.id,
           weeklyPoolId: weeklyPool[0].id,
-          weeklyLimit: DEFAULT_WEEKLY_LIMIT.toString(),
+          weeklyLimit: defaultWeeklyLimit.toString(),
           usedAmount: "0",
-          remainingAmount: DEFAULT_WEEKLY_LIMIT.toString(),
+          remainingAmount: defaultWeeklyLimit.toString(),
         })
         .returning();
       userAllowance = [newAllowance];

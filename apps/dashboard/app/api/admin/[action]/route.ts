@@ -3,6 +3,13 @@ import { and, desc, eq, gte, lte, sql as sqlOp } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 import {
+  getAdminConfig,
+  updateAdminConfig,
+  type AdminConfig,
+} from "@/lib/server/config";
+import { getDonorWeeklyUsageMap } from "@/lib/server/claims/donor-usage";
+import { getPacificWeekWindow } from "@/lib/server/timezone";
+import {
   authenticateAdminBearerToken,
   clearAdminSessionCookie,
   getAdminIdentityFromRequest,
@@ -13,16 +20,6 @@ import {
 export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
-
-let poolConfig = {
-  defaultWeeklyAllowance: 50,
-  defaultClaimAmount: 10,
-  codeExpiryMinutes: 5,
-  poolCalculationMethod: "equal",
-  maxClaimsPerDay: 5,
-  minDonationAmount: 10,
-  maxDonationAmount: 500,
-};
 
 function getWeekBounds() {
   const now = new Date();
@@ -136,10 +133,11 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
 
   if (action === "config") {
     if (req.method === "GET") {
+      const { config, updatedAt } = await getAdminConfig();
       return NextResponse.json(
         {
-          config: poolConfig,
-          updatedAt: new Date().toISOString(),
+          config,
+          updatedAt: updatedAt.toISOString(),
         },
         { status: 200 }
       );
@@ -147,52 +145,28 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
 
     if (req.method === "POST" || req.method === "PATCH") {
       try {
-        const updates = (await req.json()) as Record<string, unknown>;
-        const numericFields = [
-          "defaultWeeklyAllowance",
-          "defaultClaimAmount",
-          "codeExpiryMinutes",
-          "maxClaimsPerDay",
-          "minDonationAmount",
-          "maxDonationAmount",
-        ] as const;
-
-        for (const field of numericFields) {
-          if (updates[field] !== undefined) {
-            const val = Number(updates[field]);
-            if (Number.isNaN(val) || val < 0) {
-              return NextResponse.json(
-                { error: `Invalid value for ${field}` },
-                { status: 400 }
-              );
-            }
-            (poolConfig as any)[field] = val;
-          }
-        }
-
-        if (updates.poolCalculationMethod) {
-          if (!["equal", "proportional"].includes(String(updates.poolCalculationMethod))) {
-            return NextResponse.json(
-              { error: 'poolCalculationMethod must be "equal" or "proportional"' },
-              { status: 400 }
-            );
-          }
-          poolConfig.poolCalculationMethod = String(updates.poolCalculationMethod);
-        }
+        const updates = (await req.json()) as Partial<AdminConfig>;
+        const next = await updateAdminConfig(updates);
 
         return NextResponse.json(
           {
-            config: poolConfig,
-            updatedAt: new Date().toISOString(),
+            config: next.config,
+            updatedAt: next.updatedAt.toISOString(),
             message: "Configuration updated",
           },
           { status: 200 }
         );
       } catch (error: any) {
         console.error("Error updating config:", error);
+        const message = error?.message || "Internal server error";
+        const status =
+          typeof message === "string" &&
+          (message.startsWith("Invalid value") || message.includes("must be"))
+            ? 400
+            : 500;
         return NextResponse.json(
-          { error: error?.message || "Internal server error" },
-          { status: 500 }
+          { error: message },
+          { status }
         );
       }
     }
@@ -258,13 +232,18 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     }
     try {
       const { weekStart, weekEnd } = getWeekBounds();
+      const now = new Date();
+      const [{ config }, ptWeekWindow] = await Promise.all([
+        getAdminConfig(),
+        getPacificWeekWindow(now),
+      ]);
       const currentPool = await db
         .select()
         .from(schema.weeklyPools)
         .where(
           and(
-            lte(schema.weeklyPools.weekStart, new Date()),
-            gte(schema.weeklyPools.weekEnd, new Date())
+            lte(schema.weeklyPools.weekStart, now),
+            gte(schema.weeklyPools.weekEnd, now)
           )
         )
         .limit(1);
@@ -274,7 +253,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         .select({ total: sqlOp<string>`coalesce(sum(${schema.donations.amount}), '0')` })
         .from(schema.donations)
         .where(eq(schema.donations.status, "active"));
-      const estimatedWeeklyTotal = parseFloat(estimatedPoolQuery[0]?.total || "0") / 4;
+      const estimatedWeeklyTotal = parseFloat(estimatedPoolQuery[0]?.total || "0");
 
       const weeklyClaimSum = await db
         .select({ total: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')` })
@@ -312,11 +291,11 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         .select({ count: sqlOp<number>`count(*)` })
         .from(schema.donations)
         .where(eq(schema.donations.status, "paused"));
-      const monthlyInflow = await db
+      const weeklyInflow = await db
         .select({ total: sqlOp<string>`coalesce(sum(${schema.donations.amount}), '0')` })
         .from(schema.donations)
         .where(eq(schema.donations.status, "active"));
-      const avgDonation = await db
+      const avgWeeklyDonation = await db
         .select({ avg: sqlOp<string>`coalesce(avg(${schema.donations.amount}), '0')` })
         .from(schema.donations)
         .where(eq(schema.donations.status, "active"));
@@ -420,6 +399,16 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         .orderBy(desc(schema.donations.amount))
         .limit(10);
 
+      const donorUsageInputs = topDonors.map((donor) => ({
+        donorUserId: donor.userId,
+        capAmount: parseFloat(donor.amount),
+      }));
+      const { usageMap } = await getDonorWeeklyUsageMap(
+        donorUsageInputs,
+        now,
+        ptWeekWindow
+      );
+
       const poolHistory = await db
         .select()
         .from(schema.weeklyPools)
@@ -438,9 +427,9 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             paused: Number(pausedDonors[0]?.count || 0),
             total: Number(totalDonors[0]?.count || 0),
             uniqueUsers: Number(uniqueDonors[0]?.count || 0),
-            monthlyInflow: parseFloat(monthlyInflow[0]?.total || "0"),
-            avgMonthlyDonation: parseFloat(
-              parseFloat(avgDonation[0]?.avg || "0").toFixed(2)
+            weeklyInflow: parseFloat(weeklyInflow[0]?.total || "0"),
+            avgWeeklyDonation: parseFloat(
+              parseFloat(avgWeeklyDonation[0]?.avg || "0").toFixed(2)
             ),
           },
           claims: {
@@ -464,6 +453,12 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             linkedGetAccounts: Number(linkedAccounts[0]?.count || 0),
             avgPointsPerRequesterThisWeek: parseFloat(avgPointsPerRequester.toFixed(2)),
           },
+          donorSelection: {
+            policy: config.donorSelectionPolicy,
+            timezone: ptWeekWindow.timezone,
+            weekStart: ptWeekWindow.weekStart.toISOString(),
+            weekEnd: ptWeekWindow.weekEnd.toISOString(),
+          },
           recentClaims: recentClaims.map((c) => ({
             id: c.id,
             userId: c.userId,
@@ -474,13 +469,23 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             createdAt: c.createdAt.toISOString(),
             expiresAt: c.expiresAt.toISOString(),
           })),
-          topDonors: topDonors.map((d) => ({
-            userId: d.userId,
-            name: d.userName || "Anonymous",
-            email: d.userEmail,
-            amount: parseFloat(d.amount),
-            status: d.status,
-          })),
+          topDonors: topDonors.map((d) => {
+            const fallbackCap = parseFloat(d.amount);
+            const usage = usageMap.get(d.userId);
+            return {
+              userId: d.userId,
+              name: d.userName || "Anonymous",
+              email: d.userEmail,
+              amount: parseFloat(d.amount),
+              status: d.status,
+              capAmount: usage?.capAmount ?? fallbackCap,
+              redeemedThisWeek: usage?.redeemedThisWeek ?? 0,
+              reservedThisWeek: usage?.reservedThisWeek ?? 0,
+              remainingThisWeek: usage?.remainingThisWeek ?? fallbackCap,
+              capReached: usage?.capReached ?? false,
+              utilizationRatio: usage?.utilizationRatio ?? 0,
+            };
+          }),
           poolHistory: poolHistory.map((p) => ({
             weekStart: p.weekStart.toISOString(),
             weekEnd: p.weekEnd.toISOString(),
