@@ -12,6 +12,12 @@ type ClaimAggregate = {
   amount: number;
 };
 
+type DonorSelectionPolicy =
+  | "round_robin"
+  | "weighted_round_robin"
+  | "least_utilized"
+  | "highest_balance";
+
 type PoolConfig = {
   defaultWeeklyAllowance: number;
   defaultClaimAmount: number;
@@ -20,6 +26,7 @@ type PoolConfig = {
   maxClaimsPerDay: number;
   minDonationAmount: number;
   maxDonationAmount?: number;
+  donorSelectionPolicy: DonorSelectionPolicy;
 };
 
 type AdminStatsResponse = {
@@ -38,8 +45,8 @@ type AdminStatsResponse = {
     paused: number;
     total: number;
     uniqueUsers: number;
-    monthlyInflow: number;
-    avgMonthlyDonation: number;
+    weeklyInflow: number;
+    avgWeeklyDonation: number;
   };
   claims: {
     thisWeek: {
@@ -62,6 +69,12 @@ type AdminStatsResponse = {
     linkedGetAccounts: number;
     avgPointsPerRequesterThisWeek: number;
   };
+  donorSelection: {
+    policy: DonorSelectionPolicy;
+    timezone: string;
+    weekStart: string;
+    weekEnd: string;
+  };
   recentClaims: Array<{
     id: string;
     userId: string;
@@ -78,6 +91,12 @@ type AdminStatsResponse = {
     email: string | null;
     amount: number;
     status: string;
+    capAmount: number;
+    redeemedThisWeek: number;
+    reservedThisWeek: number;
+    remainingThisWeek: number;
+    capReached: boolean;
+    utilizationRatio: number;
   }>;
   poolHistory: Array<{
     weekStart: string;
@@ -358,6 +377,7 @@ export default function DashboardHomePage() {
       maxClaimsPerDay: Number(configDraft.maxClaimsPerDay),
       minDonationAmount: Number(configDraft.minDonationAmount),
       poolCalculationMethod: configDraft.poolCalculationMethod,
+      donorSelectionPolicy: configDraft.donorSelectionPolicy,
     };
 
     setIsSaving(true);
@@ -736,7 +756,7 @@ export default function DashboardHomePage() {
                   <div className="metric-value">{formatNum(statsData.donors.active)}</div>
                   <div className="metric-sub">
                     <span>{formatNum(statsData.donors.paused)}</span> paused ·{" "}
-                    <span>{formatNum(statsData.donors.monthlyInflow)}</span>/mo inflow
+                    <span>{formatNum(statsData.donors.weeklyInflow)}</span>/wk inflow
                   </div>
                 </div>
 
@@ -773,8 +793,8 @@ export default function DashboardHomePage() {
                   <div className="alltime-value">{formatNum(statsData.claims.allTime.redeemedAmount)}</div>
                 </div>
                 <div className="alltime-stat">
-                  <div className="alltime-label">Avg Donation / Mo</div>
-                  <div className="alltime-value">{formatNum(statsData.donors.avgMonthlyDonation)}</div>
+                  <div className="alltime-label">Avg Donation / Wk</div>
+                  <div className="alltime-value">{formatNum(statsData.donors.avgWeeklyDonation)}</div>
                 </div>
                 <div className="alltime-stat">
                   <div className="alltime-label">Avg Pts / Requester</div>
@@ -1064,7 +1084,7 @@ export default function DashboardHomePage() {
                             handleConfigNumberChange("minDonationAmount", event.target.value)
                           }
                         />
-                        <span className="config-unit">pts/mo</span>
+                        <span className="config-unit">pts/wk</span>
                       </div>
                     </div>
 
@@ -1090,6 +1110,32 @@ export default function DashboardHomePage() {
                       >
                         <option value="equal">Equal Split</option>
                         <option value="proportional">Proportional</option>
+                      </select>
+                    </div>
+
+                    <div className="config-item">
+                      <label className="config-label" htmlFor="cfg-donor-policy">
+                        Donor Selection Policy
+                      </label>
+                      <select
+                        id="cfg-donor-policy"
+                        className="config-select"
+                        value={configDraft?.donorSelectionPolicy ?? "least_utilized"}
+                        onChange={(event) => {
+                          const nextPolicy = event.target.value as DonorSelectionPolicy;
+                          setConfigDraft((prev) => {
+                            if (!prev) return prev;
+                            return {
+                              ...prev,
+                              donorSelectionPolicy: nextPolicy,
+                            };
+                          });
+                        }}
+                      >
+                        <option value="round_robin">Round Robin</option>
+                        <option value="weighted_round_robin">Weighted Round Robin</option>
+                        <option value="least_utilized">Least Utilized</option>
+                        <option value="highest_balance">Highest Balance</option>
                       </select>
                     </div>
                   </div>
@@ -1263,7 +1309,9 @@ export default function DashboardHomePage() {
                 <div className="card" style={{ animationDelay: "0.55s" }}>
                   <div className="card-header">
                     <span className="card-title">Top Donors</span>
-                    <span className="card-badge">by monthly amount</span>
+                    <span className="card-badge">
+                      {statsData.donorSelection.policy.replace(/_/g, " ")} · {statsData.donorSelection.timezone}
+                    </span>
                   </div>
                   <div style={{ maxHeight: 340, overflowY: "auto" }}>
                     {statsData.topDonors.length ? (
@@ -1282,6 +1330,9 @@ export default function DashboardHomePage() {
                               <div className="donor-name">{donor.name}</div>
                               <div className="donor-email">
                                 {donor.email ? donor.email.split("@")[0] : "—"}
+                              </div>
+                              <div className="donor-email">
+                                Cap {formatNum(donor.capAmount)} · Redeemed {formatNum(donor.redeemedThisWeek)} · Reserved {formatNum(donor.reservedThisWeek)} · Remaining {formatNum(donor.remainingThisWeek)} · {donor.capReached ? "Cap reached" : "Within cap"}
                               </div>
                             </div>
                             <span className="donor-amount">{formatNum(donor.amount)}</span>

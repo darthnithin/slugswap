@@ -5,7 +5,7 @@ import { SymbolView } from 'expo-symbols';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../../../../lib/auth-context';
 import { supabase } from '../../../../../lib/supabase';
-import { setDonation, getDonorImpact, pauseDonation, getGetAccounts, getGetLinkStatus, getGetLoginUrl, linkGetAccount, unlinkGetAccount } from '../../../../../lib/api';
+import { setDonation, getDonorImpact, pauseDonation, getGetAccounts, getGetLinkStatus, getGetLoginUrl, linkGetAccount, unlinkGetAccount, type DonorImpact } from '../../../../../lib/api';
 import * as WebBrowser from 'expo-web-browser';
 import { useTabCache } from '../../../../../lib/tab-cache-context';
 import { useFocusEffect } from 'expo-router';
@@ -21,6 +21,46 @@ const UCSC_TRACKED_BALANCE_ACCOUNTS = new Set([
   'banana bucks',
   'slug points',
 ]);
+
+const EMPTY_IMPACT: DonorImpact = {
+  isActive: false,
+  weeklyAmount: 0,
+  status: 'paused',
+  peopleHelped: 0,
+  pointsContributed: 0,
+  capAmount: 0,
+  redeemedThisWeek: 0,
+  reservedThisWeek: 0,
+  remainingThisWeek: 0,
+  capReached: false,
+  weekStart: new Date().toISOString(),
+  weekEnd: new Date().toISOString(),
+  timezone: 'America/Los_Angeles',
+};
+
+function toSafeNumber(value: unknown, fallback = 0): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeDonorImpact(raw: Partial<DonorImpact> | null | undefined): DonorImpact {
+  if (!raw) return EMPTY_IMPACT;
+  return {
+    isActive: !!raw.isActive,
+    weeklyAmount: toSafeNumber(raw.weeklyAmount),
+    status: typeof raw.status === 'string' ? raw.status : EMPTY_IMPACT.status,
+    peopleHelped: toSafeNumber(raw.peopleHelped),
+    pointsContributed: toSafeNumber(raw.pointsContributed),
+    capAmount: toSafeNumber(raw.capAmount),
+    redeemedThisWeek: toSafeNumber(raw.redeemedThisWeek),
+    reservedThisWeek: toSafeNumber(raw.reservedThisWeek),
+    remainingThisWeek: toSafeNumber(raw.remainingThisWeek),
+    capReached: !!raw.capReached,
+    weekStart: typeof raw.weekStart === 'string' ? raw.weekStart : EMPTY_IMPACT.weekStart,
+    weekEnd: typeof raw.weekEnd === 'string' ? raw.weekEnd : EMPTY_IMPACT.weekEnd,
+    timezone: typeof raw.timezone === 'string' ? raw.timezone : EMPTY_IMPACT.timezone,
+  };
+}
 
 function Card({ children, style }: { children: React.ReactNode; style?: any }) {
   if (isLiquidGlassAvailable()) {
@@ -48,11 +88,11 @@ function Card({ children, style }: { children: React.ReactNode; style?: any }) {
 export default function DonorScreen() {
   const { signOut } = useAuth();
   const { hasLoadedShare, markShareLoaded } = useTabCache();
-  const [monthlyAmount, setMonthlyAmount] = useState('');
+  const [weeklyAmount, setWeeklyAmount] = useState('');
   const [isActive, setIsActive] = useState(false);
   const [loading, setLoading] = useState(!hasLoadedShare);
   const [saving, setSaving] = useState(false);
-  const [impact, setImpact] = useState({ peopleHelped: 0, pointsContributed: 0 });
+  const [impact, setImpact] = useState<DonorImpact>(EMPTY_IMPACT);
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isGetLinked, setIsGetLinked] = useState(false);
@@ -114,11 +154,8 @@ export default function DonorScreen() {
           // Reload donation/impact data
           const impactData = await getDonorImpact(user.id);
           setIsActive(impactData.isActive);
-          setMonthlyAmount(impactData.monthlyAmount > 0 ? impactData.monthlyAmount.toString() : '');
-          setImpact({
-            peopleHelped: impactData.peopleHelped,
-            pointsContributed: impactData.pointsContributed,
-          });
+          setWeeklyAmount(impactData.weeklyAmount > 0 ? impactData.weeklyAmount.toString() : '');
+          setImpact(normalizeDonorImpact(impactData));
         } catch (error) {
           console.error('Error refreshing data on focus:', error);
         }
@@ -153,11 +190,8 @@ export default function DonorScreen() {
 
       const impactData = await getDonorImpact(user.id);
       setIsActive(impactData.isActive);
-      setMonthlyAmount(impactData.monthlyAmount > 0 ? impactData.monthlyAmount.toString() : '');
-      setImpact({
-        peopleHelped: impactData.peopleHelped,
-        pointsContributed: impactData.pointsContributed,
-      });
+      setWeeklyAmount(impactData.weeklyAmount > 0 ? impactData.weeklyAmount.toString() : '');
+      setImpact(normalizeDonorImpact(impactData));
     } catch (error) {
       console.error('Error loading impact:', error);
       Alert.alert('Error', 'Failed to load your donation data');
@@ -170,7 +204,7 @@ export default function DonorScreen() {
   const handleSetContribution = async () => {
     if (!userId) return;
 
-    const amount = parseFloat(monthlyAmount);
+    const amount = parseFloat(weeklyAmount);
     if (isNaN(amount) || amount <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid amount');
       return;
@@ -312,14 +346,14 @@ export default function DonorScreen() {
         {isGetLinked && !isActive && (
           <Card>
             <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 4 }}>
-              Set Monthly Contribution
+              Set Weekly Contribution
             </Text>
             <Text style={{ fontSize: 14, color: PlatformColor('secondaryLabel'), marginBottom: 20 }}>
               Your contribution goes to a weekly pool that helps fellow students
             </Text>
 
             <View style={{ gap: 8, marginBottom: 20 }}>
-              <Text style={{ fontSize: 14, fontWeight: '500', color: PlatformColor('label') }}>Monthly Amount (points)</Text>
+              <Text style={{ fontSize: 14, fontWeight: '500', color: PlatformColor('label') }}>Weekly Amount (points)</Text>
               <TextInput
                 style={{
                   borderWidth: 0.5,
@@ -331,8 +365,8 @@ export default function DonorScreen() {
                   color: PlatformColor('label'),
                   backgroundColor: PlatformColor('secondarySystemGroupedBackground'),
                 }}
-                value={monthlyAmount}
-                onChangeText={setMonthlyAmount}
+                value={weeklyAmount}
+                onChangeText={setWeeklyAmount}
                 keyboardType="numeric"
                 placeholder="e.g., 100"
                 placeholderTextColor={PlatformColor('placeholderText')}
@@ -374,9 +408,9 @@ export default function DonorScreen() {
               </View>
               <View style={{ alignItems: 'center' }}>
                 <Text selectable style={{ fontSize: 32, fontWeight: 'bold', color: PlatformColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
-                  {monthlyAmount}
+                  {weeklyAmount}
                 </Text>
-                <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel'), marginTop: 4 }}>Points/Month</Text>
+                <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel'), marginTop: 4 }}>Points/Week</Text>
               </View>
             </View>
 
@@ -410,6 +444,41 @@ export default function DonorScreen() {
                 </>
               )}
             </Pressable>
+          </Card>
+        )}
+
+        {isGetLinked && isActive && (
+          <Card>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 16 }}>
+              Weekly Cap
+            </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+              <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel') }}>Cap</Text>
+              <Text selectable style={{ fontSize: 13, color: PlatformColor('label'), fontVariant: ['tabular-nums'] }}>
+                {impact.capAmount.toFixed(2)} pts
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel') }}>Redeemed</Text>
+              <Text selectable style={{ fontSize: 13, color: PlatformColor('label'), fontVariant: ['tabular-nums'] }}>
+                {impact.redeemedThisWeek.toFixed(2)} pts
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel') }}>Reserved</Text>
+              <Text selectable style={{ fontSize: 13, color: PlatformColor('label'), fontVariant: ['tabular-nums'] }}>
+                {impact.reservedThisWeek.toFixed(2)} pts
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel') }}>Remaining</Text>
+              <Text selectable style={{ fontSize: 13, color: impact.capReached ? PlatformColor('systemRed') : PlatformColor('systemGreen'), fontVariant: ['tabular-nums'] }}>
+                {impact.remainingThisWeek.toFixed(2)} pts
+              </Text>
+            </View>
+            <Text style={{ fontSize: 12, color: PlatformColor('tertiaryLabel'), marginTop: 8 }}>
+              Tracking week in {impact.timezone}
+            </Text>
           </Card>
         )}
 

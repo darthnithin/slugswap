@@ -52,6 +52,7 @@ const API_ENDPOINTS: ApiEndpoint[] = [
         minDonationAmount: 10,
         maxDonationAmount: 500,
         poolCalculationMethod: "equal",
+        donorSelectionPolicy: "least_utilized",
       },
       null,
       2
@@ -82,7 +83,7 @@ const API_ENDPOINTS: ApiEndpoint[] = [
   {
     path: "/api/donations/set",
     method: "POST",
-    description: "Set or update donor monthly amount",
+    description: "Set or update donor weekly amount",
     requiresAuth: true,
     bodyExample: JSON.stringify(
       { userId: "<user-id>", amount: 25, userEmail: "donor@example.com" },

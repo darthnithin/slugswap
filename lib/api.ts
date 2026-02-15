@@ -2,6 +2,22 @@ import { supabase } from './supabase';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
+export type DonorImpact = {
+  isActive: boolean;
+  weeklyAmount: number;
+  status: string;
+  peopleHelped: number;
+  pointsContributed: number;
+  capAmount: number;
+  redeemedThisWeek: number;
+  reservedThisWeek: number;
+  remainingThisWeek: number;
+  capReached: boolean;
+  weekStart: string;
+  weekEnd: string;
+  timezone: string;
+};
+
 async function readApiError(response: Response, fallback: string): Promise<string> {
   const bodyText = await response.text();
   if (!bodyText) return fallback;
@@ -49,7 +65,7 @@ export async function getDonorImpact(userId: string) {
     throw new Error(errorMessage);
   }
 
-  return response.json();
+  return response.json() as Promise<DonorImpact>;
 }
 
 export async function pauseDonation(userId: string, paused: boolean) {
@@ -128,6 +144,25 @@ export async function refreshClaimCode(userId: string, claimCodeId: string) {
       expiresAt: string;
       status: string;
     };
+  }>;
+}
+
+export async function checkRedemption(userId: string, claimCodeId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/claims/check-redemption`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, claimCodeId }),
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to check redemption');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{
+    redeemed: boolean;
+    amount?: number;
+    accountName?: string;
   }>;
 }
 
