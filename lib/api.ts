@@ -18,6 +18,20 @@ export type DonorImpact = {
   timezone: string;
 };
 
+export type CheckoutRail = "points-or-bucks" | "flexi-dollars";
+
+type ClaimCodePayload = {
+  id: string;
+  code: string;
+  amount: number;
+  expiresAt: string;
+  status: string;
+  redeemedAt?: string;
+  redemptionAmount?: number;
+  redemptionAccount?: string;
+  recommendedRail?: CheckoutRail;
+};
+
 export type MobileUpdatePolicyResponse = {
   updatePolicy: {
     iosRequiredVersion: string;
@@ -119,7 +133,7 @@ export async function generateClaimCode(userId: string, amount: number) {
     throw new Error(errorMessage);
   }
 
-  return response.json();
+  return response.json() as Promise<{ success: boolean; claimCode: ClaimCodePayload }>;
 }
 
 export async function getClaimHistory(userId: string) {
@@ -147,13 +161,7 @@ export async function refreshClaimCode(userId: string, claimCodeId: string) {
 
   return response.json() as Promise<{
     success: boolean;
-    claimCode: {
-      id: string;
-      code: string;
-      amount: number;
-      expiresAt: string;
-      status: string;
-    };
+    claimCode: ClaimCodePayload;
   }>;
 }
 

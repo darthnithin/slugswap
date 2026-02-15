@@ -4,7 +4,7 @@ import { BlurView } from 'expo-blur';
 import { SymbolView } from 'expo-symbols';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../../../lib/supabase';
-import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode, checkRedemption } from '../../../../../lib/api';
+import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode, checkRedemption, type CheckoutRail } from '../../../../../lib/api';
 import { PDF417Barcode } from '../../../components/PDF417Barcode';
 import { useTabCache } from '../../../../../lib/tab-cache-context';
 
@@ -16,6 +16,18 @@ interface ClaimCode {
   status?: string;
   redemptionAmount?: number;
   redemptionAccount?: string;
+  recommendedRail?: CheckoutRail;
+}
+
+const FLEXI_ACCOUNT_NAME = 'flexi dollars';
+const POINTS_OR_BUCKS_ACCOUNT_NAMES = new Set(['banana bucks', 'slug points']);
+
+function inferCheckoutRail(accountName?: string): CheckoutRail | null {
+  if (!accountName) return null;
+  const normalized = accountName.trim().toLowerCase();
+  if (normalized === FLEXI_ACCOUNT_NAME) return 'flexi-dollars';
+  if (POINTS_OR_BUCKS_ACCOUNT_NAMES.has(normalized)) return 'points-or-bucks';
+  return null;
 }
 
 function Card({ children, style }: { children: React.ReactNode; style?: any }) {
@@ -60,6 +72,14 @@ export default function RequesterScreen() {
     amount: number;
     accountName?: string;
   } | null>(null);
+  const redeemedRail = inferCheckoutRail(redemptionInfo?.accountName);
+  const activeCheckoutRail: CheckoutRail = currentCode?.recommendedRail ?? 'points-or-bucks';
+  const checkoutInstruction =
+    activeCheckoutRail === 'flexi-dollars' ? 'Use Flexi Dollars' : 'Using Slugpoints';
+  const checkoutDetail =
+    activeCheckoutRail === 'flexi-dollars'
+      ? 'This claim is currently pulling from the donor Flexi balance.'
+      : 'This claim is currently pulling from donor Slug Points / Banana Bucks.';
 
   useEffect(() => {
     if (hasLoadedRequest) return;
@@ -125,7 +145,10 @@ export default function RequesterScreen() {
           void loadUserAndAllowance();
           return;
         }
-        setCurrentCode(result.claimCode);
+        setCurrentCode({
+          ...result.claimCode,
+          recommendedRail: result.claimCode.recommendedRail ?? currentCode.recommendedRail ?? 'points-or-bucks',
+        });
       } catch (error: any) {
         const message = error?.message || 'Failed to refresh claim code';
         console.warn('Claim code refresh failed:', message);
@@ -189,7 +212,10 @@ export default function RequesterScreen() {
     setGenerating(true);
     try {
       const result = await generateClaimCode(userId, DEFAULT_CLAIM_AMOUNT);
-      setCurrentCode(result.claimCode);
+      setCurrentCode({
+        ...result.claimCode,
+        recommendedRail: result.claimCode.recommendedRail ?? 'points-or-bucks',
+      });
       await loadUserAndAllowance();
     } catch (error: any) {
       console.error('Error generating code:', error);
@@ -255,6 +281,20 @@ export default function RequesterScreen() {
                   from {redemptionInfo.accountName}
                 </Text>
               )}
+              {redeemedRail && (
+                <View style={{
+                  marginTop: 4,
+                  backgroundColor: PlatformColor('tertiarySystemFill'),
+                  borderRadius: 10,
+                  borderCurve: 'continuous',
+                  paddingVertical: 8,
+                  paddingHorizontal: 10,
+                }}>
+                  <Text style={{ fontSize: 13, color: PlatformColor('label'), fontWeight: '600' }}>
+                    Cashier selection: {redeemedRail === 'flexi-dollars' ? 'Flexi Dollars' : 'Points or Bucks'}
+                  </Text>
+                </View>
+              )}
               <Pressable
                 onPress={() => setRedemptionInfo(null)}
                 style={({ pressed }) => ({
@@ -301,6 +341,41 @@ export default function RequesterScreen() {
             }}>
               {currentCode.code}
             </Text>
+            <View style={{
+              width: '100%',
+              gap: 8,
+              marginBottom: 14,
+              padding: 14,
+              borderRadius: 12,
+              borderCurve: 'continuous',
+              backgroundColor: PlatformColor('tertiarySystemFill'),
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <SymbolView name="megaphone.fill" tintColor={PlatformColor('systemBlue')} size={14} />
+                <Text style={{ fontSize: 13, fontWeight: '600', color: PlatformColor('secondaryLabel') }}>
+                  At checkout, say:
+                </Text>
+              </View>
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                alignSelf: 'flex-start',
+                gap: 6,
+                paddingVertical: 9,
+                paddingHorizontal: 12,
+                borderRadius: 999,
+                borderCurve: 'continuous',
+                backgroundColor: PlatformColor('systemBlue'),
+              }}>
+                <SymbolView name="checkmark.circle.fill" tintColor="#fff" size={13} />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>
+                  {checkoutInstruction}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 12, color: PlatformColor('secondaryLabel') }}>
+                {checkoutDetail}
+              </Text>
+            </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 12 }}>
               <SymbolView name="clock.badge.exclamationmark" tintColor={PlatformColor('systemRed')} size={14} />
               <Text style={{ fontSize: 14, color: PlatformColor('systemRed'), fontVariant: ['tabular-nums'] }}>
@@ -308,7 +383,7 @@ export default function RequesterScreen() {
               </Text>
             </View>
             <Text style={{ textAlign: 'center', fontSize: 13, color: PlatformColor('secondaryLabel') }}>
-              Show this code at the dining hall to redeem your points
+              Show this code at the dining hall.
             </Text>
             <Text style={{ marginTop: 8, textAlign: 'center', fontSize: 12, color: PlatformColor('tertiaryLabel') }}>
               Refreshing every 5s{refreshingCode ? ' ...' : ''}

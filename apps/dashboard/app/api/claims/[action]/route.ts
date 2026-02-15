@@ -15,6 +15,72 @@ import { getActiveGetSession } from "@/lib/server/get/session";
 export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
+type CheckoutRail = "points-or-bucks" | "flexi-dollars";
+type BalanceSnapshotEntry = { id: string; name: string; balance: number | null };
+
+const FLEXI_ACCOUNT_NAME = "flexi dollars";
+const POINTS_OR_BUCKS_ACCOUNT_NAMES = new Set(["banana bucks", "slug points"]);
+
+function toTrackedBalanceSnapshot(accounts: GetAccount[]): BalanceSnapshotEntry[] {
+  return accounts.map((account) => ({
+    id: account.id,
+    name: account.accountDisplayName,
+    balance: account.balance,
+  }));
+}
+
+function toSafeBalance(value: number | null): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function inferCheckoutRailFromAccountName(accountName?: string): CheckoutRail | null {
+  if (!accountName) return null;
+  const normalized = accountName.trim().toLowerCase();
+  if (normalized === FLEXI_ACCOUNT_NAME) return "flexi-dollars";
+  if (POINTS_OR_BUCKS_ACCOUNT_NAMES.has(normalized)) return "points-or-bucks";
+  return null;
+}
+
+function chooseCheckoutRail(
+  snapshot: BalanceSnapshotEntry[],
+  claimAmount: number
+): CheckoutRail {
+  const balances = snapshot.reduce(
+    (acc, account) => {
+      const normalizedName = account.name.trim().toLowerCase();
+      const balance = toSafeBalance(account.balance);
+      if (normalizedName === FLEXI_ACCOUNT_NAME) {
+        acc.flexi += balance;
+      } else if (POINTS_OR_BUCKS_ACCOUNT_NAMES.has(normalizedName)) {
+        acc.pointsOrBucks += balance;
+      }
+      return acc;
+    },
+    { flexi: 0, pointsOrBucks: 0 }
+  );
+
+  const flexiCanCover = balances.flexi >= claimAmount;
+  const pointsCanCover = balances.pointsOrBucks >= claimAmount;
+
+  if (flexiCanCover && !pointsCanCover) return "flexi-dollars";
+  if (pointsCanCover && !flexiCanCover) return "points-or-bucks";
+  if (balances.flexi > balances.pointsOrBucks) return "flexi-dollars";
+  return "points-or-bucks";
+}
+
+function getRecommendedRailFromBalanceSnapshot(
+  balanceSnapshot: string | null,
+  claimAmount: number
+): CheckoutRail {
+  if (!balanceSnapshot) return "points-or-bucks";
+  try {
+    const parsed = JSON.parse(balanceSnapshot) as BalanceSnapshotEntry[];
+    if (!Array.isArray(parsed)) return "points-or-bucks";
+    return chooseCheckoutRail(parsed, claimAmount);
+  } catch {
+    return "points-or-bucks";
+  }
+}
 
 function getCurrentWeek() {
   const now = new Date();
@@ -112,15 +178,12 @@ async function handleGenerate(req: NextRequest) {
           await fetchLiveClaimCodeFromGet(candidate.donorUserId);
 
         let balanceSnapshot: string | null = null;
+        let recommendedRail: CheckoutRail = "points-or-bucks";
         try {
           const accounts = await retrieveAccounts(donorSessionId);
-          balanceSnapshot = JSON.stringify(
-            accounts.map((a) => ({
-              id: a.id,
-              name: a.accountDisplayName,
-              balance: a.balance,
-            }))
-          );
+          const snapshot = toTrackedBalanceSnapshot(accounts);
+          balanceSnapshot = JSON.stringify(snapshot);
+          recommendedRail = chooseCheckoutRail(snapshot, claimAmount);
         } catch (error) {
           console.warn("Failed to snapshot donor balances:", error);
         }
@@ -151,6 +214,7 @@ async function handleGenerate(req: NextRequest) {
               amount: parseFloat(claimCode.amount),
               expiresAt: claimCode.expiresAt,
               status: claimCode.status,
+              recommendedRail,
             },
           },
           { status: 200 }
@@ -259,6 +323,11 @@ async function handleRefresh(req: NextRequest) {
     }
 
     const currentClaim = claim[0];
+    const claimAmount = parseFloat(currentClaim.amount);
+    const recommendedRail = getRecommendedRailFromBalanceSnapshot(
+      currentClaim.balanceSnapshot,
+      claimAmount
+    );
     if (currentClaim.status !== "active") {
       return NextResponse.json({ error: "Claim code is not active" }, { status: 400 });
     }
@@ -269,6 +338,8 @@ async function handleRefresh(req: NextRequest) {
     // Check for redemption via balance change before refreshing
     const redemptionResult = await detectRedemption(currentClaim);
     if (redemptionResult) {
+      const redeemedRail =
+        inferCheckoutRailFromAccountName(redemptionResult.accountName) ?? recommendedRail;
       return NextResponse.json(
         {
           success: true,
@@ -281,6 +352,7 @@ async function handleRefresh(req: NextRequest) {
             redeemedAt: redemptionResult.redeemedAt,
             redemptionAmount: redemptionResult.amount,
             redemptionAccount: redemptionResult.accountName,
+            recommendedRail: redeemedRail,
           },
         },
         { status: 200 }
@@ -289,7 +361,6 @@ async function handleRefresh(req: NextRequest) {
 
     let effectiveDonorUserId = currentClaim.donorUserId;
     if (!effectiveDonorUserId) {
-      const claimAmount = parseFloat(currentClaim.amount);
       const ranked = await rankDonorCandidatesForClaim(claimAmount);
       effectiveDonorUserId = ranked.candidates[0]?.donorUserId;
       if (!effectiveDonorUserId) {
@@ -311,9 +382,10 @@ async function handleRefresh(req: NextRequest) {
         claimCode: {
           id: currentClaim.id,
           code,
-          amount: parseFloat(currentClaim.amount),
+          amount: claimAmount,
           expiresAt: currentClaim.expiresAt,
           status: currentClaim.status,
+          recommendedRail,
         },
       },
       { status: 200 }
@@ -386,8 +458,6 @@ async function handleDelete(req: NextRequest) {
     );
   }
 }
-
-type BalanceSnapshotEntry = { id: string; name: string; balance: number | null };
 
 async function detectRedemption(
   claim: typeof schema.claimCodes.$inferSelect
