@@ -37,6 +37,12 @@ const API_ENDPOINTS: ApiEndpoint[] = [
     description: "List users (?limit=50&offset=0)",
     requiresAuth: true,
   },
+  {
+    path: "/api/admin/user-balance",
+    method: "GET",
+    description: "User snapshot (?userId=) with GET link, balances, allowance, requester/donor usage",
+    requiresAuth: true,
+  },
   { path: "/api/admin/config", method: "GET", description: "Get pool configuration", requiresAuth: true },
   {
     path: "/api/admin/config",
@@ -194,6 +200,7 @@ function formatDuration(ms: number | null): string {
 
 export function ApiQuerySection() {
   const [selectedEndpoint, setSelectedEndpoint] = useState<ApiEndpoint | null>(null);
+  const [requestPath, setRequestPath] = useState("");
   const [requestBody, setRequestBody] = useState("");
   const [responseData, setResponseData] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -225,6 +232,13 @@ export function ApiQuerySection() {
     const startTime = performance.now();
     const requestId = `${Date.now()}-${Math.random()}`;
 
+    const resolvedPath = requestPath.trim();
+    if (!resolvedPath) {
+      setError("Request path is required");
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const options: RequestInit = {
         method: selectedEndpoint.method,
@@ -237,7 +251,7 @@ export function ApiQuerySection() {
         options.body = requestBody;
       }
 
-      const response = await fetch(selectedEndpoint.path, options);
+      const response = await fetch(resolvedPath, options);
       const endTime = performance.now();
       const requestDuration = endTime - startTime;
 
@@ -259,7 +273,7 @@ export function ApiQuerySection() {
           id: requestId,
           timestamp: new Date(),
           method: selectedEndpoint.method,
-          path: selectedEndpoint.path,
+          path: resolvedPath,
           status: response.status,
           duration: requestDuration,
           response: responseText,
@@ -280,7 +294,7 @@ export function ApiQuerySection() {
           id: requestId,
           timestamp: new Date(),
           method: selectedEndpoint.method,
-          path: selectedEndpoint.path,
+          path: resolvedPath,
           status: null,
           duration: requestDuration,
           response: null,
@@ -291,7 +305,7 @@ export function ApiQuerySection() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedEndpoint, requestBody]);
+  }, [selectedEndpoint, requestBody, requestPath]);
 
   const handleCopyResponse = useCallback(() => {
     if (!responseData) return;
@@ -303,11 +317,13 @@ export function ApiQuerySection() {
   }, [responseData]);
 
   const handleReplayRequest = useCallback((item: RequestHistoryItem) => {
+    const basePath = item.path.split("?")[0];
     const endpoint = API_ENDPOINTS.find(
-      (e) => e.path === item.path && e.method === item.method
+      (e) => e.path === basePath && e.method === item.method
     );
     if (endpoint) {
       setSelectedEndpoint(endpoint);
+      setRequestPath(item.path);
       setShowHistory(false);
     }
   }, []);
@@ -403,7 +419,10 @@ export function ApiQuerySection() {
                     key={`${endpoint.method}-${endpoint.path}-${index}`}
                     type="button"
                     className={`endpoint-item ${selectedEndpoint === endpoint ? "selected" : ""}`}
-                    onClick={() => setSelectedEndpoint(endpoint)}
+                    onClick={() => {
+                      setSelectedEndpoint(endpoint);
+                      setRequestPath(endpoint.path);
+                    }}
                   >
                     <div className="endpoint-item-top">
                       <span
@@ -445,6 +464,23 @@ export function ApiQuerySection() {
                       <span className="request-path-display">{selectedEndpoint.path}</span>
                     </div>
                     <p className="request-description">{selectedEndpoint.description}</p>
+                  </div>
+
+                  <div className="request-path-section">
+                    <label className="request-body-label" htmlFor="request-path">
+                      Request Path
+                    </label>
+                    <input
+                      id="request-path"
+                      className="request-path-input"
+                      value={requestPath}
+                      onChange={(e) => setRequestPath(e.target.value)}
+                      placeholder="/api/admin/user-balance?userId=<user-id>"
+                      spellCheck={false}
+                    />
+                    <p className="request-path-help">
+                      Add query params directly, for example <code>?userId=...</code> or <code>?limit=100&offset=0</code>.
+                    </p>
                   </div>
 
                   {selectedEndpoint.method !== "GET" ? (
@@ -977,6 +1013,10 @@ export function ApiQuerySection() {
           margin-bottom: 20px;
         }
 
+        .request-path-section {
+          margin-bottom: 16px;
+        }
+
         .request-body-label {
           display: block;
           font-size: 0.75rem;
@@ -986,6 +1026,41 @@ export function ApiQuerySection() {
           margin-bottom: 10px;
           font-weight: 600;
           font-family: var(--font-mono);
+        }
+
+        .request-path-input {
+          width: 100%;
+          height: 44px;
+          padding: 10px 12px;
+          background: var(--bg-surface);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-md);
+          color: var(--text-primary);
+          font-family: var(--font-mono);
+          font-size: 0.82rem;
+          transition: all 0.2s var(--ease-out);
+        }
+
+        .request-path-input:focus {
+          outline: none;
+          border-color: var(--accent-gold-dim);
+          background: var(--bg-card);
+          box-shadow: 0 0 0 3px var(--accent-gold-glow);
+        }
+
+        .request-path-help {
+          margin: 8px 0 0;
+          color: var(--text-muted);
+          font-size: 0.74rem;
+          font-family: var(--font-mono);
+        }
+
+        .request-path-help :global(code) {
+          color: var(--text-secondary);
+          background: var(--bg-surface);
+          border: 1px solid var(--border);
+          border-radius: 4px;
+          padding: 1px 4px;
         }
 
         .request-body-input {

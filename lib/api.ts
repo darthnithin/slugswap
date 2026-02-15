@@ -268,11 +268,42 @@ export async function getUserBalance(params: { name?: string; email?: string; us
       email: string | null;
       name: string | null;
     };
+    weekWindow: {
+      timezone: string;
+      weekStart: string;
+      weekEnd: string;
+    };
+    getLinkStatus: {
+      linked: boolean;
+      linkedAt: string | null;
+      accountsFetchError: string | null;
+    };
     getBalance: Array<{ id: string; accountDisplayName: string; balance: number | null }> | null;
+    trackedGetBalanceTotal: number;
     weeklyAllowance: {
       weeklyLimit: number;
       usedAmount: number;
       remainingAmount: number;
+    } | null;
+    requesterUsage: {
+      allTimeClaimsCount: number;
+      allTimeClaimsAmount: number;
+      allTimeRedeemedCount: number;
+      allTimeRedeemedAmount: number;
+      thisWeekClaimsCount: number;
+      thisWeekClaimsAmount: number;
+      thisWeekRedeemedCount: number;
+      thisWeekRedeemedAmount: number;
+      activeClaimsCount: number;
+    };
+    donorUsage: {
+      status: string;
+      weeklyAmount: number;
+      redeemedThisWeek: number;
+      reservedThisWeek: number;
+      remainingThisWeek: number;
+      allTimeRedeemedAmount: number;
+      allTimeRedeemedCount: number;
     } | null;
   }>;
 }

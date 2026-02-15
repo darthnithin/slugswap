@@ -113,6 +113,51 @@ type AdminConfigResponse = {
   message?: string;
 };
 
+type AdminUserBalanceResponse = {
+  user: {
+    id: string;
+    email: string | null;
+    name: string | null;
+  };
+  weekWindow: {
+    timezone: string;
+    weekStart: string;
+    weekEnd: string;
+  };
+  getLinkStatus: {
+    linked: boolean;
+    linkedAt: string | null;
+    accountsFetchError: string | null;
+  };
+  getBalance: Array<{ id: string; accountDisplayName: string; balance: number | null }> | null;
+  trackedGetBalanceTotal: number;
+  weeklyAllowance: {
+    weeklyLimit: number;
+    usedAmount: number;
+    remainingAmount: number;
+  } | null;
+  requesterUsage: {
+    allTimeClaimsCount: number;
+    allTimeClaimsAmount: number;
+    allTimeRedeemedCount: number;
+    allTimeRedeemedAmount: number;
+    thisWeekClaimsCount: number;
+    thisWeekClaimsAmount: number;
+    thisWeekRedeemedCount: number;
+    thisWeekRedeemedAmount: number;
+    activeClaimsCount: number;
+  };
+  donorUsage: {
+    status: string;
+    weeklyAmount: number;
+    redeemedThisWeek: number;
+    reservedThisWeek: number;
+    remainingThisWeek: number;
+    allTimeRedeemedAmount: number;
+    allTimeRedeemedCount: number;
+  } | null;
+};
+
 const SECTION_TITLES: Record<NavSection, string> = {
   overview: "Overview",
   pool: "Pool Health",
@@ -170,6 +215,18 @@ function timeAgo(dateIso: string): string {
   return `${days}d ago`;
 }
 
+function formatDateTime(dateIso: string | null): string {
+  if (!dateIso) return "—";
+  const date = new Date(dateIso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function isClaimStatus(status: string): status is ClaimStatus {
   return ["redeemed", "pending", "active", "expired"].includes(status);
 }
@@ -212,6 +269,9 @@ export default function DashboardHomePage() {
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [newAllowance, setNewAllowance] = useState<string>("");
   const [isUpdatingAllowance, setIsUpdatingAllowance] = useState(false);
+  const [selectedUserDetails, setSelectedUserDetails] = useState<AdminUserBalanceResponse | null>(null);
+  const [isLoadingUserDetails, setIsLoadingUserDetails] = useState(false);
+  const [userDetailsError, setUserDetailsError] = useState<string | null>(null);
   const [deletingClaimId, setDeletingClaimId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -282,6 +342,33 @@ export default function DashboardHomePage() {
     }
   }, [router]);
 
+  const fetchUserDetails = useCallback(
+    async (userId: string) => {
+      setIsLoadingUserDetails(true);
+      setUserDetailsError(null);
+      try {
+        const res = await fetch(`/api/admin/user-balance?userId=${encodeURIComponent(userId)}`, {
+          cache: "no-store",
+        });
+        if (res.status === 401) {
+          router.replace("/login");
+          return;
+        }
+        if (!res.ok) {
+          throw new Error(await readApiError(res));
+        }
+        const data = (await res.json()) as AdminUserBalanceResponse;
+        setSelectedUserDetails(data);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to fetch user details";
+        setUserDetailsError(message);
+      } finally {
+        setIsLoadingUserDetails(false);
+      }
+    },
+    [router]
+  );
+
   useEffect(() => {
     void fetchData();
     void fetchUsers();
@@ -305,6 +392,15 @@ export default function DashboardHomePage() {
       window.clearTimeout(timeout);
     };
   }, [toast]);
+
+  useEffect(() => {
+    if (!selectedUserId) {
+      setSelectedUserDetails(null);
+      setUserDetailsError(null);
+      return;
+    }
+    void fetchUserDetails(selectedUserId);
+  }, [selectedUserId, fetchUserDetails]);
 
   const weekRange = useMemo(() => {
     if (!statsData) return "Loading week data...";
@@ -452,18 +548,18 @@ export default function DashboardHomePage() {
         throw new Error(await readApiError(res));
       }
 
-      const result = await res.json();
+      await res.json();
       setToast(`Available points updated to ${allowanceNum} points`);
-      setSelectedUserId("");
       setNewAllowance("");
       void fetchData(); // Refresh to show updated data
+      void fetchUserDetails(selectedUserId);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Update failed";
       setToast(`Failed to update allowance — ${message}`);
     } finally {
       setIsUpdatingAllowance(false);
     }
-  }, [selectedUserId, newAllowance, router, fetchData]);
+  }, [selectedUserId, newAllowance, router, fetchData, fetchUserDetails]);
 
   const handleDeleteClaim = useCallback(async (claimId: string, userId: string) => {
     if (!window.confirm("Are you sure you want to delete this claim? If it hasn't been redeemed, the points will be refunded.")) {
@@ -1160,7 +1256,7 @@ export default function DashboardHomePage() {
               <div className="section" ref={usersSectionRef}>
                 <div className="section-header">
                   <span className="section-title">User Allowance Management</span>
-                  <span className="section-subtitle">Set available points for users (updates remaining allowance)</span>
+                  <span className="section-subtitle">Set allowance and inspect per-user status, usage, and balances</span>
                 </div>
                 <div className="card" style={{ animationDelay: "0.48s" }}>
                   <div className="config-grid">
@@ -1172,7 +1268,10 @@ export default function DashboardHomePage() {
                         id="user-select"
                         className="config-select"
                         value={selectedUserId}
-                        onChange={(event) => setSelectedUserId(event.target.value)}
+                        onChange={(event) => {
+                          setSelectedUserId(event.target.value);
+                          setNewAllowance("");
+                        }}
                       >
                         <option value="">Choose a user...</option>
                         {users.map((user) => (
@@ -1209,6 +1308,8 @@ export default function DashboardHomePage() {
                       onClick={() => {
                         setSelectedUserId("");
                         setNewAllowance("");
+                        setSelectedUserDetails(null);
+                        setUserDetailsError(null);
                       }}
                     >
                       Clear
@@ -1225,6 +1326,169 @@ export default function DashboardHomePage() {
                     </button>
                   </div>
                 </div>
+
+                {selectedUserId ? (
+                  <div className="card" style={{ marginTop: 16, animationDelay: "0.49s" }}>
+                    <div className="card-header">
+                      <span className="card-title">Selected User Snapshot</span>
+                      <span className="card-badge">
+                        {selectedUserDetails?.weekWindow.timezone ?? "America/Los_Angeles"}
+                      </span>
+                    </div>
+
+                    {isLoadingUserDetails ? (
+                      <div className="empty-state">Loading user details...</div>
+                    ) : userDetailsError ? (
+                      <div className="empty-state">Failed to load: {userDetailsError}</div>
+                    ) : selectedUserDetails ? (
+                      <div style={{ display: "grid", gap: 16 }}>
+                        <div className="config-grid">
+                          <div className="config-item">
+                            <div className="config-label">User</div>
+                            <div style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                              {selectedUserDetails.user.name || selectedUserDetails.user.email || selectedUserDetails.user.id}
+                            </div>
+                            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                              {selectedUserDetails.user.id}
+                            </div>
+                          </div>
+
+                          <div className="config-item">
+                            <div className="config-label">GET Link Status</div>
+                            <div
+                              style={{
+                                color: selectedUserDetails.getLinkStatus.linked
+                                  ? "var(--success)"
+                                  : "var(--danger)",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {selectedUserDetails.getLinkStatus.linked ? "Linked" : "Not linked"}
+                            </div>
+                            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                              Linked at: {formatDateTime(selectedUserDetails.getLinkStatus.linkedAt)}
+                            </div>
+                            {selectedUserDetails.getLinkStatus.accountsFetchError ? (
+                              <div style={{ color: "var(--danger)", fontSize: "0.8rem", marginTop: 4 }}>
+                                {selectedUserDetails.getLinkStatus.accountsFetchError}
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="config-item">
+                            <div className="config-label">Allowance (This Week)</div>
+                            {selectedUserDetails.weeklyAllowance ? (
+                              <>
+                                <div style={{ color: "var(--text-primary)" }}>
+                                  Used {formatNum(selectedUserDetails.weeklyAllowance.usedAmount)} / {formatNum(selectedUserDetails.weeklyAllowance.weeklyLimit)} pts
+                                </div>
+                                <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                                  Remaining: {formatNum(selectedUserDetails.weeklyAllowance.remainingAmount)} pts
+                                </div>
+                              </>
+                            ) : (
+                              <div style={{ color: "var(--text-muted)" }}>No allowance record for current week</div>
+                            )}
+                          </div>
+
+                          <div className="config-item">
+                            <div className="config-label">GET Tracked Balance</div>
+                            <div style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                              {formatNum(selectedUserDetails.trackedGetBalanceTotal)} pts
+                            </div>
+                            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                              Flexi + Banana + Slug
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="config-grid">
+                          <div className="config-item">
+                            <div className="config-label">Requester Usage</div>
+                            <div style={{ color: "var(--text-primary)" }}>
+                              This week: {formatNum(selectedUserDetails.requesterUsage.thisWeekClaimsAmount)} pts ({selectedUserDetails.requesterUsage.thisWeekClaimsCount} claims)
+                            </div>
+                            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                              Redeemed this week: {formatNum(selectedUserDetails.requesterUsage.thisWeekRedeemedAmount)} pts ({selectedUserDetails.requesterUsage.thisWeekRedeemedCount} claims)
+                            </div>
+                            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                              Active codes: {selectedUserDetails.requesterUsage.activeClaimsCount}
+                            </div>
+                          </div>
+
+                          <div className="config-item">
+                            <div className="config-label">Requester All-Time</div>
+                            <div style={{ color: "var(--text-primary)" }}>
+                              Claimed: {formatNum(selectedUserDetails.requesterUsage.allTimeClaimsAmount)} pts ({selectedUserDetails.requesterUsage.allTimeClaimsCount} claims)
+                            </div>
+                            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                              Redeemed: {formatNum(selectedUserDetails.requesterUsage.allTimeRedeemedAmount)} pts ({selectedUserDetails.requesterUsage.allTimeRedeemedCount} claims)
+                            </div>
+                          </div>
+
+                          <div className="config-item">
+                            <div className="config-label">Donor Usage</div>
+                            {selectedUserDetails.donorUsage ? (
+                              <>
+                                <div style={{ color: "var(--text-primary)" }}>
+                                  Status: {selectedUserDetails.donorUsage.status} · Cap: {formatNum(selectedUserDetails.donorUsage.weeklyAmount)} pts
+                                </div>
+                                <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                                  Redeemed: {formatNum(selectedUserDetails.donorUsage.redeemedThisWeek)} · Reserved: {formatNum(selectedUserDetails.donorUsage.reservedThisWeek)} · Remaining: {formatNum(selectedUserDetails.donorUsage.remainingThisWeek)}
+                                </div>
+                                <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                                  All-time donated: {formatNum(selectedUserDetails.donorUsage.allTimeRedeemedAmount)} pts ({selectedUserDetails.donorUsage.allTimeRedeemedCount} redemptions)
+                                </div>
+                              </>
+                            ) : (
+                              <div style={{ color: "var(--text-muted)" }}>This user is not configured as a donor</div>
+                            )}
+                          </div>
+
+                          <div className="config-item">
+                            <div className="config-label">Week Window</div>
+                            <div style={{ color: "var(--text-primary)" }}>
+                              {formatDateTime(selectedUserDetails.weekWindow.weekStart)} to {formatDateTime(selectedUserDetails.weekWindow.weekEnd)}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={{ color: "var(--text-muted)", fontSize: "0.82rem", marginBottom: 8 }}>
+                            GET Accounts
+                          </div>
+                          {selectedUserDetails.getBalance && selectedUserDetails.getBalance.length > 0 ? (
+                            <div style={{ display: "grid", gap: 6 }}>
+                              {selectedUserDetails.getBalance.map((account) => (
+                                <div
+                                  key={account.id}
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    gap: 12,
+                                    padding: "8px 10px",
+                                    border: "1px solid var(--border)",
+                                    borderRadius: 10,
+                                    background: "var(--bg-elevated)",
+                                  }}
+                                >
+                                  <span>{account.accountDisplayName}</span>
+                                  <span className="mono">
+                                    {account.balance === null ? "n/a" : `${formatNum(account.balance)} pts`}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="empty-state">No GET account balances available</div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="empty-state">Select a user to load details</div>
+                    )}
+                  </div>
+                ) : null}
               </div>
 
               <div className="section" ref={apiSectionRef}>

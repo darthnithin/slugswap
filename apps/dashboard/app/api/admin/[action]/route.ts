@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, gte, lte, sql as sqlOp } from "drizzle-orm";
+import { and, desc, eq, gte, lt, lte, sql as sqlOp } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 import {
@@ -9,6 +9,8 @@ import {
 } from "@/lib/server/config";
 import { getDonorWeeklyUsageMap } from "@/lib/server/claims/donor-usage";
 import { getPacificWeekWindow } from "@/lib/server/timezone";
+import { getActiveGetSession } from "@/lib/server/get/session";
+import { retrieveAccounts } from "@/lib/server/get/tools";
 import {
   authenticateAdminBearerToken,
   clearAdminSessionCookie,
@@ -546,38 +548,42 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         return NextResponse.json({ error: "User not found" }, { status: 404 });
       }
 
-      // Get GET account balance
+      const now = new Date();
+      const weekWindow = getPacificWeekWindow(now);
+
+      // GET link + live balances
       const getCredential = await db.query.getCredentials.findFirst({
         where: eq(schema.getCredentials.userId, user.id),
       });
 
-      let getBalance = null;
+      let getBalance: Array<{ id: string; accountDisplayName: string; balance: number | null }> | null = null;
+      let getAccountsError: string | null = null;
       if (getCredential) {
         try {
-          // Call the internal GET accounts API
-          const accountsResponse = await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/api/get/accounts?userId=${user.id}`
-          );
-          if (accountsResponse.ok) {
-            const data = (await accountsResponse.json()) as {
-              accounts: Array<{ id: string; accountDisplayName: string; balance: number | null }>;
-            };
-            getBalance = data.accounts;
-          }
-        } catch (error) {
+          const { sessionId } = await getActiveGetSession(user.id);
+          getBalance = await retrieveAccounts(sessionId);
+        } catch (error: any) {
+          getAccountsError = error?.message || "Failed to fetch GET balances";
           console.warn("Failed to fetch GET balance:", error);
+          getBalance = [];
         }
       }
 
-      // Get weekly allowance
-      const { weekStart, weekEnd } = getWeekBounds();
+      const trackedAccountNames = new Set(["flexi dollars", "banana bucks", "slug points"]);
+      const trackedGetBalanceTotal = (getBalance ?? []).reduce((sum, account) => {
+        if (!trackedAccountNames.has(account.accountDisplayName.trim().toLowerCase())) return sum;
+        if (typeof account.balance !== "number" || Number.isNaN(account.balance)) return sum;
+        return sum + account.balance;
+      }, 0);
+
+      // Weekly allowance
       const currentPool = await db
         .select()
         .from(schema.weeklyPools)
         .where(
           and(
-            lte(schema.weeklyPools.weekStart, new Date()),
-            gte(schema.weeklyPools.weekEnd, new Date())
+            lte(schema.weeklyPools.weekStart, now),
+            gte(schema.weeklyPools.weekEnd, now)
           )
         )
         .limit(1);
@@ -599,6 +605,144 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         }
       }
 
+      // Requester usage
+      const [
+        requesterAllTimeClaims,
+        requesterAllTimeRedeemed,
+        requesterWeekClaims,
+        requesterWeekRedeemed,
+        requesterActiveClaims,
+      ] = await Promise.all([
+        db
+          .select({
+            count: sqlOp<number>`count(*)`,
+            totalAmount: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')`,
+          })
+          .from(schema.claimCodes)
+          .where(eq(schema.claimCodes.userId, user.id)),
+        db
+          .select({
+            count: sqlOp<number>`count(*)`,
+            totalAmount: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')`,
+          })
+          .from(schema.claimCodes)
+          .where(
+            and(
+              eq(schema.claimCodes.userId, user.id),
+              eq(schema.claimCodes.status, "redeemed")
+            )
+          ),
+        db
+          .select({
+            count: sqlOp<number>`count(*)`,
+            totalAmount: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')`,
+          })
+          .from(schema.claimCodes)
+          .where(
+            and(
+              eq(schema.claimCodes.userId, user.id),
+              gte(schema.claimCodes.createdAt, weekWindow.weekStart),
+              lt(schema.claimCodes.createdAt, weekWindow.weekEnd)
+            )
+          ),
+        db
+          .select({
+            count: sqlOp<number>`count(*)`,
+            totalAmount: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')`,
+          })
+          .from(schema.claimCodes)
+          .where(
+            and(
+              eq(schema.claimCodes.userId, user.id),
+              eq(schema.claimCodes.status, "redeemed"),
+              gte(schema.claimCodes.redeemedAt, weekWindow.weekStart),
+              lt(schema.claimCodes.redeemedAt, weekWindow.weekEnd)
+            )
+          ),
+        db
+          .select({ count: sqlOp<number>`count(*)` })
+          .from(schema.claimCodes)
+          .where(
+            and(
+              eq(schema.claimCodes.userId, user.id),
+              eq(schema.claimCodes.status, "active"),
+              gte(schema.claimCodes.expiresAt, now)
+            )
+          ),
+      ]);
+
+      // Donor profile + donor usage
+      const donation = await db.query.donations.findFirst({
+        where: eq(schema.donations.userId, user.id),
+      });
+
+      let donorUsage: {
+        status: string;
+        weeklyAmount: number;
+        redeemedThisWeek: number;
+        reservedThisWeek: number;
+        remainingThisWeek: number;
+        allTimeRedeemedAmount: number;
+        allTimeRedeemedCount: number;
+      } | null = null;
+
+      if (donation) {
+        const weeklyAmount = parseFloat(donation.amount);
+        const [
+          donorRedeemedWeek,
+          donorReservedWeek,
+          donorAllTimeRedeemed,
+        ] = await Promise.all([
+          db
+            .select({ total: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')` })
+            .from(schema.claimCodes)
+            .where(
+              and(
+                eq(schema.claimCodes.donorUserId, user.id),
+                eq(schema.claimCodes.status, "redeemed"),
+                gte(schema.claimCodes.redeemedAt, weekWindow.weekStart),
+                lt(schema.claimCodes.redeemedAt, weekWindow.weekEnd)
+              )
+            ),
+          db
+            .select({ total: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')` })
+            .from(schema.claimCodes)
+            .where(
+              and(
+                eq(schema.claimCodes.donorUserId, user.id),
+                eq(schema.claimCodes.status, "active"),
+                gte(schema.claimCodes.createdAt, weekWindow.weekStart),
+                lt(schema.claimCodes.createdAt, weekWindow.weekEnd),
+                gte(schema.claimCodes.expiresAt, now)
+              )
+            ),
+          db
+            .select({
+              totalAmount: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')`,
+              count: sqlOp<number>`count(*)`,
+            })
+            .from(schema.claimCodes)
+            .where(
+              and(
+                eq(schema.claimCodes.donorUserId, user.id),
+                eq(schema.claimCodes.status, "redeemed")
+              )
+            ),
+        ]);
+
+        const redeemedThisWeek = parseFloat(donorRedeemedWeek[0]?.total || "0");
+        const reservedThisWeek = parseFloat(donorReservedWeek[0]?.total || "0");
+        donorUsage = {
+          status: donation.status,
+          weeklyAmount,
+          redeemedThisWeek,
+          reservedThisWeek,
+          remainingThisWeek: weeklyAmount - (redeemedThisWeek + reservedThisWeek),
+          allTimeRedeemedAmount: parseFloat(donorAllTimeRedeemed[0]?.totalAmount || "0"),
+          allTimeRedeemedCount: Number(donorAllTimeRedeemed[0]?.count || 0),
+        };
+      }
+
       return NextResponse.json(
         {
           user: {
@@ -606,8 +750,31 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             email: user.email,
             name: user.name,
           },
-          getBalance: getBalance,
+          weekWindow: {
+            timezone: weekWindow.timezone,
+            weekStart: weekWindow.weekStart.toISOString(),
+            weekEnd: weekWindow.weekEnd.toISOString(),
+          },
+          getLinkStatus: {
+            linked: !!getCredential,
+            linkedAt: getCredential?.linkedAt?.toISOString() ?? null,
+            accountsFetchError: getAccountsError,
+          },
+          getBalance,
+          trackedGetBalanceTotal,
           weeklyAllowance: allowanceInfo,
+          requesterUsage: {
+            allTimeClaimsCount: Number(requesterAllTimeClaims[0]?.count || 0),
+            allTimeClaimsAmount: parseFloat(requesterAllTimeClaims[0]?.totalAmount || "0"),
+            allTimeRedeemedCount: Number(requesterAllTimeRedeemed[0]?.count || 0),
+            allTimeRedeemedAmount: parseFloat(requesterAllTimeRedeemed[0]?.totalAmount || "0"),
+            thisWeekClaimsCount: Number(requesterWeekClaims[0]?.count || 0),
+            thisWeekClaimsAmount: parseFloat(requesterWeekClaims[0]?.totalAmount || "0"),
+            thisWeekRedeemedCount: Number(requesterWeekRedeemed[0]?.count || 0),
+            thisWeekRedeemedAmount: parseFloat(requesterWeekRedeemed[0]?.totalAmount || "0"),
+            activeClaimsCount: Number(requesterActiveClaims[0]?.count || 0),
+          },
+          donorUsage,
         },
         { status: 200 }
       );
