@@ -15,6 +15,8 @@ This document captures the GET API behavior currently used by the SlugSwap proje
 
 ## Source of Truth
 
+- Official WSDL: https://services.get.cbord.com/GETServices/services/user?wsdl
+- Official services root: https://services.get.cbord.com/GETServices/services
 - Primary reverse-engineered reference: [cabalex/get-tools](https://github.com/cabalex/get-tools)
 - Key implementation files:
   - [`src/getStore.ts`](https://github.com/cabalex/get-tools/blob/main/src/getStore.ts)

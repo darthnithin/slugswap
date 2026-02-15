@@ -42,8 +42,10 @@ yarn-error.*
 # Vercel
 .vercel
 
-# Local Claude settings (keep skills but ignore local config)
+# Local Claude/Cursor settings and worktrees
 .claude/settings.local.json
+.claude/worktrees/
+.cursor/worktrees/
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
 # dependencies

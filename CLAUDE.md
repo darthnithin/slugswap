@@ -114,6 +114,18 @@ Copy `.env.example` to `.env` and fill in values. Key groups:
 
 When creating PRs, include "Coäuthored with Claude" in the PR body.
 
+## Post-Change Actions
+
+After making changes, always tell the user what they need to do to give the changes effect. Common actions:
+
+- **Schema changes** (`db/schema.ts` or `apps/dashboard/lib/server/schema.ts`): Run `npm run db:push` to apply to Neon
+- **Server / API changes** (`apps/dashboard/`): Run `npm run dashboard:deploy` (preview) or `npm run dashboard:deploy:prod` (production) to deploy to Vercel
+- **Mobile changes** (`apps/mobile/`): Run `npm run mobile:eas:update` for OTA update, or `npm run mobile:eas:testflight` for a new build
+- **Environment variable changes**: Update `.env` locally and/or set in Vercel dashboard / EAS secrets
+- **New dependencies**: Run `npm install` from the repo root
+
+If a change spans multiple layers (e.g. schema + API + mobile), list all required steps in order. Never assume the user knows what to run — always be explicit.
+
 ## Prioritization (from product spec)
 
 When making implementation decisions, follow this order:
