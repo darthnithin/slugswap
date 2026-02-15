@@ -4,7 +4,7 @@ import { BlurView } from 'expo-blur';
 import { SymbolView } from 'expo-symbols';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../../../lib/supabase';
-import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode } from '../../../../../lib/api';
+import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode, checkRedemption } from '../../../../../lib/api';
 import { PDF417Barcode } from '../../../components/PDF417Barcode';
 import { useTabCache } from '../../../../../lib/tab-cache-context';
 
@@ -13,6 +13,9 @@ interface ClaimCode {
   code: string;
   amount: number;
   expiresAt: string;
+  status?: string;
+  redemptionAmount?: number;
+  redemptionAccount?: string;
 }
 
 function Card({ children, style }: { children: React.ReactNode; style?: any }) {
@@ -53,6 +56,10 @@ export default function RequesterScreen() {
   const refreshingCodeRef = useRef(false);
   const [isRefreshingData, setIsRefreshingData] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [redemptionInfo, setRedemptionInfo] = useState<{
+    amount: number;
+    accountName?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (hasLoadedRequest) return;
@@ -61,12 +68,30 @@ export default function RequesterScreen() {
 
   useEffect(() => {
     if (currentCode) {
-      const interval = setInterval(() => {
+      const interval = setInterval(async () => {
         const now = new Date();
         const expiresAt = new Date(currentCode.expiresAt);
         const diff = expiresAt.getTime() - now.getTime();
 
         if (diff <= 0) {
+          // One final redemption check before marking as expired
+          if (userId) {
+            try {
+              const result = await checkRedemption(userId, currentCode.id);
+              if (result.redeemed) {
+                setCurrentCode(null);
+                setTimeRemaining('');
+                setRedemptionInfo({
+                  amount: result.amount ?? parseFloat(String(currentCode.amount)),
+                  accountName: result.accountName,
+                });
+                void loadUserAndAllowance();
+                return;
+              }
+            } catch (error) {
+              console.warn('Final redemption check failed:', error);
+            }
+          }
           setCurrentCode(null);
           setTimeRemaining('');
           loadUserAndAllowance();
@@ -90,6 +115,16 @@ export default function RequesterScreen() {
       setRefreshingCode(true);
       try {
         const result = await refreshClaimCode(userId, currentCode.id);
+        if (result.claimCode.status === 'redeemed') {
+          setCurrentCode(null);
+          setTimeRemaining('');
+          setRedemptionInfo({
+            amount: (result.claimCode as any).redemptionAmount ?? result.claimCode.amount,
+            accountName: (result.claimCode as any).redemptionAccount,
+          });
+          void loadUserAndAllowance();
+          return;
+        }
         setCurrentCode(result.claimCode);
       } catch (error: any) {
         const message = error?.message || 'Failed to refresh claim code';
@@ -204,8 +239,42 @@ export default function RequesterScreen() {
           </View>
         </Card>
 
+        {/* Redemption Success */}
+        {redemptionInfo && (
+          <Card>
+            <View style={{ alignItems: 'center', gap: 12 }}>
+              <SymbolView name="checkmark.circle.fill" tintColor={PlatformColor('systemGreen')} size={48} />
+              <Text style={{ fontSize: 22, fontWeight: '700', color: PlatformColor('systemGreen') }}>
+                Redeemed!
+              </Text>
+              <Text style={{ fontSize: 17, color: PlatformColor('label'), fontVariant: ['tabular-nums'] }}>
+                {redemptionInfo.amount} points used
+              </Text>
+              {redemptionInfo.accountName && (
+                <Text style={{ fontSize: 14, color: PlatformColor('secondaryLabel') }}>
+                  from {redemptionInfo.accountName}
+                </Text>
+              )}
+              <Pressable
+                onPress={() => setRedemptionInfo(null)}
+                style={({ pressed }) => ({
+                  marginTop: 8,
+                  paddingVertical: 10,
+                  paddingHorizontal: 24,
+                  borderRadius: 10,
+                  borderCurve: 'continuous',
+                  backgroundColor: PlatformColor('systemGreen'),
+                  opacity: pressed ? 0.7 : 1,
+                })}
+              >
+                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Done</Text>
+              </Pressable>
+            </View>
+          </Card>
+        )}
+
         {/* Active Code or Generate Button */}
-        {currentCode ? (
+        {!redemptionInfo && currentCode ? (
           <Card>
             <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 16 }}>
               Your Claim Code
@@ -245,7 +314,7 @@ export default function RequesterScreen() {
               Refreshing every 5s{refreshingCode ? ' ...' : ''}
             </Text>
           </Card>
-        ) : (
+        ) : !redemptionInfo ? (
           <Pressable
             onPress={handleGenerateCode}
             disabled={remainingAllowance === 0 || generating}
@@ -270,7 +339,7 @@ export default function RequesterScreen() {
               </>
             )}
           </Pressable>
-        )}
+        ) : null}
 
         {/* Recent Claims */}
         <View style={{ gap: 12 }}>

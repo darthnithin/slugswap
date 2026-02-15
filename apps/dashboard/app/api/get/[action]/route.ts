@@ -9,6 +9,7 @@ import {
   createPin,
   extractValidatedSessionId,
   generateDeviceId,
+  retrieveAccounts,
   revokePin,
   verifyPin,
 } from "@/lib/server/get/tools";
@@ -18,21 +19,7 @@ export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
 
-type GetAccount = {
-  id: string;
-  accountDisplayName: string;
-  isActive: boolean;
-  isAccountTenderActive: boolean;
-  depositAccepted: boolean;
-  balance: number | null;
-};
-
-type RetrieveAccountsResponse =
-  | GetAccount[]
-  | {
-      accounts?: GetAccount[];
-      planName?: string;
-    };
+import type { GetAccount } from "@/lib/server/get/tools";
 
 function formatGetLinkError(error: any): { status: number; message: string } {
   const cause = error?.cause;
@@ -160,27 +147,10 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       }
 
       const { sessionId } = await getActiveGetSession(userId);
-      const retrieveAccountsResponse = await callGetApi<
-        { sessionId: string },
-        RetrieveAccountsResponse
-      >("commerce", "retrieveAccounts", { sessionId });
-
-      const normalizedAccounts = Array.isArray(retrieveAccountsResponse)
-        ? retrieveAccountsResponse
-        : Array.isArray(retrieveAccountsResponse?.accounts)
-          ? retrieveAccountsResponse.accounts
-          : [];
+      const accounts = await retrieveAccounts(sessionId);
 
       return NextResponse.json(
-        {
-          linked: true,
-          accounts: normalizedAccounts,
-          planName:
-            !Array.isArray(retrieveAccountsResponse) &&
-            typeof retrieveAccountsResponse?.planName === "string"
-              ? retrieveAccountsResponse.planName
-              : null,
-        },
+        { linked: true, accounts },
         { status: 200 }
       );
     } catch (error: any) {
