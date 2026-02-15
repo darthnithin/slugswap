@@ -8,6 +8,27 @@
       "when": 1770702386076,
       "tag": "0000_common_sunspot",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1771118872328,
+      "tag": "0001_famous_giant_girl",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775000000000,
+      "tag": "0002_donor_selection_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775010000000,
+      "tag": "0003_weekly_donation_amounts",
+      "breakpoints": true
     }
   ]
 }
