@@ -497,7 +497,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             userName: c.userName || null,
             userEmail: c.userEmail || null,
             amount: parseFloat(c.amount),
-            status: c.status,
+            status: c.expiresAt < now && c.status === "active" ? "expired" : c.status,
             createdAt: c.createdAt.toISOString(),
             expiresAt: c.expiresAt.toISOString(),
           })),
