@@ -10,7 +10,7 @@ import {
 import { getDonorWeeklyUsageMap } from "@/lib/server/claims/donor-usage";
 import { getPacificWeekWindow } from "@/lib/server/timezone";
 import { getActiveGetSession } from "@/lib/server/get/session";
-import { retrieveAccounts } from "@/lib/server/get/tools";
+import { retrieveAccounts, retrieveTransactionHistory } from "@/lib/server/get/tools";
 import {
   authenticateAdminBearerToken,
   clearAdminSessionCookie,
@@ -813,6 +813,67 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       );
     } catch (error: any) {
       console.error("Error fetching user balance:", error);
+      return NextResponse.json(
+        { error: error?.message || "Internal server error" },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (action === "get-transaction-history") {
+    if (req.method !== "GET") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    try {
+      const url = new URL(req.url);
+      const userId = url.searchParams.get("userId");
+      const startDate = url.searchParams.get("startDate") ?? undefined;
+      const endDate = url.searchParams.get("endDate") ?? undefined;
+      const maxRows = url.searchParams.get("limit")
+        ? Math.min(500, Math.max(1, parseInt(url.searchParams.get("limit")!, 10)))
+        : 100;
+
+      if (!userId) {
+        return NextResponse.json({ error: "userId is required" }, { status: 400 });
+      }
+
+      const user = await db.query.users.findFirst({
+        where: eq(schema.users.id, userId),
+      });
+      if (!user) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      const getCredential = await db.query.getCredentials.findFirst({
+        where: eq(schema.getCredentials.userId, userId),
+      });
+      if (!getCredential) {
+        return NextResponse.json(
+          { error: "User does not have a linked GET account" },
+          { status: 404 }
+        );
+      }
+
+      const { sessionId } = await getActiveGetSession(userId);
+      const transactions = await retrieveTransactionHistory(sessionId, {
+        startDate,
+        endDate,
+        maxNumberOfRows: maxRows,
+      });
+
+      return NextResponse.json(
+        {
+          userId,
+          user: { id: user.id, email: user.email, name: user.name },
+          transactions,
+          count: transactions.length,
+          filters: { startDate: startDate ?? null, endDate: endDate ?? null, limit: maxRows },
+        },
+        { status: 200 }
+      );
+    } catch (error: any) {
+      console.error("Error fetching GET transaction history:", error);
       return NextResponse.json(
         { error: error?.message || "Internal server error" },
         { status: 500 }

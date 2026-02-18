@@ -199,3 +199,41 @@ export async function revokePin(sessionId: string, deviceId: string) {
     throw new GetApiError("GET deletePIN failed");
   }
 }
+
+export type GetTransaction = {
+  actualDate: string | null;
+  amount: number;
+  balance: number | null;
+  description: string | null;
+  friendlyDescription: string | null;
+  locationName: string | null;
+  paymentSystemType: number | null;
+  tenderName: string;
+  transactionDate: string;
+};
+
+export async function retrieveTransactionHistory(
+  sessionId: string,
+  options?: {
+    startDate?: string;
+    endDate?: string;
+    maxNumberOfRows?: number;
+    paymentSystemType?: number;
+  }
+): Promise<GetTransaction[]> {
+  const raw = await callGetApi<
+    {
+      sessionId: string;
+      startDate?: string;
+      endDate?: string;
+      maxNumberOfRows?: number;
+      paymentSystemType?: number;
+    },
+    GetTransaction[]
+  >("commerce", "retrieveTransactionHistory", {
+    sessionId,
+    ...options,
+  });
+
+  return Array.isArray(raw) ? raw : [];
+}
