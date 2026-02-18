@@ -1,10 +1,10 @@
-import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert, PlatformColor, RefreshControl } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert, PlatformColor, RefreshControl, Share, TextInput } from 'react-native';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { BlurView } from 'expo-blur';
 import { SymbolView } from 'expo-symbols';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../../../lib/supabase';
-import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode, checkRedemption, type CheckoutRail } from '../../../../../lib/api';
+import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode, checkRedemption, getReferralInfo, applyReferralCode, type CheckoutRail, type ReferralInfo } from '../../../../../lib/api';
 import { PDF417Barcode } from '../../../components/PDF417Barcode';
 import { useTabCache } from '../../../../../lib/tab-cache-context';
 
@@ -72,6 +72,9 @@ export default function RequesterScreen() {
     amount: number;
     accountName?: string;
   } | null>(null);
+  const [referralInfo, setReferralInfo] = useState<ReferralInfo | null>(null);
+  const [referralCodeInput, setReferralCodeInput] = useState('');
+  const [applyingReferral, setApplyingReferral] = useState(false);
   const redeemedRail = inferCheckoutRail(redemptionInfo?.accountName);
   const activeCheckoutRail: CheckoutRail = currentCode?.recommendedRail ?? 'points-or-bucks';
   const checkoutInstruction =
@@ -183,6 +186,9 @@ export default function RequesterScreen() {
 
       const historyData = await getClaimHistory(user.id);
       setClaimHistory(historyData.claims);
+
+      const referral = await getReferralInfo();
+      setReferralInfo(referral);
     } catch (error) {
       console.error('Error loading allowance:', error);
       Alert.alert('Error', 'Failed to load your allowance data');
@@ -222,6 +228,37 @@ export default function RequesterScreen() {
       Alert.alert('Error', error.message || 'Failed to generate claim code');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleShareReferral = async () => {
+    if (!referralInfo) return;
+    try {
+      await Share.share({
+        message: `Join SlugSwap and get free dining points! Use my referral code ${referralInfo.referralCode} when you sign up. Download the app and enter the code to earn bonus points.`,
+      });
+    } catch (error: any) {
+      console.warn('Share failed:', error?.message);
+    }
+  };
+
+  const handleApplyReferral = async () => {
+    const code = referralCodeInput.trim().toUpperCase();
+    if (!code) {
+      Alert.alert('Enter a code', 'Please enter a referral code first.');
+      return;
+    }
+    setApplyingReferral(true);
+    try {
+      const result = await applyReferralCode(code);
+      setReferralCodeInput('');
+      Alert.alert('Code Applied!', result.message);
+      const updated = await getReferralInfo();
+      setReferralInfo(updated);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to apply referral code');
+    } finally {
+      setApplyingReferral(false);
     }
   };
 
@@ -462,6 +499,128 @@ export default function RequesterScreen() {
             ))
           )}
         </View>
+
+        {/* Referral Card */}
+        <Card>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <SymbolView name="person.2.fill" tintColor={PlatformColor('systemPurple')} size={18} />
+            <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label') }}>
+              Refer Friends
+            </Text>
+          </View>
+          <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel'), marginBottom: 16 }}>
+            {referralInfo
+              ? `Earn ${referralInfo.bonusPointsPerReferral} bonus points for every friend who joins.`
+              : 'Earn bonus points for every friend who joins.'}
+          </Text>
+
+          {referralInfo ? (
+            <>
+              <Text style={{ fontSize: 12, color: PlatformColor('tertiaryLabel'), marginBottom: 6 }}>
+                YOUR CODE
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center', marginBottom: 16 }}>
+                <View style={{
+                  flex: 1,
+                  backgroundColor: PlatformColor('tertiarySystemFill'),
+                  borderRadius: 10,
+                  borderCurve: 'continuous',
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                }}>
+                  <Text selectable style={{
+                    fontSize: 20,
+                    fontWeight: '700',
+                    letterSpacing: 4,
+                    color: PlatformColor('systemPurple'),
+                    fontFamily: 'Menlo',
+                  }}>
+                    {referralInfo.referralCode}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={handleShareReferral}
+                  style={({ pressed }) => ({
+                    paddingVertical: 10,
+                    paddingHorizontal: 16,
+                    borderRadius: 10,
+                    borderCurve: 'continuous',
+                    backgroundColor: PlatformColor('systemPurple'),
+                    opacity: pressed ? 0.7 : 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                  })}
+                >
+                  <SymbolView name="square.and.arrow.up" tintColor="#fff" size={14} />
+                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Share</Text>
+                </Pressable>
+              </View>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+                <SymbolView name="person.badge.plus" tintColor={PlatformColor('secondaryLabel')} size={14} />
+                <Text style={{ fontSize: 14, color: PlatformColor('secondaryLabel') }}>
+                  {referralInfo.referralCount === 0
+                    ? 'No friends referred yet'
+                    : `${referralInfo.referralCount} ${referralInfo.referralCount === 1 ? 'friend' : 'friends'} referred · ${referralInfo.referralCount * referralInfo.bonusPointsPerReferral} pts earned`}
+                </Text>
+              </View>
+
+              {!referralInfo.hasAppliedReferralCode && (
+                <>
+                  <View style={{ height: 1, backgroundColor: PlatformColor('separator'), marginBottom: 16 }} />
+                  <Text style={{ fontSize: 12, color: PlatformColor('tertiaryLabel'), marginBottom: 8 }}>
+                    HAVE A CODE? ENTER IT BELOW
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+                    <TextInput
+                      value={referralCodeInput}
+                      onChangeText={(t) => setReferralCodeInput(t.toUpperCase())}
+                      placeholder="e.g. ABC123"
+                      placeholderTextColor={PlatformColor('placeholderText')}
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      maxLength={8}
+                      style={{
+                        flex: 1,
+                        backgroundColor: PlatformColor('tertiarySystemFill'),
+                        borderRadius: 10,
+                        borderCurve: 'continuous',
+                        paddingVertical: 10,
+                        paddingHorizontal: 14,
+                        fontSize: 16,
+                        fontWeight: '600',
+                        letterSpacing: 2,
+                        color: PlatformColor('label'),
+                        fontFamily: 'Menlo',
+                      }}
+                    />
+                    <Pressable
+                      onPress={handleApplyReferral}
+                      disabled={applyingReferral || referralCodeInput.trim().length === 0}
+                      style={({ pressed }) => ({
+                        paddingVertical: 10,
+                        paddingHorizontal: 16,
+                        borderRadius: 10,
+                        borderCurve: 'continuous',
+                        backgroundColor: PlatformColor('systemGreen'),
+                        opacity: pressed ? 0.7 : (applyingReferral || referralCodeInput.trim().length === 0) ? 0.4 : 1,
+                      })}
+                    >
+                      {applyingReferral ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Apply</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </>
+              )}
+            </>
+          ) : (
+            <ActivityIndicator color={PlatformColor('systemPurple')} />
+          )}
+        </Card>
       </ScrollView>
   );
 }

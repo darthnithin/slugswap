@@ -326,6 +326,41 @@ export async function getUserBalance(params: { name?: string; email?: string; us
   }>;
 }
 
+export type ReferralInfo = {
+  referralCode: string;
+  referralCount: number;
+  bonusPointsPerReferral: number;
+  hasAppliedReferralCode: boolean;
+};
+
+export async function getReferralInfo(): Promise<ReferralInfo> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/referrals/code`, { headers });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to fetch referral info');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<ReferralInfo>;
+}
+
+export async function applyReferralCode(referralCode: string): Promise<{ success: boolean; bonusPointsAwarded: number; message: string }> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/referrals/apply`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ referralCode }),
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to apply referral code');
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+}
+
 export async function getMobileAppConfig() {
   const response = await fetch(`${API_BASE_URL}/api/mobile/config`, {
     cache: 'no-store',
