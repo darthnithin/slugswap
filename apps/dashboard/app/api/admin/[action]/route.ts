@@ -555,12 +555,14 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           }),
           poolHistory: poolHistory.map((p) => {
             const computedAllocated = redeemedByPoolId.get(p.id) ?? 0;
+            const isCurrentWeek = p.weekStart <= now && p.weekEnd >= now;
+            const capacity = isCurrentWeek ? estimatedWeeklyTotal : parseFloat(p.totalAmount);
             return {
               weekStart: p.weekStart.toISOString(),
               weekEnd: p.weekEnd.toISOString(),
-              totalAmount: estimatedWeeklyTotal,
+              totalAmount: capacity,
               allocatedAmount: computedAllocated,
-              remainingAmount: Math.max(0, estimatedWeeklyTotal - computedAllocated),
+              remainingAmount: Math.max(0, capacity - computedAllocated),
             };
           }),
         },
