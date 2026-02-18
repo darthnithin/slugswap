@@ -109,17 +109,17 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       )
       .limit(1);
 
+    const { config } = await getAdminConfig();
+
     if (userAllowance.length === 0) {
-      const { config } = await getAdminConfig();
-      const defaultWeeklyLimit = config.defaultWeeklyAllowance;
       const [newAllowance] = await db
         .insert(schema.userAllowances)
         .values({
           userId: user.id,
           weeklyPoolId: weeklyPool[0].id,
-          weeklyLimit: defaultWeeklyLimit.toString(),
+          weeklyLimit: config.defaultWeeklyAllowance.toString(),
           usedAmount: "0",
-          remainingAmount: defaultWeeklyLimit.toString(),
+          remainingAmount: config.defaultWeeklyAllowance.toString(),
         })
         .returning();
       userAllowance = [newAllowance];
@@ -138,6 +138,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         weekStart: weekStart.toISOString(),
         weekEnd: weekEnd.toISOString(),
         daysUntilReset,
+        defaultClaimAmount: config.defaultClaimAmount,
       },
       { status: 200 }
     );
