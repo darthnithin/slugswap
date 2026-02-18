@@ -84,6 +84,14 @@ export const getCredentials = pgTable("get_credentials", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Referral fingerprints table - short-lived records for deferred deep linking
+export const referralFingerprints = pgTable("referral_fingerprints", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  referralCode: text("referral_code").notNull(),
+  ipAddress: text("ip_address").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Admin config table - persistent global settings
 export const adminConfig = pgTable("admin_config", {
   id: text("id").primaryKey().default("global"),

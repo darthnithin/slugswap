@@ -361,6 +361,21 @@ export async function applyReferralCode(referralCode: string): Promise<{ success
   return response.json();
 }
 
+export async function matchReferralFingerprint(): Promise<{ referralCode: string | null }> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/referrals/match`, {
+    method: 'POST',
+    headers,
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to match referral fingerprint');
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+}
+
 export async function getMobileAppConfig() {
   const response = await fetch(`${API_BASE_URL}/api/mobile/config`, {
     cache: 'no-store',

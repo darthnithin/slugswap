@@ -4,7 +4,7 @@ import { BlurView } from 'expo-blur';
 import { SymbolView } from 'expo-symbols';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../../../lib/supabase';
-import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode, checkRedemption, getReferralInfo, applyReferralCode, type CheckoutRail, type ReferralInfo } from '../../../../../lib/api';
+import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode, checkRedemption, getReferralInfo, applyReferralCode, matchReferralFingerprint, type CheckoutRail, type ReferralInfo } from '../../../../../lib/api';
 import { PDF417Barcode } from '../../../components/PDF417Barcode';
 import { useTabCache } from '../../../../../lib/tab-cache-context';
 
@@ -66,6 +66,7 @@ export default function RequesterScreen() {
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [refreshingCode, setRefreshingCode] = useState(false);
   const refreshingCodeRef = useRef(false);
+  const fingerprintChecked = useRef(false);
   const [isRefreshingData, setIsRefreshingData] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [redemptionInfo, setRedemptionInfo] = useState<{
@@ -189,6 +190,18 @@ export default function RequesterScreen() {
 
       const referral = await getReferralInfo();
       setReferralInfo(referral);
+
+      if (!referral.hasAppliedReferralCode && !fingerprintChecked.current) {
+        fingerprintChecked.current = true;
+        try {
+          const match = await matchReferralFingerprint();
+          if (match.referralCode) {
+            setReferralCodeInput(match.referralCode);
+          }
+        } catch {
+          // Best-effort — silently ignore if match fails
+        }
+      }
     } catch (error) {
       console.error('Error loading allowance:', error);
       Alert.alert('Error', 'Failed to load your allowance data');
@@ -234,8 +247,11 @@ export default function RequesterScreen() {
   const handleShareReferral = async () => {
     if (!referralInfo) return;
     try {
+      const apiBase = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+      const referralUrl = `${apiBase}/r/${referralInfo.referralCode}`;
       await Share.share({
-        message: `Join SlugSwap and get free dining points! Use my referral code ${referralInfo.referralCode} when you sign up. Download the app and enter the code to earn bonus points.`,
+        message: `Join SlugSwap and get free dining points! ${referralUrl}`,
+        url: referralUrl,
       });
     } catch (error: any) {
       console.warn('Share failed:', error?.message);

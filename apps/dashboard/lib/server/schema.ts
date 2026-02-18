@@ -102,6 +102,13 @@ export const getCredentials = pgTable("get_credentials", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const referralFingerprints = pgTable("referral_fingerprints", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  referralCode: text("referral_code").notNull(),
+  ipAddress: text("ip_address").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const adminConfig = pgTable("admin_config", {
   id: text("id").primaryKey().default("global"),
   defaultWeeklyAllowance: integer("default_weekly_allowance").notNull().default(50),

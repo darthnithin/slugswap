@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, count } from "drizzle-orm";
+import { and, eq, count, gt, lt, desc } from "drizzle-orm";
 import { createClient } from "@supabase/supabase-js";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
@@ -270,6 +270,62 @@ async function handleApplyCode(req: NextRequest) {
   });
 }
 
+async function handleMatch(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  const supabase = getSupabaseClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser(token);
+
+  if (authError || !user) {
+    return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+  }
+
+  // Don't bother matching if they've already applied a code
+  const [currentUser] = await db
+    .select({ referredBy: schema.users.referredBy })
+    .from(schema.users)
+    .where(eq(schema.users.id, user.id))
+    .limit(1);
+
+  if (currentUser?.referredBy != null) {
+    return NextResponse.json({ referralCode: null });
+  }
+
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    req.headers.get("x-real-ip") ??
+    "unknown";
+
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+  const [match] = await db
+    .select({ referralCode: schema.referralFingerprints.referralCode })
+    .from(schema.referralFingerprints)
+    .where(
+      and(
+        eq(schema.referralFingerprints.ipAddress, ip),
+        gt(schema.referralFingerprints.createdAt, fifteenMinutesAgo)
+      )
+    )
+    .orderBy(desc(schema.referralFingerprints.createdAt))
+    .limit(1);
+
+  // Lazy cleanup of old fingerprints
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  await db
+    .delete(schema.referralFingerprints)
+    .where(lt(schema.referralFingerprints.createdAt, oneDayAgo));
+
+  return NextResponse.json({ referralCode: match?.referralCode ?? null });
+}
+
 async function dispatch(req: NextRequest, ctx: Ctx) {
   const { action } = await ctx.params;
 
@@ -279,6 +335,10 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
 
   if (req.method === "POST" && action === "apply") {
     return handleApplyCode(req);
+  }
+
+  if (req.method === "POST" && action === "match") {
+    return handleMatch(req);
   }
 
   return NextResponse.json({ error: "Not found" }, { status: 404 });
