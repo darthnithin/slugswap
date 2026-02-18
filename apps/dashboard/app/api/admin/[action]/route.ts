@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, gte, lt, lte, ne, or, sql as sqlOp } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, lte, ne, or, sql as sqlOp } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 import {
@@ -468,14 +468,15 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         .limit(8);
 
       // Derive actual allocated amounts from redeemed claim codes per pool week
-      const historicalClaimTotals = await db
+      const poolHistoryIds = poolHistory.map((p) => p.id);
+      const historicalClaimTotals = poolHistoryIds.length > 0 ? await db
         .select({
           weeklyPoolId: schema.claimCodes.weeklyPoolId,
           redeemedAmount: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')`,
         })
         .from(schema.claimCodes)
-        .where(eq(schema.claimCodes.status, "redeemed"))
-        .groupBy(schema.claimCodes.weeklyPoolId);
+        .where(and(eq(schema.claimCodes.status, "redeemed"), inArray(schema.claimCodes.weeklyPoolId, poolHistoryIds)))
+        .groupBy(schema.claimCodes.weeklyPoolId) : [];
       const redeemedByPoolId = new Map(
         historicalClaimTotals.map((r) => [r.weeklyPoolId, parseFloat(r.redeemedAmount)])
       );
