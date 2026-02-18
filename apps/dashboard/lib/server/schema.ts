@@ -82,7 +82,6 @@ export const userAllowances = pgTable("user_allowances", {
   usedAmount: decimal("used_amount", { precision: 10, scale: 2 })
     .notNull()
     .default("0"),
-  remainingAmount: decimal("remaining_amount", { precision: 10, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

@@ -174,7 +174,6 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
               .update(schema.userAllowances)
               .set({
                 weeklyLimit: newLimit.toString(),
-                remainingAmount: sqlOp`GREATEST(0, ${newLimit}::numeric - ${schema.userAllowances.usedAmount}::numeric)`,
                 updatedAt: now,
               })
               .where(eq(schema.userAllowances.weeklyPoolId, currentPool[0].id))
@@ -667,7 +666,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           allowanceInfo = {
             weeklyLimit: parseFloat(userAllowance.weeklyLimit),
             usedAmount: parseFloat(userAllowance.usedAmount),
-            remainingAmount: parseFloat(userAllowance.remainingAmount),
+            remainingAmount: Math.max(0, parseFloat(userAllowance.weeklyLimit) - parseFloat(userAllowance.usedAmount)),
           };
         }
       }
@@ -918,7 +917,6 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           .update(schema.userAllowances)
           .set({
             weeklyLimit: newWeeklyLimit.toString(),
-            remainingAmount: availablePoints.toString(),
             updatedAt: new Date(),
           })
           .where(eq(schema.userAllowances.id, currentAllowance.id))
@@ -932,7 +930,6 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             weeklyPoolId: poolId,
             weeklyLimit: availablePoints.toString(),
             usedAmount: "0",
-            remainingAmount: availablePoints.toString(),
           })
           .returning();
       }
@@ -945,7 +942,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             userId: result[0].userId,
             weeklyLimit: parseFloat(result[0].weeklyLimit),
             usedAmount: parseFloat(result[0].usedAmount),
-            remainingAmount: parseFloat(result[0].remainingAmount),
+            remainingAmount: Math.max(0, parseFloat(result[0].weeklyLimit) - parseFloat(result[0].usedAmount)),
           },
         },
         { status: 200 }

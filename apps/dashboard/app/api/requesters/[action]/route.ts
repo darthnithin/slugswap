@@ -1,37 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
-import { createClient } from "@supabase/supabase-js";
+import { and, eq, gte, lte } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 import { getAdminConfig } from "@/lib/server/config";
+import { getPacificWeekWindow } from "@/lib/server/timezone";
+import { getAdminIdentityFromRequest, resolveRequestIdentity } from "@/lib/server/admin-auth";
 
 export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
-
-function getSupabaseClient() {
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Supabase environment variables not configured");
-  }
-  return createClient(supabaseUrl, serviceRoleKey);
-}
-
-function getCurrentWeek() {
-  const now = new Date();
-  const dayOfWeek = now.getDay();
-  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() + diffToMonday);
-  weekStart.setHours(0, 0, 0, 0);
-
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 7);
-
-  return { weekStart, weekEnd };
-}
 
 async function dispatch(req: NextRequest, ctx: Ctx) {
   const { action } = await ctx.params;
@@ -43,45 +20,54 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
   }
 
   try {
-    // Verify auth token
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const url = new URL(req.url);
+    const adminIdentity = getAdminIdentityFromRequest(req);
+
+    // Admin can pass ?userId= to look up any user's allowance directly
+    const adminOverrideUserId = adminIdentity ? url.searchParams.get("userId") : null;
+
+    let targetUserId: string;
+
+    if (adminOverrideUserId) {
+      // Admin querying on behalf of a user — skip user sync, just look up allowance
+      targetUserId = adminOverrideUserId;
+    } else {
+      // Regular user auth — verify token and sync user record
+      const identity = await resolveRequestIdentity(req);
+      if (!identity) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      targetUserId = identity.userId;
+
+      await db
+        .insert(schema.users)
+        .values({
+          id: identity.userId,
+          email: identity.email,
+          name: null,
+          avatarUrl: null,
+        })
+        .onConflictDoUpdate({
+          target: schema.users.id,
+          set: {
+            email: identity.email,
+            updatedAt: new Date(),
+          },
+        });
     }
 
-    const token = authHeader.replace("Bearer ", "");
-    const supabase = getSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
-
-    const { weekStart, weekEnd } = getCurrentWeek();
-
-    // Sync user from Supabase Auth to local database
-    await db
-      .insert(schema.users)
-      .values({
-        id: user.id,
-        email: user.email || `${user.id}@unknown.local`,
-        name: user.user_metadata?.name || null,
-        avatarUrl: user.user_metadata?.avatar_url || null,
-      })
-      .onConflictDoUpdate({
-        target: schema.users.id,
-        set: {
-          email: user.email || `${user.id}@unknown.local`,
-          name: user.user_metadata?.name || null,
-          avatarUrl: user.user_metadata?.avatar_url || null,
-          updatedAt: new Date(),
-        },
-      });
+    const { weekStart, weekEnd } = getPacificWeekWindow();
+    const currentTime = new Date();
 
     let weeklyPool = await db
       .select()
       .from(schema.weeklyPools)
-      .where(eq(schema.weeklyPools.weekStart, weekStart))
+      .where(
+        and(
+          lte(schema.weeklyPools.weekStart, currentTime),
+          gte(schema.weeklyPools.weekEnd, currentTime)
+        )
+      )
       .limit(1);
 
     if (weeklyPool.length === 0) {
@@ -103,7 +89,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       .from(schema.userAllowances)
       .where(
         and(
-          eq(schema.userAllowances.userId, user.id),
+          eq(schema.userAllowances.userId, targetUserId),
           eq(schema.userAllowances.weeklyPoolId, weeklyPool[0].id)
         )
       )
@@ -115,11 +101,10 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       const [newAllowance] = await db
         .insert(schema.userAllowances)
         .values({
-          userId: user.id,
+          userId: targetUserId,
           weeklyPoolId: weeklyPool[0].id,
           weeklyLimit: config.defaultWeeklyAllowance.toString(),
           usedAmount: "0",
-          remainingAmount: config.defaultWeeklyAllowance.toString(),
         })
         .returning();
       userAllowance = [newAllowance];
@@ -134,7 +119,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       {
         weeklyLimit: parseFloat(allowance.weeklyLimit),
         usedAmount: parseFloat(allowance.usedAmount),
-        remainingAmount: parseFloat(allowance.remainingAmount),
+        remainingAmount: Math.max(0, parseFloat(allowance.weeklyLimit) - parseFloat(allowance.usedAmount)),
         weekStart: weekStart.toISOString(),
         weekEnd: weekEnd.toISOString(),
         daysUntilReset,

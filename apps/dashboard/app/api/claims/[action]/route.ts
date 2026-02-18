@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/lib/server/claims/donor-selection";
 import { retrieveAccounts, type GetAccount } from "@/lib/server/get/tools";
 import { getActiveGetSession } from "@/lib/server/get/session";
+import { getPacificWeekWindow } from "@/lib/server/timezone";
 
 export const runtime = "nodejs";
 
@@ -82,21 +83,6 @@ function getRecommendedRailFromBalanceSnapshot(
   }
 }
 
-function getCurrentWeek() {
-  const now = new Date();
-  const dayOfWeek = now.getDay();
-  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() + diffToMonday);
-  weekStart.setHours(0, 0, 0, 0);
-
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 7);
-
-  return { weekStart, weekEnd };
-}
-
 async function handleGenerate(req: NextRequest) {
   if (req.method !== "POST") {
     return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
@@ -117,11 +103,16 @@ async function handleGenerate(req: NextRequest) {
       return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
     }
 
-    const { weekStart } = getCurrentWeek();
+    const now = new Date();
     const weeklyPool = await db
       .select()
       .from(schema.weeklyPools)
-      .where(eq(schema.weeklyPools.weekStart, weekStart))
+      .where(
+        and(
+          lte(schema.weeklyPools.weekStart, now),
+          gte(schema.weeklyPools.weekEnd, now)
+        )
+      )
       .limit(1);
 
     if (weeklyPool.length === 0) {
@@ -147,7 +138,7 @@ async function handleGenerate(req: NextRequest) {
     }
 
     const allowance = userAllowance[0];
-    const remaining = parseFloat(allowance.remainingAmount);
+    const remaining = Math.max(0, parseFloat(allowance.weeklyLimit) - parseFloat(allowance.usedAmount));
     if (claimAmount > remaining) {
       return NextResponse.json(
         { error: "Insufficient allowance", remaining },
@@ -516,12 +507,10 @@ async function detectRedemption(
 
       if (userAllowance.length > 0) {
         const allowance = userAllowance[0];
-        const remaining = parseFloat(allowance.remainingAmount);
         await db
           .update(schema.userAllowances)
           .set({
             usedAmount: (parseFloat(allowance.usedAmount) + delta).toString(),
-            remainingAmount: Math.max(0, remaining - delta).toString(),
             updatedAt: new Date(),
           })
           .where(eq(schema.userAllowances.id, allowance.id));

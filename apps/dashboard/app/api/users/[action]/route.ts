@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import { users } from "@/lib/server/schema";
+import { resolveRequestIdentity } from "@/lib/server/admin-auth";
 
 export const runtime = "nodejs";
 
@@ -25,13 +26,13 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
     }
     try {
-      const authHeader = req.headers.get("authorization");
-      if (!authHeader) {
+      const identity = await resolveRequestIdentity(req);
+      if (!identity) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
 
       const user = await db.query.users.findFirst({
-        where: eq(users.email, "example@example.com"),
+        where: eq(users.id, identity.userId),
       });
 
       if (!user) {
@@ -55,26 +56,16 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: error?.message || "Server misconfigured" }, { status: 500 });
     }
 
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader) {
-      return NextResponse.json({ error: "Missing authorization header" }, { status: 401 });
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    const identity = await resolveRequestIdentity(req);
+    if (!identity) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     if (req.method === "GET") {
       const { data, error } = await supabase
         .from("users")
         .select("*")
-        .eq("id", user.id)
+        .eq("id", identity.userId)
         .single();
 
       if (error) {
@@ -91,7 +82,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       const { data, error } = await supabase
         .from("users")
         .update({ name, avatar_url })
-        .eq("id", user.id)
+        .eq("id", identity.userId)
         .select()
         .single();
 
