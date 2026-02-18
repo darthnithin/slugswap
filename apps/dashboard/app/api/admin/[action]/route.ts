@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, gte, lt, lte, sql as sqlOp } from "drizzle-orm";
+import { and, desc, eq, gte, lt, lte, ne, or, sql as sqlOp } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 import {
@@ -260,7 +260,12 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       const weeklyClaimSum = await db
         .select({ total: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')` })
         .from(schema.claimCodes)
-        .where(gte(schema.claimCodes.createdAt, weekStart));
+        .where(
+          and(
+            gte(schema.claimCodes.createdAt, weekStart),
+            or(ne(schema.claimCodes.status, "active"), gte(schema.claimCodes.expiresAt, now))
+          )
+        );
       const weeklyClaimedAmount = parseFloat(weeklyClaimSum[0]?.total || "0");
 
       const poolHasData = pool && parseFloat(pool.totalAmount) > 0;
@@ -309,7 +314,12 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           totalAmount: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')`,
         })
         .from(schema.claimCodes)
-        .where(gte(schema.claimCodes.createdAt, weekStart))
+        .where(
+          and(
+            gte(schema.claimCodes.createdAt, weekStart),
+            or(ne(schema.claimCodes.status, "active"), gte(schema.claimCodes.expiresAt, now))
+          )
+        )
         .groupBy(schema.claimCodes.status);
 
       const claimsByStatus: Record<string, { count: number; amount: number }> = {};
@@ -333,7 +343,8 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           count: sqlOp<number>`count(*)`,
           totalAmount: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')`,
         })
-        .from(schema.claimCodes);
+        .from(schema.claimCodes)
+        .where(or(ne(schema.claimCodes.status, "active"), gte(schema.claimCodes.expiresAt, now)));
       const allTimeRedeemed = await db
         .select({
           count: sqlOp<number>`count(*)`,
@@ -366,7 +377,12 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             uniqueUsers: sqlOp<number>`count(distinct ${schema.claimCodes.userId})`,
           })
           .from(schema.claimCodes)
-          .where(gte(schema.claimCodes.createdAt, weekStart));
+          .where(
+            and(
+              gte(schema.claimCodes.createdAt, weekStart),
+              or(ne(schema.claimCodes.status, "active"), gte(schema.claimCodes.expiresAt, now))
+            )
+          );
         const totalClaimed = parseFloat(weekClaimsByUser[0]?.totalClaimed || "0");
         const uniqueUsers = Number(weekClaimsByUser[0]?.uniqueUsers || 0);
         avgPointsPerRequester = uniqueUsers > 0 ? totalClaimed / uniqueUsers : 0;

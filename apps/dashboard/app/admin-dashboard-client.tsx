@@ -1007,11 +1007,6 @@ export default function DashboardHomePage() {
                       <span className="claim-stat-value">{claimStat("active").count}</span>
                       <span className="claim-stat-sub">{formatNum(claimStat("active").amount)} pts</span>
                     </div>
-                    <div className="claim-stat">
-                      <span className="claim-stat-label">Expired</span>
-                      <span className="claim-stat-value expired">{claimStat("expired").count}</span>
-                      <span className="claim-stat-sub">{formatNum(claimStat("expired").amount)} pts</span>
-                    </div>
                   </div>
 
                   <div style={{ marginTop: 20, textAlign: "center" }}>
