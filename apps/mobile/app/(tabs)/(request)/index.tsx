@@ -58,6 +58,7 @@ export default function RequesterScreen() {
   const [weeklyAllowance, setWeeklyAllowance] = useState(0);
   const [remainingAllowance, setRemainingAllowance] = useState(0);
   const [daysUntilReset, setDaysUntilReset] = useState(0);
+  const [defaultClaimAmount, setDefaultClaimAmount] = useState(10);
   const [currentCode, setCurrentCode] = useState<ClaimCode | null>(null);
   const [claimHistory, setClaimHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(!hasLoadedRequest);
@@ -180,6 +181,7 @@ export default function RequesterScreen() {
       setWeeklyAllowance(allowanceData.weeklyLimit);
       setRemainingAllowance(allowanceData.remainingAmount);
       setDaysUntilReset(allowanceData.daysUntilReset);
+      setDefaultClaimAmount(allowanceData.defaultClaimAmount ?? 10);
 
       const historyData = await getClaimHistory(user.id);
       setClaimHistory(historyData.claims);
@@ -202,16 +204,14 @@ export default function RequesterScreen() {
   const handleGenerateCode = async () => {
     if (!userId) return;
 
-    const DEFAULT_CLAIM_AMOUNT = 10;
-
-    if (remainingAllowance < DEFAULT_CLAIM_AMOUNT) {
-      Alert.alert('Insufficient Allowance', `You need at least ${DEFAULT_CLAIM_AMOUNT} points remaining`);
+    if (remainingAllowance < defaultClaimAmount) {
+      Alert.alert('Insufficient Allowance', `You need at least ${defaultClaimAmount} points remaining`);
       return;
     }
 
     setGenerating(true);
     try {
-      const result = await generateClaimCode(userId, DEFAULT_CLAIM_AMOUNT);
+      const result = await generateClaimCode(userId, defaultClaimAmount);
       setCurrentCode({
         ...result.claimCode,
         recommendedRail: result.claimCode.recommendedRail ?? 'points-or-bucks',

@@ -208,3 +208,39 @@ export function clearAdminSessionCookie(response: NextResponse): NextResponse {
 
   return response;
 }
+
+export type ResolvedIdentity = {
+  userId: string;
+  email: string;
+};
+
+/**
+ * Resolves the calling user's identity from either a Supabase Bearer token
+ * or a valid admin session cookie. Returns null if neither is present or valid.
+ */
+export async function resolveRequestIdentity(
+  req: NextRequest
+): Promise<ResolvedIdentity | null> {
+  // 1. Try Bearer token via Supabase
+  const authHeader = req.headers.get("authorization");
+  if (authHeader) {
+    const token = authHeader.replace("Bearer ", "");
+    try {
+      const supabase = getSupabaseAdminClient();
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (!error && user?.id && user.email) {
+        return { userId: user.id, email: user.email };
+      }
+    } catch {
+      // fall through to cookie check
+    }
+  }
+
+  // 2. Fall back to admin session cookie
+  const identity = getAdminIdentityFromRequest(req);
+  if (identity) {
+    return { userId: identity.userId, email: identity.email };
+  }
+
+  return null;
+}

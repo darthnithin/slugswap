@@ -148,13 +148,46 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     if (req.method === "POST" || req.method === "PATCH") {
       try {
         const updates = (await req.json()) as Partial<AdminConfig>;
+        const prev = await getAdminConfig();
         const next = await updateAdminConfig(updates);
+
+        let allowancesUpdated = 0;
+        if (
+          updates.defaultWeeklyAllowance !== undefined &&
+          next.config.defaultWeeklyAllowance !== prev.config.defaultWeeklyAllowance
+        ) {
+          const newLimit = next.config.defaultWeeklyAllowance;
+          const now = new Date();
+          const currentPool = await db
+            .select()
+            .from(schema.weeklyPools)
+            .where(
+              and(
+                lte(schema.weeklyPools.weekStart, now),
+                gte(schema.weeklyPools.weekEnd, now)
+              )
+            )
+            .limit(1);
+
+          if (currentPool.length > 0) {
+            const updated = await db
+              .update(schema.userAllowances)
+              .set({
+                weeklyLimit: newLimit.toString(),
+                updatedAt: now,
+              })
+              .where(eq(schema.userAllowances.weeklyPoolId, currentPool[0].id))
+              .returning();
+            allowancesUpdated = updated.length;
+          }
+        }
 
         return NextResponse.json(
           {
             config: next.config,
             updatedAt: next.updatedAt.toISOString(),
             message: "Configuration updated",
+            allowancesUpdated,
           },
           { status: 200 }
         );
@@ -633,7 +666,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           allowanceInfo = {
             weeklyLimit: parseFloat(userAllowance.weeklyLimit),
             usedAmount: parseFloat(userAllowance.usedAmount),
-            remainingAmount: parseFloat(userAllowance.remainingAmount),
+            remainingAmount: Math.max(0, parseFloat(userAllowance.weeklyLimit) - parseFloat(userAllowance.usedAmount)),
           };
         }
       }
@@ -884,7 +917,6 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           .update(schema.userAllowances)
           .set({
             weeklyLimit: newWeeklyLimit.toString(),
-            remainingAmount: availablePoints.toString(),
             updatedAt: new Date(),
           })
           .where(eq(schema.userAllowances.id, currentAllowance.id))
@@ -898,7 +930,6 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             weeklyPoolId: poolId,
             weeklyLimit: availablePoints.toString(),
             usedAmount: "0",
-            remainingAmount: availablePoints.toString(),
           })
           .returning();
       }
@@ -911,7 +942,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             userId: result[0].userId,
             weeklyLimit: parseFloat(result[0].weeklyLimit),
             usedAmount: parseFloat(result[0].usedAmount),
-            remainingAmount: parseFloat(result[0].remainingAmount),
+            remainingAmount: Math.max(0, parseFloat(result[0].weeklyLimit) - parseFloat(result[0].usedAmount)),
           },
         },
         { status: 200 }

@@ -66,7 +66,6 @@ export const userAllowances = pgTable("user_allowances", {
   weeklyPoolId: uuid("weekly_pool_id").references(() => weeklyPools.id).notNull(),
   weeklyLimit: decimal("weekly_limit", { precision: 10, scale: 2 }).notNull(), // Max points per week
   usedAmount: decimal("used_amount", { precision: 10, scale: 2 }).notNull().default("0"), // Points used this week
-  remainingAmount: decimal("remaining_amount", { precision: 10, scale: 2 }).notNull(), // Points left this week
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

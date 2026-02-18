@@ -107,6 +107,16 @@ export async function pauseDonation(userId: string, paused: boolean) {
   return response.json();
 }
 
+export type RequesterAllowance = {
+  weeklyLimit: number;
+  usedAmount: number;
+  remainingAmount: number;
+  weekStart: string;
+  weekEnd: string;
+  daysUntilReset: number;
+  defaultClaimAmount: number;
+};
+
 export async function getRequesterAllowance(userId: string) {
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_BASE_URL}/api/requesters/allowance?userId=${userId}`, {
@@ -118,7 +128,7 @@ export async function getRequesterAllowance(userId: string) {
     throw new Error(errorMessage);
   }
 
-  return response.json();
+  return response.json() as Promise<RequesterAllowance>;
 }
 
 export async function generateClaimCode(userId: string, amount: number) {
