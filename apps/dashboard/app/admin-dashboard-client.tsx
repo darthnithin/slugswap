@@ -869,8 +869,8 @@ export default function DashboardHomePage() {
                   </div>
                   <div className="metric-value gold">{formatNum(statsData.pool.remainingAmount)}</div>
                   <div className="metric-sub">
-                    of <span>{formatNum(statsData.pool.totalAmount)}</span> total points
-                    {statsData.pool.isEstimated ? " (estimated)" : ""}
+                    of <span>{formatNum(statsData.pool.totalAmount)}</span> pts capacity
+                    {statsData.pool.isEstimated ? " (current donors)" : ""}
                   </div>
                   <div className="progress-bar-wrap">
                     <div
@@ -959,10 +959,10 @@ export default function DashboardHomePage() {
                     </div>
                     <div className="pool-details">
                       <div className="pool-detail-row">
-                        <span className="pool-detail-label">Total Pool</span>
+                        <span className="pool-detail-label">Live Capacity</span>
                         <span className="pool-detail-value">
                           {formatNum(statsData.pool.totalAmount)} pts
-                          {statsData.pool.isEstimated ? " (est)" : ""}
+                          {statsData.pool.isEstimated ? " (current donors)" : ""}
                         </span>
                       </div>
                       <div className="pool-detail-row">
@@ -1006,11 +1006,6 @@ export default function DashboardHomePage() {
                       <span className="claim-stat-label">Active</span>
                       <span className="claim-stat-value">{claimStat("active").count}</span>
                       <span className="claim-stat-sub">{formatNum(claimStat("active").amount)} pts</span>
-                    </div>
-                    <div className="claim-stat">
-                      <span className="claim-stat-label">Expired</span>
-                      <span className="claim-stat-value expired">{claimStat("expired").count}</span>
-                      <span className="claim-stat-sub">{formatNum(claimStat("expired").amount)} pts</span>
                     </div>
                   </div>
 
