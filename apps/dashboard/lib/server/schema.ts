@@ -1,10 +1,13 @@
-import { pgTable, uuid, text, timestamp, decimal, integer } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, decimal, integer, boolean } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey(),
   email: text("email").notNull().unique(),
   name: text("name"),
   avatarUrl: text("avatar_url"),
+  referralCode: text("referral_code").unique(),
+  referredBy: uuid("referred_by").references((): any => users.id),
+  referralBonusApplied: boolean("referral_bonus_applied").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -99,6 +102,13 @@ export const getCredentials = pgTable("get_credentials", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const referralFingerprints = pgTable("referral_fingerprints", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  referralCode: text("referral_code").notNull(),
+  ipAddress: text("ip_address").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const adminConfig = pgTable("admin_config", {
   id: text("id").primaryKey().default("global"),
   defaultWeeklyAllowance: integer("default_weekly_allowance").notNull().default(50),
@@ -111,6 +121,7 @@ export const adminConfig = pgTable("admin_config", {
   donorSelectionPolicy: text("donor_selection_policy")
     .notNull()
     .default("least_utilized"),
+  referralBonusPoints: integer("referral_bonus_points").notNull().default(25),
   iosRequiredVersion: text("ios_required_version").notNull().default("1.0.0"),
   androidRequiredVersion: text("android_required_version").notNull().default("1.0.0"),
   iosStoreUrl: text("ios_store_url"),

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, timestamp, decimal } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, timestamp, decimal, boolean } from "drizzle-orm/pg-core";
 
 // Users table - syncs with Supabase Auth
 export const users = pgTable("users", {
@@ -6,6 +6,9 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   name: text("name"),
   avatarUrl: text("avatar_url"),
+  referralCode: text("referral_code").unique(), // Unique code this user shares with others
+  referredBy: uuid("referred_by").references((): any => users.id), // ID of user who referred them
+  referralBonusApplied: boolean("referral_bonus_applied").notNull().default(false), // True once referrer has been credited
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -81,6 +84,14 @@ export const getCredentials = pgTable("get_credentials", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Referral fingerprints table - short-lived records for deferred deep linking
+export const referralFingerprints = pgTable("referral_fingerprints", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  referralCode: text("referral_code").notNull(),
+  ipAddress: text("ip_address").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Admin config table - persistent global settings
 export const adminConfig = pgTable("admin_config", {
   id: text("id").primaryKey().default("global"),
@@ -92,6 +103,7 @@ export const adminConfig = pgTable("admin_config", {
   minDonationAmount: integer("min_donation_amount").notNull().default(10),
   maxDonationAmount: integer("max_donation_amount").notNull().default(500),
   donorSelectionPolicy: text("donor_selection_policy").notNull().default("least_utilized"),
+  referralBonusPoints: integer("referral_bonus_points").notNull().default(25),
   iosRequiredVersion: text("ios_required_version").notNull().default("1.0.0"),
   androidRequiredVersion: text("android_required_version").notNull().default("1.0.0"),
   iosStoreUrl: text("ios_store_url"),

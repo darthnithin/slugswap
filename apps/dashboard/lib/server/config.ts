@@ -18,6 +18,7 @@ export type AdminConfig = {
   minDonationAmount: number;
   maxDonationAmount: number;
   donorSelectionPolicy: DonorSelectionPolicy;
+  referralBonusPoints: number;
   iosRequiredVersion: string;
   androidRequiredVersion: string;
   iosStoreUrl: string | null;
@@ -33,6 +34,7 @@ export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
   minDonationAmount: 10,
   maxDonationAmount: 500,
   donorSelectionPolicy: "least_utilized",
+  referralBonusPoints: 25,
   iosRequiredVersion: "1.0.0",
   androidRequiredVersion: "1.0.0",
   iosStoreUrl: null,
@@ -110,6 +112,7 @@ function rowToConfig(row: typeof adminConfig.$inferSelect): AdminConfig {
     minDonationAmount: row.minDonationAmount,
     maxDonationAmount: row.maxDonationAmount,
     donorSelectionPolicy: normalizeDonorSelectionPolicy(row.donorSelectionPolicy),
+    referralBonusPoints: row.referralBonusPoints,
     iosRequiredVersion: normalizeVersion("iosRequiredVersion", row.iosRequiredVersion),
     androidRequiredVersion: normalizeVersion(
       "androidRequiredVersion",
@@ -211,6 +214,13 @@ export async function updateAdminConfig(
     );
   }
 
+  if (updates.referralBonusPoints !== undefined) {
+    merged.referralBonusPoints = normalizeNonNegativeInteger(
+      "referralBonusPoints",
+      updates.referralBonusPoints
+    );
+  }
+
   if (updates.iosRequiredVersion !== undefined) {
     merged.iosRequiredVersion = normalizeVersion(
       "iosRequiredVersion",
@@ -254,6 +264,7 @@ export async function updateAdminConfig(
         minDonationAmount: merged.minDonationAmount,
         maxDonationAmount: merged.maxDonationAmount,
         donorSelectionPolicy: merged.donorSelectionPolicy,
+        referralBonusPoints: merged.referralBonusPoints,
         iosRequiredVersion: merged.iosRequiredVersion,
         androidRequiredVersion: merged.androidRequiredVersion,
         iosStoreUrl: merged.iosStoreUrl,
