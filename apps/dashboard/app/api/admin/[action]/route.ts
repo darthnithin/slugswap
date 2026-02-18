@@ -432,6 +432,20 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         .from(schema.weeklyPools)
         .orderBy(desc(schema.weeklyPools.weekStart))
         .limit(8);
+
+      // Derive actual allocated amounts from redeemed claim codes per pool week
+      const historicalClaimTotals = await db
+        .select({
+          weeklyPoolId: schema.claimCodes.weeklyPoolId,
+          redeemedAmount: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')`,
+        })
+        .from(schema.claimCodes)
+        .where(eq(schema.claimCodes.status, "redeemed"))
+        .groupBy(schema.claimCodes.weeklyPoolId);
+      const redeemedByPoolId = new Map(
+        historicalClaimTotals.map((r) => [r.weeklyPoolId, parseFloat(r.redeemedAmount)])
+      );
+
       const linkedAccounts = await db
         .select({ count: sqlOp<number>`count(*)` })
         .from(schema.getCredentials);
@@ -504,13 +518,16 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
               utilizationRatio: usage?.utilizationRatio ?? 0,
             };
           }),
-          poolHistory: poolHistory.map((p) => ({
-            weekStart: p.weekStart.toISOString(),
-            weekEnd: p.weekEnd.toISOString(),
-            totalAmount: parseFloat(p.totalAmount),
-            allocatedAmount: parseFloat(p.allocatedAmount),
-            remainingAmount: parseFloat(p.remainingAmount),
-          })),
+          poolHistory: poolHistory.map((p) => {
+            const computedAllocated = redeemedByPoolId.get(p.id) ?? 0;
+            return {
+              weekStart: p.weekStart.toISOString(),
+              weekEnd: p.weekEnd.toISOString(),
+              totalAmount: estimatedWeeklyTotal,
+              allocatedAmount: computedAllocated,
+              remainingAmount: Math.max(0, estimatedWeeklyTotal - computedAllocated),
+            };
+          }),
         },
         { status: 200 }
       );
