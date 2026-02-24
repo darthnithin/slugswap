@@ -247,13 +247,13 @@ export default function RequesterScreen() {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <View>
               <Text selectable style={{ fontSize: 48, fontWeight: 'bold', color: PlatformColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
-                {remainingAllowance}
+                {remainingAllowance.toFixed(2)}
               </Text>
               <Text style={{ fontSize: 14, color: PlatformColor('secondaryLabel') }}>points remaining</Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={{ fontSize: 18, color: PlatformColor('tertiaryLabel'), fontVariant: ['tabular-nums'] }}>
-                of {weeklyAllowance}
+                of {weeklyAllowance.toFixed(2)}
               </Text>
             </View>
           </View>
@@ -274,7 +274,7 @@ export default function RequesterScreen() {
                 Redeemed!
               </Text>
               <Text style={{ fontSize: 17, color: PlatformColor('label'), fontVariant: ['tabular-nums'] }}>
-                {redemptionInfo.amount} points used
+                {redemptionInfo.amount.toFixed(2)} points used
               </Text>
               {redemptionInfo.accountName && (
                 <Text style={{ fontSize: 14, color: PlatformColor('secondaryLabel') }}>
@@ -454,7 +454,7 @@ export default function RequesterScreen() {
                       </Text>
                     </View>
                     <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel'), fontVariant: ['tabular-nums'] }}>
-                      {claim.amount} pts
+                      {typeof claim.amount === 'number' ? claim.amount.toFixed(2) : claim.amount} pts
                     </Text>
                   </View>
                 </View>

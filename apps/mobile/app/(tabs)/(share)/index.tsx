@@ -408,7 +408,7 @@ export default function DonorScreen() {
               </View>
               <View style={{ alignItems: 'center' }}>
                 <Text selectable style={{ fontSize: 32, fontWeight: 'bold', color: PlatformColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
-                  {weeklyAmount}
+                  {parseFloat(weeklyAmount) ? parseFloat(weeklyAmount).toFixed(2) : weeklyAmount}
                 </Text>
                 <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel'), marginTop: 4 }}>Points/Week</Text>
               </View>
@@ -527,7 +527,7 @@ export default function DonorScreen() {
                         {account.accountDisplayName}
                       </Text>
                       <Text selectable style={{ fontSize: 15, color: PlatformColor('systemBlue'), fontWeight: '600', fontVariant: ['tabular-nums'] }}>
-                        {account.balance ?? 'n/a'} pts
+                        {account.balance != null ? account.balance.toFixed(2) : 'n/a'} pts
                       </Text>
                     </View>
                   ))}
