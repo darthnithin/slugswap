@@ -1,11 +1,7 @@
-import { callGetApi } from "@/lib/server/get/tools";
+import { callGetApi, GetApiError } from "@/lib/server/get/tools";
 import { getActiveGetSession } from "@/lib/server/get/session";
 
 const CLAIM_CODE_TTL_MS = 60_000;
-
-function generateFallbackCode(): string {
-  return `SLUG${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-}
 
 function extractBarcodePayload(raw: unknown): string | null {
   if (typeof raw === "string" && raw.trim()) return raw.trim();
@@ -27,7 +23,11 @@ export async function fetchLiveClaimCodeFromGet(
     { sessionId }
   );
 
-  const code = extractBarcodePayload(payload) || generateFallbackCode();
+  const code = extractBarcodePayload(payload);
+  if (!code) {
+    throw new GetApiError("GET provider returned an empty barcode payload");
+  }
+
   const expiresAt = new Date(Date.now() + CLAIM_CODE_TTL_MS);
   return { code, expiresAt, sessionId };
 }
