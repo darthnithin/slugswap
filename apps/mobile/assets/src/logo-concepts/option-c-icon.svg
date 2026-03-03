@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">SlugSwap Logo Option C Icon</title>
+  <desc id="desc">Bold block SS glyph on vivid lime square.</desc>
+  <defs>
+    <linearGradient id="lime" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e9ff64" />
+      <stop offset="100%" stop-color="#c2f135" />
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="210" fill="url(#lime)" />
+  <rect x="68" y="68" width="888" height="888" rx="170" fill="none" stroke="#101215" stroke-opacity="0.2" stroke-width="10" />
+  <path d="M252 250h470v120H386v84h280c78 0 140 60 140 136v66c0 76-62 138-140 138H252V674h364c32 0 57-24 57-54v-26c0-30-25-54-57-54H392c-78 0-140-60-140-136v-154z" fill="#111217" />
+  <path d="M288 250h470v120H422v84h280c78 0 140 60 140 136v66c0 76-62 138-140 138H288V674h364c32 0 57-24 57-54v-26c0-30-25-54-57-54H428c-78 0-140-60-140-136v-154z" fill="#ffffff" fill-opacity="0.26" />
+</svg>
+

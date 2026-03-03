@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">SlugSwap Logo Option B Icon</title>
+  <desc id="desc">Dual exchange loop icon in cyan and orange.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0c1228" />
+      <stop offset="100%" stop-color="#1b1433" />
+    </linearGradient>
+    <linearGradient id="cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7df7ff" />
+      <stop offset="100%" stop-color="#19bedb" />
+    </linearGradient>
+    <linearGradient id="orange" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffb067" />
+      <stop offset="100%" stop-color="#ff6d3f" />
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="240" fill="url(#bg)" />
+  <path d="M206 562c0-172 139-311 311-311h168l-76-77 57-57 176 176-176 176-57-57 76-76H517c-126 0-228 102-228 228v39h-83z" fill="url(#cyan)" />
+  <path d="M818 462c0 172-139 311-311 311H339l76 77-57 57-176-176 176-176 57 57-76 76h168c126 0 228-102 228-228v-39h83z" fill="url(#orange)" />
+</svg>
+

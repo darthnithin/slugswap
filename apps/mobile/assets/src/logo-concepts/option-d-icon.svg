@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">SlugSwap Option D Icon</title>
+  <desc id="desc">Stylized banana slug silhouette with clear head, mantle, and eye stalks.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#111217" />
+      <stop offset="100%" stop-color="#1b1f2d" />
+    </linearGradient>
+    <linearGradient id="slugBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f5dd6a" />
+      <stop offset="100%" stop-color="#d4b53f" />
+    </linearGradient>
+    <linearGradient id="slugBack" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7f5d1a" />
+      <stop offset="100%" stop-color="#5f4511" />
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)" />
+  <rect x="72" y="72" width="880" height="880" rx="188" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="8" />
+
+  <!-- Slug body silhouette -->
+  <path d="M190 676C196 494 350 350 548 350h181c92 0 167 75 167 167s-75 167-167 167H495c-75 0-136 61-136 136v34h-98v-42c0-121 98-219 219-219h249c42 0 76-34 76-76s-34-76-76-76H548c-145 0-263 113-267 256l-91-21z" fill="url(#slugBody)" />
+
+  <!-- Mantle / dorsal stripe -->
+  <path d="M284 664c25-116 128-200 264-200h184c40 0 72 33 72 73 0 40-32 72-72 72H500c-85 0-157 54-184 129l-32-74z" fill="url(#slugBack)" fill-opacity="0.94" />
+
+  <!-- Head bulb -->
+  <ellipse cx="822" cy="520" rx="78" ry="66" fill="url(#slugBody)" />
+
+  <!-- Eye stalks (upper pair) -->
+  <path d="M842 455c16-39 53-70 93-74" fill="none" stroke="#e9cf5f" stroke-width="15" stroke-linecap="round" />
+  <path d="M808 449c7-39 34-76 67-92" fill="none" stroke="#e9cf5f" stroke-width="14" stroke-linecap="round" />
+  <circle cx="941" cy="379" r="10" fill="#0f1015" />
+  <circle cx="878" cy="354" r="9" fill="#0f1015" />
+
+  <!-- Lower tentacles -->
+  <path d="M827 460c13-19 32-31 50-34" fill="none" stroke="#d9be51" stroke-width="10" stroke-linecap="round" />
+  <path d="M794 463c9-16 24-27 39-31" fill="none" stroke="#d9be51" stroke-width="9" stroke-linecap="round" />
+
+  <!-- Subtle body speckles for "banana slug" feel -->
+  <ellipse cx="516" cy="421" rx="20" ry="10" fill="#c9a83f" fill-opacity="0.45" />
+  <ellipse cx="590" cy="405" rx="18" ry="9" fill="#c9a83f" fill-opacity="0.42" />
+  <ellipse cx="670" cy="415" rx="22" ry="11" fill="#c9a83f" fill-opacity="0.44" />
+  <ellipse cx="733" cy="448" rx="16" ry="8" fill="#c9a83f" fill-opacity="0.4" />
+</svg>

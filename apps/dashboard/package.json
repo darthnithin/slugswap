@@ -5,6 +5,7 @@
     "@neondatabase/serverless": "^1.0.2",
     "@supabase/supabase-js": "^2.95.3",
     "@tailwindcss/postcss": "^4.1.12",
+    "@vercel/analytics": "^1.6.1",
     "drizzle-orm": "^0.45.1",
     "framer-motion": "^12.23.24",
     "lucide-react": "^0.542.0",

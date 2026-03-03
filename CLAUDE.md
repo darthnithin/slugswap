@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) (or other Agents!) when working with code in this repository.
 
 ## Project Overview
 
@@ -110,6 +110,31 @@ Mobile API client (`lib/api.ts`) injects Supabase bearer tokens into all request
 5. Mobile renders as PDF417 barcode, auto-refreshes every 5 seconds
 6. Code redeemed at GET terminal or expires
 
+## Operational Notes (Redemptions / Donors)
+
+### Timestamp handling (important)
+- `claim_codes` and `redemptions` use `timestamp without time zone`.
+- When investigating "today" spikes, do not assume UTC display values reflect Pacific local day boundaries.
+- For SQL investigation, treat stored values consistently and explicitly convert when grouping by local day.
+
+### Donor pause semantics
+- Pausing a donor (`/api/donations/pause`) updates `donations.status` and removes that donor from **new** donor selection (`rankDonorCandidatesForClaim` filters `donations.status = 'active'`).
+- Pausing does **not** invalidate previously issued `claim_codes` with status `active`.
+- Result: pre-existing active claim codes from a donor can still redeem after donor pause unless additional invalidation logic is added.
+
+### Known integrity risks
+- `redemptions` currently has no uniqueness constraint on `claim_code_id`, so duplicate redemption rows are possible.
+- Redemption reconciliation in `apps/dashboard/app/api/claims/[action]/route.ts` infers redemption from donor balance deltas and records `get_tools_transaction_id` as `balance_delta:<account_id>`, which is not a guaranteed unique external transaction id.
+- If hard guarantees are needed, add:
+  - DB uniqueness on `redemptions.claim_code_id`
+  - idempotency checks before insert
+  - explicit invalidation of active claim codes when a donor is paused
+
+### Incident snapshot (Mar 2-3, 2026)
+- Donor `lmacvaug@ucsc.edu` was paused at `2026-03-03T07:43:24.454Z`.
+- A burst of 12 Lizzie-backed redemptions occurred before that pause (`last_redemption_at = 2026-03-03T06:31:42.965Z`).
+- No Lizzie claim creations or redemptions were recorded after pause timestamp.
+
 ## Environment Setup
 
 Copy `.env.example` to `.env` and fill in values. Key groups:
@@ -120,9 +145,6 @@ Copy `.env.example` to `.env` and fill in values. Key groups:
 - `GET_*` — GET Tools API credentials and encryption secret
 - `ADMIN_EMAIL_ALLOWLIST` / `ADMIN_SESSION_SECRET` — Dashboard admin auth
 
-## Pull Requests
-
-When creating PRs, include "Coäuthored with Claude" in the PR body.
 
 ## Post-Change Actions
 

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">SlugSwap Logo Option A Icon</title>
+  <desc id="desc">Interlocked serif S monogram on dark gradient square.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#111217" />
+      <stop offset="100%" stop-color="#1f2231" />
+    </linearGradient>
+    <linearGradient id="gold" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#f1c76a" />
+      <stop offset="100%" stop-color="#c99a3a" />
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="240" fill="url(#bg)" />
+  <rect x="70" y="70" width="884" height="884" rx="190" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="8" />
+  <text x="500" y="705" text-anchor="middle" fill="#f3f4f6" font-family="'Instrument Serif', 'Bodoni 72', Didot, Georgia, serif" font-size="650" letter-spacing="-32">S</text>
+  <text x="542" y="705" text-anchor="middle" fill="url(#gold)" font-family="'Instrument Serif', 'Bodoni 72', Didot, Georgia, serif" font-size="650" letter-spacing="-32">S</text>
+  <rect x="352" y="560" width="328" height="210" fill="#f3f4f6" fill-opacity="0.1" />
+</svg>

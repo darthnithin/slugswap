@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 420" role="img" aria-labelledby="title desc">
+  <title id="title">SlugSwap Option E Wordmark</title>
+  <desc id="desc">Modern SlugSwap wordmark with abstract banana slug line mark.</desc>
+  <defs>
+    <linearGradient id="slugLine" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e7ff5f" />
+      <stop offset="100%" stop-color="#b4d93a" />
+    </linearGradient>
+  </defs>
+  <text x="900" y="220" text-anchor="middle" fill="#0b1125" font-family="'Instrument Sans', 'Avenir Next', 'Helvetica Neue', Arial, sans-serif" font-size="216" font-weight="700" letter-spacing="-6">SlugSwap</text>
+  <path d="M280 311c0-53 43-96 96-96h1048c16 0 30 14 30 30v0c0 16-14 30-30 30H416c-16 0-30 14-30 30v22" fill="none" stroke="url(#slugLine)" stroke-width="42" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M1414 213c8-16 21-27 36-31" fill="none" stroke="#d7ef61" stroke-width="10" stroke-linecap="round" />
+  <circle cx="1452" cy="182" r="6" fill="#d7ef61" />
+</svg>
+

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Instrument_Serif, JetBrains_Mono, Outfit } from "next/font/google";
 import type { ReactNode } from "react";
 import "./globals.css";
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         className={`${instrumentSerif.variable} ${outfit.variable} ${jetbrainsMono.variable}`}
       >
         {children}
+        <Analytics />
       </body>
     </html>
   );

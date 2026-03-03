@@ -28,6 +28,8 @@
     "mobile:typecheck": "npm run typecheck -w @slugswap/mobile",
     "typecheck": "npm run root:typecheck && npm run dashboard:typecheck && npm run mobile:typecheck",
     "root:typecheck": "tsc --noEmit -p tsconfig.json",
+    "story:generate": "bash landing-pages-react/scripts/export-ig-stories.sh",
+    "story:generate:svg": "npx tsx landing-pages-react/scripts/generate-instagram-story.ts",
     "mobile:eas:init": "cd apps/mobile && eas init",
     "mobile:eas:build:ios": "cd apps/mobile && eas build --platform ios --profile production",
     "mobile:eas:submit:ios": "cd apps/mobile && eas submit --platform ios --profile production --latest",
@@ -54,7 +56,7 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
-    "vercel": "^50.14.0"
+    "vercel": "^50.25.6"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

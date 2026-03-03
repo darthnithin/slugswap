@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 360" role="img" aria-labelledby="title desc">
+  <title id="title">SlugSwap Logo Option A Wordmark</title>
+  <desc id="desc">Elegant two-tone Instrument Serif wordmark for SlugSwap.</desc>
+  <defs>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f1c76a" />
+      <stop offset="100%" stop-color="#c99a3a" />
+    </linearGradient>
+  </defs>
+  <text x="785" y="245" text-anchor="end" fill="#111217" font-family="'Instrument Serif', 'Bodoni 72', Didot, Georgia, serif" font-size="222" letter-spacing="-6">Slug</text>
+  <text x="815" y="245" text-anchor="start" fill="url(#gold)" font-family="'Instrument Serif', 'Bodoni 72', Didot, Georgia, serif" font-size="222" letter-spacing="-6">Swap</text>
+  <rect x="220" y="284" width="1160" height="6" rx="3" fill="#111217" fill-opacity="0.18" />
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 360" role="img" aria-labelledby="title desc">
+  <title id="title">SlugSwap Logo Option B Wordmark</title>
+  <desc id="desc">Modern geometric SlugSwap wordmark with exchange arrows.</desc>
+  <defs>
+    <linearGradient id="cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7df7ff" />
+      <stop offset="100%" stop-color="#19bedb" />
+    </linearGradient>
+    <linearGradient id="orange" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffb067" />
+      <stop offset="100%" stop-color="#ff6d3f" />
+    </linearGradient>
+  </defs>
+  <text x="770" y="240" text-anchor="end" fill="url(#cyan)" font-family="Avenir Next Condensed, Futura, Verdana, sans-serif" font-weight="800" font-size="214" letter-spacing="-6">Slug</text>
+  <text x="808" y="240" text-anchor="start" fill="url(#orange)" font-family="Avenir Next Condensed, Futura, Verdana, sans-serif" font-weight="800" font-size="214" letter-spacing="-6">Swap</text>
+  <path d="M235 180h120v-54l96 83-96 83v-54H235z" fill="#19bedb" />
+  <path d="M1465 180h-120v54l-96-83 96-83v54h120z" fill="#ff6d3f" />
+</svg>
+

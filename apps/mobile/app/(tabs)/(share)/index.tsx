@@ -95,6 +95,7 @@ export default function DonorScreen() {
   const [getLinkedAt, setGetLinkedAt] = useState<string | null>(shareSnapshot?.getLinkedAt ?? null);
   const [getLoginUrlInput, setGetLoginUrlInput] = useState('');
   const [linkingGet, setLinkingGet] = useState(false);
+  const [openingGetLogin, setOpeningGetLogin] = useState(false);
   const [unlinkingGet, setUnlinkingGet] = useState(false);
   const [refreshingBalance, setRefreshingBalance] = useState(false);
   const [getAccounts, setGetAccounts] = useState<GetAccountBalance[]>(shareSnapshot?.getAccounts ?? []);
@@ -260,11 +261,42 @@ export default function DonorScreen() {
 
   const handleOpenGetLogin = async () => {
     if (!userId) return;
+    if (openingGetLogin) return;
+
+    let popup: any = null;
     try {
+      setOpeningGetLogin(true);
+
+      if (Platform.OS === 'web') {
+        const webWindow = (globalThis as any).window;
+        if (webWindow?.open) {
+          // Open synchronously in direct click handler to avoid Safari popup blocking.
+          popup = webWindow.open('', '_blank', 'noopener,noreferrer');
+        }
+      }
+
       const { loginUrl } = await getGetLoginUrl();
+
+      if (Platform.OS === 'web') {
+        const webWindow = (globalThis as any).window;
+        if (popup && !popup.closed) {
+          popup.location.href = loginUrl;
+          if (popup.focus) popup.focus();
+        } else if (webWindow?.location?.assign) {
+          // Fallback for strict popup blockers: navigate current tab.
+          webWindow.location.assign(loginUrl);
+        }
+        return;
+      }
+
       await WebBrowser.openBrowserAsync(loginUrl);
     } catch (error: any) {
+      if (popup && !popup.closed && popup.close) {
+        popup.close();
+      }
       Alert.alert('Error', error.message || 'Failed to open GET login');
+    } finally {
+      setOpeningGetLogin(false);
     }
   };
 
@@ -617,7 +649,7 @@ export default function DonorScreen() {
 
               <Pressable
                 onPress={handleOpenGetLogin}
-                disabled={linkingGet}
+                disabled={linkingGet || openingGetLogin}
                 style={({ pressed }) => ({
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -627,10 +659,10 @@ export default function DonorScreen() {
                   borderRadius: 10,
                   borderCurve: 'continuous',
                   backgroundColor: uiColor('tertiarySystemFill'),
-                  opacity: pressed ? 0.7 : linkingGet ? 0.5 : 1,
+                  opacity: pressed ? 0.7 : linkingGet || openingGetLogin ? 0.5 : 1,
                 })}
               >
-                {linkingGet ? (
+                {openingGetLogin ? (
                   <ActivityIndicator size="small" color={uiColor('systemBlue')} />
                 ) : (
                   <>

@@ -1,6 +1,6 @@
 # SlugSwap Landing Pages v2.0 — BREATHTAKING Designs
 
-5 UNFORGETTABLE, production-ready React landing pages that make people say "WOW".
+3 UNFORGETTABLE, production-ready React landing pages that make people say "WOW".
 
 ## 🔥 The Designs
 
@@ -20,29 +20,13 @@
 - Overlapping cards, diagonal rotations
 - **Vibe**: Early web meets modern design on steroids. Controlled chaos.
 
-### 3. **Dashboard Dark** (`/dashboard-dark`)
-**Terminal Hacker Aesthetic**
-- Dark theme (#0a0a0f background)
-- ASCII art logo, JetBrains Mono font
-- Neon green (#00ff41) + red (#ff6b6b) accents
-- Scanline effects, terminal borders, live stats
-- **Vibe**: Vercel dashboard meets hacker terminal. Data-driven intensity.
-
-### 4. **Newspaper Editorial** (`/newspaper`)
-**Print Journalism Meets Digital**
-- Black and white with ONE red accent (#dc2626)
-- Playfair Display (headlines) + IBM Plex Sans (body)
-- Dense multi-column layout, editorial marks
-- Pull quotes, classified ads aesthetic
-- **Vibe**: Classic newspaper reimagined. High information density.
-
-### 5. **Experimental 3D** (`/experimental`)
-**Cutting-Edge Interactive Design**
-- CSS 3D transforms, isometric elements
-- Depth layers, parallax scrolling
-- Subtle glassmorphism (done RIGHT)
-- Neumorphic shadows, micro-interactions
-- **Vibe**: Push the boundaries. Modern and CREATIVE.
+### 3. **Collision Grid** (`/collision`)
+**Asymmetric Grid Disruption**
+- Radical 60/40 diagonal split with overlapping zones
+- Burn orange + electric teal color conflict
+- Archivo Black + Work Sans typography pairing
+- Elements break boundaries with aggressive layout energy
+- **Vibe**: Tension, impact, and controlled visual collision.
 
 ---
 
@@ -100,12 +84,8 @@ app/
 │   └── page.tsx          # Brutalist editorial
 ├── maximalist/
 │   └── page.tsx          # Chaotic maximalism
-├── dashboard-dark/
-│   └── page.tsx          # Terminal hacker aesthetic
-├── newspaper/
-│   └── page.tsx          # Print journalism editorial
-└── experimental/
-    └── page.tsx          # 3D interactive design
+└── collision/
+    └── page.tsx          # Asymmetric collision layout
 ```
 
 ---
@@ -161,9 +141,7 @@ Or deploy to Vercel in one click:
 
 - **Hero Bold**: Swiss brutalism, Impact font posters, early punk rock flyers
 - **Maximalist**: Early web GeoCities, Memphis design, 90s rave posters
-- **Dashboard Dark**: Vercel dashboard, terminal interfaces, hacker aesthetics, ASCII art
-- **Newspaper**: New York Times, classic print journalism, editorial design, broadsheet layouts
-- **Experimental**: CSS 3D demos, isometric design, neumorphism, glassmorphism done right
+- **Collision**: Asymmetric editorial grids, poster design, brutal spatial contrast
 
 ---
 

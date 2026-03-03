@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 420" role="img" aria-labelledby="title desc">
+  <title id="title">SlugSwap Option D Wordmark</title>
+  <desc id="desc">SlugSwap wordmark with stylized banana slug underline.</desc>
+  <defs>
+    <linearGradient id="slugBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f5dd6a" />
+      <stop offset="100%" stop-color="#d4b53f" />
+    </linearGradient>
+    <linearGradient id="slugBack" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7f5d1a" />
+      <stop offset="100%" stop-color="#5f4511" />
+    </linearGradient>
+  </defs>
+
+  <text x="850" y="220" text-anchor="middle" fill="#0f1220" font-family="'Instrument Serif', 'Bodoni 72', Didot, Georgia, serif" font-size="230" letter-spacing="-4">SlugSwap</text>
+
+  <!-- Slug underline -->
+  <path d="M214 315c0-45 40-81 90-81h1010c24 0 43 19 43 43v0c0 24-19 43-43 43H351c-25 0-46 21-46 46v2h-53v-5c0-49 40-89 89-89h973c10 0 18-8 18-18v0c0-10-8-19-18-19H304c-65 0-118 53-118 118v8h-52z" fill="url(#slugBody)" />
+  <path d="M302 311c15-24 41-40 71-40h939c15 0 27 12 27 27v0c0 14-12 26-27 26H365c-28 0-53 11-71 30h-57c18-17 41-31 65-43z" fill="url(#slugBack)" fill-opacity="0.84" />
+
+  <!-- Slug head and feelers -->
+  <ellipse cx="1368" cy="299" rx="28" ry="22" fill="url(#slugBody)" />
+  <path d="M1384 283c8-14 22-24 36-25l2 10c-10 1-21 8-28 19z" fill="#e9cf5f" />
+  <path d="M1370 281c4-15 14-28 24-34l4 9c-8 5-16 16-19 28z" fill="#e9cf5f" />
+  <circle cx="1424" cy="268" r="5" fill="#0f1220" />
+  <circle cx="1400" cy="257" r="4.5" fill="#0f1220" />
+</svg>
+
