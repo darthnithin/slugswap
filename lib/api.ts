@@ -131,6 +131,7 @@ type ClaimCodePayload = {
   redemptionAmount?: number;
   redemptionAccount?: string;
   recommendedRail?: CheckoutRail;
+  donorDisplayName?: string | null;
 };
 
 export type MobileUpdatePolicyResponse = {

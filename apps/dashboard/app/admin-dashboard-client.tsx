@@ -12,6 +12,8 @@ type ClaimAggregate = {
   amount: number;
 };
 
+type ChartGranularity = "weekly" | "daily";
+
 type DonorSelectionPolicy =
   | "round_robin"
   | "weighted_round_robin"
@@ -121,6 +123,12 @@ type AdminStatsResponse = {
     weekEnd: string;
     totalAmount: number;
     allocatedAmount: number;
+    remainingAmount: number;
+  }>;
+  dailyHistory: Array<{
+    dayStart: string;
+    dayLabel: string;
+    redeemedAmount: number;
     remainingAmount: number;
   }>;
 };
@@ -291,6 +299,7 @@ export default function DashboardHomePage() {
   const [isLoadingUserDetails, setIsLoadingUserDetails] = useState(false);
   const [userDetailsError, setUserDetailsError] = useState<string | null>(null);
   const [deletingClaimId, setDeletingClaimId] = useState<string | null>(null);
+  const [chartGranularity, setChartGranularity] = useState<ChartGranularity>("weekly");
 
   const fetchData = useCallback(async () => {
     setIsRefreshing(true);
@@ -634,6 +643,7 @@ export default function DashboardHomePage() {
       return {
         remainingPct: 0,
         poolBarTone: "success",
+        utilizationPctDisplay: 0,
         gaugeOffset: 377,
         gaugeTone: "",
         redemptionOffset: 213.6,
@@ -651,9 +661,11 @@ export default function DashboardHomePage() {
     const poolBarTone =
       clampedRemaining < 20 ? "danger" : clampedRemaining < 50 ? "warning" : "success";
 
+    const utilizationPctDisplay = Math.max(0, Math.min(100, statsData.pool.utilizationPct));
+
     const gaugeCircumference = 2 * Math.PI * 60;
     const gaugeOffset =
-      gaugeCircumference - (Math.max(0, Math.min(100, statsData.pool.utilizationPct)) / 100) * gaugeCircumference;
+      gaugeCircumference - (utilizationPctDisplay / 100) * gaugeCircumference;
 
     const gaugeTone =
       statsData.pool.utilizationPct > 90
@@ -676,6 +688,7 @@ export default function DashboardHomePage() {
     return {
       remainingPct: clampedRemaining,
       poolBarTone,
+      utilizationPctDisplay,
       gaugeOffset,
       gaugeTone,
       redemptionOffset,
@@ -688,10 +701,66 @@ export default function DashboardHomePage() {
     return [...statsData.poolHistory].reverse();
   }, [statsData]);
 
-  const maxPoolHistoryTotal = useMemo(() => {
-    if (!sortedPoolHistory.length) return 1;
-    return Math.max(1, ...sortedPoolHistory.map((entry) => entry.totalAmount));
-  }, [sortedPoolHistory]);
+  const chartHistory = useMemo(() => {
+    if (!statsData) return [];
+
+    if (chartGranularity === "daily") {
+      return (statsData.dailyHistory ?? []).map((entry) => ({
+        periodStart: entry.dayStart,
+        label: entry.dayLabel,
+        totalAmount: entry.redeemedAmount,
+        allocatedAmount: entry.remainingAmount,
+      }));
+    }
+
+    return sortedPoolHistory.map((entry) => ({
+      periodStart: entry.weekStart,
+      label: new Date(entry.weekStart).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+      totalAmount: entry.allocatedAmount,
+      allocatedAmount: entry.remainingAmount,
+    }));
+  }, [chartGranularity, sortedPoolHistory, statsData]);
+
+  const chartMeta = useMemo(
+    () =>
+      chartGranularity === "daily"
+        ? {
+            subtitle: "Last 14 days",
+            totalLabel: "Redeemed",
+            allocatedLabel: "Remaining Pool",
+          }
+        : {
+            subtitle: "Last 8 weeks",
+            totalLabel: "Redeemed",
+            allocatedLabel: "Remaining",
+          },
+    [chartGranularity]
+  );
+
+  const maxPoolHistoryValue = useMemo(() => {
+    if (!chartHistory.length) return 1;
+    return Math.max(
+      1,
+      ...chartHistory.map((entry) =>
+        Math.max(Math.max(0, entry.totalAmount), Math.max(0, entry.allocatedAmount))
+      )
+    );
+  }, [chartHistory]);
+
+  const poolHistoryAxis = useMemo(() => {
+    const roughStep = maxPoolHistoryValue / 4;
+    const magnitude = 10 ** Math.floor(Math.log10(Math.max(roughStep, 1)));
+    const normalized = roughStep / magnitude;
+    const stepBase = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+    const step = Math.max(1, stepBase * magnitude);
+    const max = step * 4;
+    const ticks = [0, step, step * 2, step * 3, max];
+
+    return { max, ticks };
+  }, [maxPoolHistoryValue]);
 
   const claimStat = useCallback(
     (status: ClaimStatus): ClaimAggregate => {
@@ -953,7 +1022,7 @@ export default function DashboardHomePage() {
                         />
                       </svg>
                       <div className="gauge-center">
-                        <span className="gauge-pct">{formatNum(statsData.pool.utilizationPct)}%</span>
+                        <span className="gauge-pct">{formatNum(poolMetrics.utilizationPctDisplay)}%</span>
                         <span className="gauge-pct-label">utilized</span>
                       </div>
                     </div>
@@ -1055,55 +1124,121 @@ export default function DashboardHomePage() {
 
               <div className="section">
                 <div className="section-header">
-                  <span className="section-title">Weekly Pool History</span>
-                  <span className="section-subtitle">Last 8 weeks</span>
+                  <span className="section-title">Pool History</span>
+                  <div className="chart-header-right">
+                    <span className="section-subtitle">{chartMeta.subtitle}</span>
+                    <div className="chart-toggle" role="tablist" aria-label="Pool history granularity">
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={chartGranularity === "weekly"}
+                        className={`chart-toggle-btn${chartGranularity === "weekly" ? " active" : ""}`}
+                        onClick={() => setChartGranularity("weekly")}
+                      >
+                        Weekly
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={chartGranularity === "daily"}
+                        className={`chart-toggle-btn${chartGranularity === "daily" ? " active" : ""}`}
+                        onClick={() => setChartGranularity("daily")}
+                      >
+                        Daily
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 <div className="card" style={{ animationDelay: "0.4s" }}>
-                  <div className="bar-chart">
-                    {sortedPoolHistory.length ? (
-                      sortedPoolHistory.map((pool, index) => {
-                        const totalHeight = (pool.totalAmount / maxPoolHistoryTotal) * 100;
-                        const allocatedHeight = (pool.allocatedAmount / maxPoolHistoryTotal) * 100;
-                        const weekLabel = new Date(pool.weekStart).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        });
-
-                        return (
-                          <div className="bar-group" key={pool.weekStart}>
-                            <div className="bar-stack">
-                              <div
-                                className="bar total"
-                                style={{
-                                  height: `${totalHeight}%`,
-                                  animationDelay: `${index * 0.08}s`,
-                                }}
-                              />
-                              <div
-                                className="bar allocated"
-                                style={{
-                                  height: `${allocatedHeight}%`,
-                                  marginTop: `-${allocatedHeight}%`,
-                                  animationDelay: `${index * 0.08 + 0.1}s`,
-                                }}
-                              />
-                            </div>
-                            <span className="bar-label">{weekLabel}</span>
+                  <div className="bar-chart-wrap">
+                    <div className="y-axis">
+                      {poolHistoryAxis.ticks
+                        .slice()
+                        .reverse()
+                        .map((tick) => (
+                          <span className="y-axis-tick" key={tick}>
+                            {formatNum(tick)}
+                          </span>
+                        ))}
+                      <span className="y-axis-unit">pts</span>
+                    </div>
+                    <div className="bar-chart">
+                      {chartHistory.length ? (
+                        <>
+                          <div className="bar-grid-lines" aria-hidden="true">
+                            {poolHistoryAxis.ticks.map((tick) => {
+                              const bottom = poolHistoryAxis.max > 0 ? (tick / poolHistoryAxis.max) * 100 : 0;
+                              return (
+                                <span
+                                  className="bar-grid-line"
+                                  key={`tick-${tick}`}
+                                  style={{ bottom: `${Math.max(0, Math.min(100, bottom))}%` }}
+                                />
+                              );
+                            })}
                           </div>
-                        );
-                      })
-                    ) : (
-                      <div className="empty-state">No pool history yet</div>
-                    )}
+                          {chartHistory.map((entry, index) => {
+                            const totalHeight = Math.max(
+                              0,
+                              Math.min(100, (entry.totalAmount / poolHistoryAxis.max) * 100)
+                            );
+                            const allocatedHeight = Math.max(
+                              0,
+                              Math.min(100, (entry.allocatedAmount / poolHistoryAxis.max) * 100)
+                            );
+
+                            return (
+                              <div
+                                className="bar-group"
+                                key={entry.periodStart}
+                                tabIndex={0}
+                                aria-label={`${entry.label}. ${chartMeta.totalLabel} ${formatNum(entry.totalAmount)} points, ${chartMeta.allocatedLabel} ${formatNum(entry.allocatedAmount)} points.`}
+                              >
+                                <div className="bar-tooltip" role="presentation" aria-hidden="true">
+                                  <div className="bar-tooltip-title">{entry.label}</div>
+                                  <div className="bar-tooltip-row">
+                                    <span>{chartMeta.totalLabel}</span>
+                                    <span>{formatNum(entry.totalAmount)} pts</span>
+                                  </div>
+                                  <div className="bar-tooltip-row">
+                                    <span>{chartMeta.allocatedLabel}</span>
+                                    <span>{formatNum(entry.allocatedAmount)} pts</span>
+                                  </div>
+                                </div>
+                                <div className="bar-stack">
+                                  <div
+                                    className="bar total"
+                                    style={{
+                                      height: `${totalHeight}%`,
+                                      animationDelay: `${index * 0.08}s`,
+                                    }}
+                                  />
+                                  <div
+                                    className="bar allocated"
+                                    style={{
+                                      height: `${allocatedHeight}%`,
+                                      animationDelay: `${index * 0.08 + 0.1}s`,
+                                    }}
+                                  />
+                                </div>
+                                <span className="bar-label">{entry.label}</span>
+                              </div>
+                            );
+                          })}
+                        </>
+                      ) : (
+                        <div className="empty-state">No pool history yet</div>
+                      )}
+                    </div>
                   </div>
                   <div className="legend-row">
                     <span className="legend-item">
                       <span className="legend-chip total" />
-                      Total
+                      {chartMeta.totalLabel}
                     </span>
                     <span className="legend-item">
                       <span className="legend-chip allocated" />
-                      Allocated
+                      {chartMeta.allocatedLabel}
                     </span>
                   </div>
                 </div>

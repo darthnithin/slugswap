@@ -446,6 +446,128 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         historicalClaimTotals.map((r) => [r.weeklyPoolId, parseFloat(r.redeemedAmount)])
       );
 
+      const dailyWindowDays = 14;
+      const dailyWindowStart = new Date(now);
+      dailyWindowStart.setHours(0, 0, 0, 0);
+      dailyWindowStart.setDate(dailyWindowStart.getDate() - (dailyWindowDays - 1));
+      const dailyWindowEnd = new Date(now);
+      dailyWindowEnd.setHours(0, 0, 0, 0);
+      dailyWindowEnd.setDate(dailyWindowEnd.getDate() + 1);
+
+      const dailyPools = await db
+        .select({
+          id: schema.weeklyPools.id,
+          weekStart: schema.weeklyPools.weekStart,
+          weekEnd: schema.weeklyPools.weekEnd,
+          totalAmount: schema.weeklyPools.totalAmount,
+        })
+        .from(schema.weeklyPools)
+        .where(
+          and(
+            lt(schema.weeklyPools.weekStart, dailyWindowEnd),
+            gte(schema.weeklyPools.weekEnd, dailyWindowStart)
+          )
+        )
+        .orderBy(schema.weeklyPools.weekStart);
+
+      const earliestPoolStart = dailyPools.reduce(
+        (min, poolRow) => (poolRow.weekStart < min ? poolRow.weekStart : min),
+        dailyWindowStart
+      );
+
+      const dailyRedeemedClaims = await db
+        .select({
+          weeklyPoolId: schema.claimCodes.weeklyPoolId,
+          redeemedAt: schema.claimCodes.redeemedAt,
+          amount: schema.claimCodes.amount,
+        })
+        .from(schema.claimCodes)
+        .where(
+          and(
+            eq(schema.claimCodes.status, "redeemed"),
+            gte(schema.claimCodes.redeemedAt, earliestPoolStart),
+            lt(schema.claimCodes.redeemedAt, dailyWindowEnd)
+          )
+        );
+
+      const dayKeyFormatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: ptWeekWindow.timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      const dayLabelFormatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: ptWeekWindow.timezone,
+        month: "short",
+        day: "numeric",
+      });
+      const nowInPt = new Intl.DateTimeFormat("en-US", {
+        timeZone: ptWeekWindow.timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(now);
+      const ptYear = Number(nowInPt.find((p) => p.type === "year")?.value ?? "0");
+      const ptMonth = Number(nowInPt.find((p) => p.type === "month")?.value ?? "1");
+      const ptDay = Number(nowInPt.find((p) => p.type === "day")?.value ?? "1");
+      const ptTodayAnchor = new Date(Date.UTC(ptYear, ptMonth - 1, ptDay, 12, 0, 0, 0));
+      const dailyBuckets = new Map<
+        string,
+        { dayStart: Date; dayLabel: string; redeemedAmount: number; poolRemainingAmount: number }
+      >();
+
+      for (let i = dailyWindowDays - 1; i >= 0; i--) {
+        const day = new Date(ptTodayAnchor);
+        day.setUTCDate(day.getUTCDate() - i);
+        dailyBuckets.set(dayKeyFormatter.format(day), {
+          dayStart: new Date(day),
+          dayLabel: dayLabelFormatter.format(day),
+          redeemedAmount: 0,
+          poolRemainingAmount: 0,
+        });
+      }
+
+      const redeemedByPoolAndDay = new Map<string, number>();
+      for (const claim of dailyRedeemedClaims) {
+        if (!claim.redeemedAt) continue;
+        const dayKey = dayKeyFormatter.format(claim.redeemedAt);
+        const poolDayKey = `${claim.weeklyPoolId}:${dayKey}`;
+        const amount = parseFloat(claim.amount);
+        redeemedByPoolAndDay.set(poolDayKey, (redeemedByPoolAndDay.get(poolDayKey) ?? 0) + amount);
+
+        const key = dayKey;
+        const bucket = dailyBuckets.get(key);
+        if (!bucket) continue;
+        bucket.redeemedAmount += amount;
+      }
+
+      const runningRedeemedByPool = new Map<string, number>();
+      for (const [dayKey, bucket] of dailyBuckets.entries()) {
+        const pool = dailyPools.find(
+          (p) => p.weekStart <= bucket.dayStart && p.weekEnd > bucket.dayStart
+        );
+        if (!pool) {
+          bucket.poolRemainingAmount = Math.max(0, estimatedWeeklyTotal - bucket.redeemedAmount);
+          continue;
+        }
+
+        const redeemedTodayForPool = redeemedByPoolAndDay.get(`${pool.id}:${dayKey}`) ?? 0;
+        const running = (runningRedeemedByPool.get(pool.id) ?? 0) + redeemedTodayForPool;
+        runningRedeemedByPool.set(pool.id, running);
+
+        const poolTotal = parseFloat(pool.totalAmount);
+        bucket.poolRemainingAmount = Math.max(0, poolTotal - running);
+      }
+
+      const dailyHistory = Array.from(dailyBuckets.values()).map((bucket) => {
+        return {
+          dayStart: bucket.dayStart.toISOString(),
+          dayLabel: bucket.dayLabel,
+          redeemedAmount: bucket.redeemedAmount,
+          remainingAmount: bucket.poolRemainingAmount,
+        };
+      });
+
       const linkedAccounts = await db
         .select({ count: sqlOp<number>`count(*)` })
         .from(schema.getCredentials);
@@ -520,14 +642,20 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           }),
           poolHistory: poolHistory.map((p) => {
             const computedAllocated = redeemedByPoolId.get(p.id) ?? 0;
+            const recordedTotal = parseFloat(p.totalAmount);
+            const weekTotal = Number.isFinite(recordedTotal) && recordedTotal > 0
+              ? recordedTotal
+              : estimatedWeeklyTotal;
+
             return {
               weekStart: p.weekStart.toISOString(),
               weekEnd: p.weekEnd.toISOString(),
-              totalAmount: estimatedWeeklyTotal,
+              totalAmount: weekTotal,
               allocatedAmount: computedAllocated,
-              remainingAmount: Math.max(0, estimatedWeeklyTotal - computedAllocated),
+              remainingAmount: Math.max(0, weekTotal - computedAllocated),
             };
           }),
+          dailyHistory,
         },
         { status: 200 }
       );

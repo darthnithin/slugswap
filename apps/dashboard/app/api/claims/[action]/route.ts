@@ -33,14 +33,6 @@ function toSafeBalance(value: number | null): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-function inferCheckoutRailFromAccountName(accountName?: string): CheckoutRail | null {
-  if (!accountName) return null;
-  const normalized = accountName.trim().toLowerCase();
-  if (normalized === FLEXI_ACCOUNT_NAME) return "flexi-dollars";
-  if (POINTS_OR_BUCKS_ACCOUNT_NAMES.has(normalized)) return "points-or-bucks";
-  return null;
-}
-
 function chooseCheckoutRail(
   snapshot: BalanceSnapshotEntry[],
   claimAmount: number
@@ -80,6 +72,16 @@ function getRecommendedRailFromBalanceSnapshot(
   } catch {
     return "points-or-bucks";
   }
+}
+
+function formatDonorDisplayName(rawName: string | null): string | null {
+  if (!rawName) return null;
+  const trimmed = rawName.trim();
+  if (!trimmed) return null;
+
+  const firstToken = trimmed.split(/\s+/)[0] ?? "";
+  const sanitized = firstToken.replace(/[^A-Za-z0-9'.-]/g, "");
+  return sanitized || null;
 }
 
 function getCurrentWeek() {
@@ -202,6 +204,13 @@ async function handleGenerate(req: NextRequest) {
           })
           .returning();
 
+        const donorProfile = await db
+          .select({ name: schema.users.name })
+          .from(schema.users)
+          .where(eq(schema.users.id, candidate.donorUserId))
+          .limit(1);
+        const donorDisplayName = formatDonorDisplayName(donorProfile[0]?.name ?? null);
+
         // Allowance is NOT deducted here — it's only deducted when redemption
         // is confirmed via balance drop (the actual amount spent may differ).
 
@@ -215,6 +224,7 @@ async function handleGenerate(req: NextRequest) {
               expiresAt: claimCode.expiresAt,
               status: claimCode.status,
               recommendedRail,
+              donorDisplayName,
             },
           },
           { status: 200 }
@@ -333,30 +343,6 @@ async function handleRefresh(req: NextRequest) {
     }
     if (currentClaim.expiresAt < new Date()) {
       return NextResponse.json({ error: "Claim code has expired" }, { status: 400 });
-    }
-
-    // Check for redemption via balance change before refreshing
-    const redemptionResult = await detectRedemption(currentClaim);
-    if (redemptionResult) {
-      const redeemedRail =
-        inferCheckoutRailFromAccountName(redemptionResult.accountName) ?? recommendedRail;
-      return NextResponse.json(
-        {
-          success: true,
-          claimCode: {
-            id: currentClaim.id,
-            code: currentClaim.code,
-            amount: parseFloat(currentClaim.amount),
-            expiresAt: currentClaim.expiresAt,
-            status: "redeemed",
-            redeemedAt: redemptionResult.redeemedAt,
-            redemptionAmount: redemptionResult.amount,
-            redemptionAccount: redemptionResult.accountName,
-            recommendedRail: redeemedRail,
-          },
-        },
-        { status: 200 }
-      );
     }
 
     let effectiveDonorUserId = currentClaim.donorUserId;

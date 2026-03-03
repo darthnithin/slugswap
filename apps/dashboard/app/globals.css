@@ -584,58 +584,168 @@ body {
   color: var(--accent-gold);
 }
 
+.admin-root .bar-chart-wrap {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.admin-root .y-axis {
+  position: relative;
+  height: 240px;
+  padding: 8px 6px 24px 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.admin-root .y-axis-tick {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  text-align: right;
+  line-height: 1;
+}
+
+.admin-root .y-axis-unit {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .admin-root .bar-chart {
+  position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 8px;
-  height: 120px;
-  padding-top: 8px;
+  gap: 12px;
+  height: 240px;
+  padding: 8px 0 24px 10px;
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.admin-root .bar-grid-lines {
+  position: absolute;
+  inset: 8px 0 24px 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.admin-root .bar-grid-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--border);
+  opacity: 0.65;
 }
 
 .admin-root .bar-group {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 58px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  height: 100%;
   justify-content: flex-end;
+  gap: 8px;
+  height: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.admin-root .bar-tooltip {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translate(-50%, 8px);
+  min-width: 150px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(16, 12, 8, 0.96);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+  z-index: 3;
+}
+
+.admin-root .bar-group:hover .bar-tooltip,
+.admin-root .bar-group:focus-within .bar-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+.admin-root .bar-tooltip-title {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--accent-gold-bright);
+  margin-bottom: 6px;
+}
+
+.admin-root .bar-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
 }
 
 .admin-root .bar-stack {
   width: 100%;
+  max-width: 46px;
+  height: 100%;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: center;
-  flex: 1;
-  justify-content: flex-end;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6px;
 }
 
 .admin-root .bar {
-  width: 100%;
-  max-width: 32px;
+  width: 16px;
   border-radius: 3px 3px 0 0;
-  min-height: 2px;
+  min-height: 0;
   transition: height 1s var(--ease-out);
-  position: relative;
   animation: bar-grow 0.8s var(--ease-out) backwards;
 }
 
 .admin-root .bar.total {
-  background: var(--accent-gold-dim);
+  background: var(--accent-gold);
 }
 
 .admin-root .bar.allocated {
-  background: var(--accent-gold);
-  border-radius: 3px 3px 0 0;
+  background: var(--accent-gold-dim);
 }
 
 .admin-root .bar-label {
   font-family: var(--font-mono);
-  font-size: 0.6rem;
+  font-size: 0.62rem;
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+.admin-root .bar-group:focus-visible {
+  outline: none;
+}
+
+.admin-root .bar-group:focus-visible .bar-label {
+  color: var(--text-primary);
+}
+
+.admin-root .bar-chart .empty-state {
+  margin: auto;
+  position: relative;
+  z-index: 1;
 }
 
 .admin-root .claims-breakdown {
@@ -1104,6 +1214,41 @@ body {
   font-weight: 300;
 }
 
+.admin-root .chart-header-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-root .chart-toggle {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+}
+
+.admin-root .chart-toggle-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.admin-root .chart-toggle-btn:hover {
+  color: var(--text-primary);
+}
+
+.admin-root .chart-toggle-btn.active {
+  background: rgba(212, 159, 74, 0.2);
+  color: var(--accent-gold-bright);
+}
+
 .admin-root .redemption-ring {
   width: 80px;
   height: 80px;
@@ -1189,11 +1334,11 @@ body {
 }
 
 .admin-root .legend-chip.total {
-  background: var(--accent-gold-dim);
+  background: var(--accent-gold);
 }
 
 .admin-root .legend-chip.allocated {
-  background: var(--accent-gold);
+  background: var(--accent-gold-dim);
 }
 
 @keyframes card-enter {
@@ -1324,6 +1469,29 @@ body {
   .admin-root .activity-table th:nth-child(4),
   .admin-root .activity-table td:nth-child(4) {
     display: none;
+  }
+
+  .admin-root .bar-chart-wrap {
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .admin-root .bar-chart,
+  .admin-root .y-axis {
+    height: 220px;
+  }
+
+  .admin-root .bar-group {
+    min-width: 48px;
+  }
+
+  .admin-root .bar {
+    width: 12px;
+  }
+
+  .admin-root .chart-header-right {
+    width: 100%;
+    justify-content: space-between;
   }
 }
 

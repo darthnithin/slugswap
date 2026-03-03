@@ -17,6 +17,7 @@ interface ClaimCode {
   redemptionAmount?: number;
   redemptionAccount?: string;
   recommendedRail?: CheckoutRail;
+  donorDisplayName?: string | null;
 }
 
 const FLEXI_ACCOUNT_NAME = 'flexi dollars';
@@ -80,6 +81,9 @@ export default function RequesterScreen() {
     activeCheckoutRail === 'flexi-dollars'
       ? 'This claim is currently pulling from the donor Flexi balance.'
       : 'This claim is currently pulling from donor Slug Points / Banana Bucks.';
+  const donorCourtesyLabel = currentCode?.donorDisplayName
+    ? `Courtesy of ${currentCode.donorDisplayName}`
+    : 'Courtesy of a SlugSwap donor';
 
   useEffect(() => {
     if (hasLoadedRequest) return;
@@ -148,6 +152,7 @@ export default function RequesterScreen() {
         setCurrentCode({
           ...result.claimCode,
           recommendedRail: result.claimCode.recommendedRail ?? currentCode.recommendedRail ?? 'points-or-bucks',
+          donorDisplayName: result.claimCode.donorDisplayName ?? currentCode.donorDisplayName ?? null,
         });
       } catch (error: any) {
         const message = error?.message || 'Failed to refresh claim code';
@@ -215,6 +220,7 @@ export default function RequesterScreen() {
       setCurrentCode({
         ...result.claimCode,
         recommendedRail: result.claimCode.recommendedRail ?? 'points-or-bucks',
+        donorDisplayName: result.claimCode.donorDisplayName ?? null,
       });
       await loadUserAndAllowance();
     } catch (error: any) {
@@ -374,6 +380,9 @@ export default function RequesterScreen() {
               </View>
               <Text style={{ fontSize: 12, color: PlatformColor('secondaryLabel') }}>
                 {checkoutDetail}
+              </Text>
+              <Text selectable style={{ fontSize: 12, color: PlatformColor('tertiaryLabel') }}>
+                {donorCourtesyLabel}
               </Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 12 }}>
