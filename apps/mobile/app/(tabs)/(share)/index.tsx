@@ -1,4 +1,4 @@
-import { View, Text, TextInput, Pressable, ActivityIndicator, Alert, ScrollView, PlatformColor, RefreshControl } from 'react-native';
+import { View, Text, TextInput, Pressable, ActivityIndicator, Alert, ScrollView, RefreshControl } from 'react-native';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { BlurView } from 'expo-blur';
 import { SymbolView } from 'expo-symbols';
@@ -7,14 +7,9 @@ import { useAuth } from '../../../../../lib/auth-context';
 import { supabase } from '../../../../../lib/supabase';
 import { setDonation, getDonorImpact, pauseDonation, getGetAccounts, getGetLinkStatus, getGetLoginUrl, linkGetAccount, unlinkGetAccount, type DonorImpact } from '../../../../../lib/api';
 import * as WebBrowser from 'expo-web-browser';
-import { useTabCache } from '../../../../../lib/tab-cache-context';
+import { useTabCache, type GetAccountBalance, type ShareTabSnapshot } from '../../../../../lib/tab-cache-context';
 import { useFocusEffect } from 'expo-router';
-
-interface GetAccountBalance {
-  id: string;
-  accountDisplayName: string;
-  balance: number | null;
-}
+import { uiColor } from '../../../lib/ui-color';
 
 const UCSC_TRACKED_BALANCE_ACCOUNTS = new Set([
   'flexi dollars',
@@ -87,29 +82,104 @@ function Card({ children, style }: { children: React.ReactNode; style?: any }) {
 
 export default function DonorScreen() {
   const { signOut } = useAuth();
-  const { hasLoadedShare, markShareLoaded } = useTabCache();
-  const [weeklyAmount, setWeeklyAmount] = useState('');
-  const [isActive, setIsActive] = useState(false);
-  const [loading, setLoading] = useState(!hasLoadedShare);
+  const { hasLoadedShare, markShareLoaded, shareSnapshot, setShareSnapshot } = useTabCache();
+  const hasShareSnapshot = !!shareSnapshot;
+  const [weeklyAmount, setWeeklyAmount] = useState(shareSnapshot?.weeklyAmount ?? '');
+  const [isActive, setIsActive] = useState(shareSnapshot?.isActive ?? false);
+  const [loading, setLoading] = useState(!shareSnapshot);
   const [saving, setSaving] = useState(false);
-  const [impact, setImpact] = useState<DonorImpact>(EMPTY_IMPACT);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [isGetLinked, setIsGetLinked] = useState(false);
-  const [getLinkedAt, setGetLinkedAt] = useState<string | null>(null);
+  const [impact, setImpact] = useState<DonorImpact>(shareSnapshot?.impact ?? EMPTY_IMPACT);
+  const [userId, setUserId] = useState<string | null>(shareSnapshot?.userId ?? null);
+  const [userEmail, setUserEmail] = useState<string | null>(shareSnapshot?.userEmail ?? null);
+  const [isGetLinked, setIsGetLinked] = useState(shareSnapshot?.isGetLinked ?? false);
+  const [getLinkedAt, setGetLinkedAt] = useState<string | null>(shareSnapshot?.getLinkedAt ?? null);
   const [getLoginUrlInput, setGetLoginUrlInput] = useState('');
   const [linkingGet, setLinkingGet] = useState(false);
   const [unlinkingGet, setUnlinkingGet] = useState(false);
   const [refreshingBalance, setRefreshingBalance] = useState(false);
-  const [getAccounts, setGetAccounts] = useState<GetAccountBalance[]>([]);
+  const [getAccounts, setGetAccounts] = useState<GetAccountBalance[]>(shareSnapshot?.getAccounts ?? []);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  const loadUserAndImpact = useCallback(async (options?: { showBlockingLoader?: boolean }) => {
+    const showBlockingLoader = options?.showBlockingLoader ?? false;
+    if (showBlockingLoader) {
+      setLoading(true);
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert('Error', 'Please sign in first');
+        return;
+      }
+
+      const linkState = await getGetLinkStatus(user.id);
+      let nextGetAccounts: GetAccountBalance[] = [];
+      if (linkState.linked) {
+        try {
+          const accounts = await getGetAccounts(user.id);
+          nextGetAccounts = accounts.accounts || [];
+        } catch {
+          nextGetAccounts = [];
+        }
+      }
+
+      const impactData = await getDonorImpact(user.id);
+      const normalizedImpact = normalizeDonorImpact(impactData);
+      const normalizedWeeklyAmount =
+        impactData.weeklyAmount > 0 ? impactData.weeklyAmount.toString() : '';
+
+      const nextSnapshot: ShareTabSnapshot = {
+        userId: user.id,
+        userEmail: user.email ?? null,
+        weeklyAmount: normalizedWeeklyAmount,
+        isActive: impactData.isActive,
+        impact: normalizedImpact,
+        isGetLinked: linkState.linked,
+        getLinkedAt: linkState.linkedAt,
+        getAccounts: nextGetAccounts,
+      };
+
+      setUserId(nextSnapshot.userId);
+      setUserEmail(nextSnapshot.userEmail);
+      setWeeklyAmount(nextSnapshot.weeklyAmount);
+      setIsActive(nextSnapshot.isActive);
+      setImpact(nextSnapshot.impact);
+      setIsGetLinked(nextSnapshot.isGetLinked);
+      setGetLinkedAt(nextSnapshot.getLinkedAt);
+      setGetAccounts(nextSnapshot.getAccounts);
+      setShareSnapshot(nextSnapshot);
+      markShareLoaded();
+    } catch (error) {
+      console.error('Error loading impact:', error);
+      Alert.alert('Error', 'Failed to load your donation data');
+    } finally {
+      if (showBlockingLoader) {
+        setLoading(false);
+      }
+    }
+  }, [markShareLoaded, setShareSnapshot]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadUserAndImpact();
+    await loadUserAndImpact({ showBlockingLoader: false });
     setRefreshing(false);
-  }, []);
+  }, [loadUserAndImpact]);
+
+  const cacheShareSnapshot = useCallback((overrides: Partial<ShareTabSnapshot> = {}) => {
+    setShareSnapshot({
+      userId,
+      userEmail,
+      weeklyAmount,
+      isActive,
+      impact,
+      isGetLinked,
+      getLinkedAt,
+      getAccounts,
+      ...overrides,
+    });
+  }, [getAccounts, getLinkedAt, impact, isActive, isGetLinked, setShareSnapshot, userEmail, userId, weeklyAmount]);
 
   const ucscTrackedAccounts = getAccounts.filter((account) =>
     UCSC_TRACKED_BALANCE_ACCOUNTS.has(account.accountDisplayName.trim().toLowerCase())
@@ -119,87 +189,19 @@ export default function DonorScreen() {
     return sum + account.balance;
   }, 0);
 
-  // Load on first mount
+  // Load on first mount if we don't already have cached share data.
   useEffect(() => {
-    if (hasLoadedShare) return;
-    loadUserAndImpact();
-  }, []);
+    if (hasShareSnapshot) return;
+    void loadUserAndImpact({ showBlockingLoader: true });
+  }, [hasShareSnapshot, loadUserAndImpact]);
 
-  // Reload all data when tab comes back into focus (workaround for component remounting)
+  // Refresh in the background when tab regains focus.
   useFocusEffect(
     useCallback(() => {
-      if (!hasLoadedShare) return; // Don't reload if initial load hasn't happened
-
-      (async () => {
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) return;
-
-          // Reload GET link status
-          const linkState = await getGetLinkStatus(user.id);
-          setIsGetLinked(linkState.linked);
-          setGetLinkedAt(linkState.linkedAt);
-
-          if (linkState.linked) {
-            try {
-              const accounts = await getGetAccounts(user.id);
-              setGetAccounts(accounts.accounts || []);
-            } catch {
-              setGetAccounts([]);
-            }
-          } else {
-            setGetAccounts([]);
-          }
-
-          // Reload donation/impact data
-          const impactData = await getDonorImpact(user.id);
-          setIsActive(impactData.isActive);
-          setWeeklyAmount(impactData.weeklyAmount > 0 ? impactData.weeklyAmount.toString() : '');
-          setImpact(normalizeDonorImpact(impactData));
-        } catch (error) {
-          console.error('Error refreshing data on focus:', error);
-        }
-      })();
-    }, [hasLoadedShare])
+      if (!hasLoadedShare || !hasShareSnapshot) return;
+      void loadUserAndImpact({ showBlockingLoader: false });
+    }, [hasLoadedShare, hasShareSnapshot, loadUserAndImpact])
   );
-
-  async function loadUserAndImpact() {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        Alert.alert('Error', 'Please sign in first');
-        return;
-      }
-
-      setUserId(user.id);
-      setUserEmail(user.email ?? null);
-
-      const linkState = await getGetLinkStatus(user.id);
-      setIsGetLinked(linkState.linked);
-      setGetLinkedAt(linkState.linkedAt);
-      if (linkState.linked) {
-        try {
-          const accounts = await getGetAccounts(user.id);
-          setGetAccounts(accounts.accounts || []);
-        } catch {
-          setGetAccounts([]);
-        }
-      } else {
-        setGetAccounts([]);
-      }
-
-      const impactData = await getDonorImpact(user.id);
-      setIsActive(impactData.isActive);
-      setWeeklyAmount(impactData.weeklyAmount > 0 ? impactData.weeklyAmount.toString() : '');
-      setImpact(normalizeDonorImpact(impactData));
-    } catch (error) {
-      console.error('Error loading impact:', error);
-      Alert.alert('Error', 'Failed to load your donation data');
-    } finally {
-      setLoading(false);
-      markShareLoaded();
-    }
-  }
 
   const handleSetContribution = async () => {
     if (!userId) return;
@@ -215,7 +217,7 @@ export default function DonorScreen() {
       await setDonation(userId, amount, userEmail);
       setIsActive(true);
       Alert.alert('Success', 'Your contribution has been set!');
-      await loadUserAndImpact();
+      await loadUserAndImpact({ showBlockingLoader: false });
     } catch (error) {
       console.error('Error setting donation:', error);
       Alert.alert('Error', 'Failed to set contribution. Please try again.');
@@ -228,11 +230,13 @@ export default function DonorScreen() {
     if (!userId) return;
 
     const shouldPause = isActive;
+    const nextIsActive = !isActive;
 
     setSaving(true);
     try {
       await pauseDonation(userId, shouldPause);
-      setIsActive(!isActive);
+      setIsActive(nextIsActive);
+      cacheShareSnapshot({ isActive: nextIsActive });
       Alert.alert('Success', isActive ? 'Donation paused' : 'Donation resumed');
     } catch (error) {
       console.error('Error pausing donation:', error);
@@ -251,7 +255,7 @@ export default function DonorScreen() {
     });
     setGetLoginUrlInput('');
     Alert.alert('Success', 'Your GET account is now linked for sharing.');
-    await loadUserAndImpact();
+    await loadUserAndImpact({ showBlockingLoader: false });
   };
 
   const handleOpenGetLogin = async () => {
@@ -294,6 +298,11 @@ export default function DonorScreen() {
             setIsGetLinked(false);
             setGetLinkedAt(null);
             setGetAccounts([]);
+            cacheShareSnapshot({
+              isGetLinked: false,
+              getLinkedAt: null,
+              getAccounts: [],
+            });
             Alert.alert('Unlinked', 'Your donor GET account has been unlinked.');
           } catch (error: any) {
             Alert.alert('Error', error.message || 'Failed to unlink GET account');
@@ -310,7 +319,9 @@ export default function DonorScreen() {
     setRefreshingBalance(true);
     try {
       const accounts = await getGetAccounts(userId);
-      setGetAccounts(accounts.accounts || []);
+      const nextAccounts = accounts.accounts || [];
+      setGetAccounts(nextAccounts);
+      cacheShareSnapshot({ getAccounts: nextAccounts });
     } catch (error: any) {
       Alert.alert('Refresh Failed', error.message || 'Failed to refresh GET balance');
     } finally {
@@ -331,7 +342,7 @@ export default function DonorScreen() {
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={PlatformColor('systemBlue')} />
+        <ActivityIndicator size="large" color={uiColor('systemBlue')} />
       </View>
     );
   }
@@ -345,31 +356,31 @@ export default function DonorScreen() {
         {/* Show Contribution/Impact first if GET is already linked */}
         {isGetLinked && !isActive && (
           <Card>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 4 }}>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: uiColor('label'), marginBottom: 4 }}>
               Set Weekly Contribution
             </Text>
-            <Text style={{ fontSize: 14, color: PlatformColor('secondaryLabel'), marginBottom: 20 }}>
+            <Text style={{ fontSize: 14, color: uiColor('secondaryLabel'), marginBottom: 20 }}>
               Your contribution goes to a weekly pool that helps fellow students
             </Text>
 
             <View style={{ gap: 8, marginBottom: 20 }}>
-              <Text style={{ fontSize: 14, fontWeight: '500', color: PlatformColor('label') }}>Weekly Amount (points)</Text>
+              <Text style={{ fontSize: 14, fontWeight: '500', color: uiColor('label') }}>Weekly Amount (points)</Text>
               <TextInput
                 style={{
                   borderWidth: 0.5,
-                  borderColor: PlatformColor('separator'),
+                  borderColor: uiColor('separator'),
                   borderRadius: 10,
                   borderCurve: 'continuous',
                   padding: 12,
                   fontSize: 16,
-                  color: PlatformColor('label'),
-                  backgroundColor: PlatformColor('secondarySystemGroupedBackground'),
+                  color: uiColor('label'),
+                  backgroundColor: uiColor('secondarySystemGroupedBackground'),
                 }}
                 value={weeklyAmount}
                 onChangeText={setWeeklyAmount}
                 keyboardType="numeric"
                 placeholder="e.g., 100"
-                placeholderTextColor={PlatformColor('placeholderText')}
+                placeholderTextColor={uiColor('placeholderText')}
               />
             </View>
 
@@ -381,7 +392,7 @@ export default function DonorScreen() {
                 paddingVertical: 14,
                 borderRadius: 10,
                 borderCurve: 'continuous',
-                backgroundColor: PlatformColor('systemBlue'),
+                backgroundColor: uiColor('systemBlue'),
                 opacity: pressed ? 0.7 : saving ? 0.5 : 1,
               })}
             >
@@ -396,21 +407,21 @@ export default function DonorScreen() {
 
         {isGetLinked && isActive && (
           <Card>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 16 }}>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: uiColor('label'), marginBottom: 16 }}>
               Your Impact
             </Text>
             <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20 }}>
               <View style={{ alignItems: 'center' }}>
-                <Text selectable style={{ fontSize: 32, fontWeight: 'bold', color: PlatformColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
+                <Text selectable style={{ fontSize: 32, fontWeight: 'bold', color: uiColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
                   {impact.peopleHelped}
                 </Text>
-                <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel'), marginTop: 4 }}>People Helped</Text>
+                <Text style={{ fontSize: 13, color: uiColor('secondaryLabel'), marginTop: 4 }}>People Helped</Text>
               </View>
               <View style={{ alignItems: 'center' }}>
-                <Text selectable style={{ fontSize: 32, fontWeight: 'bold', color: PlatformColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
+                <Text selectable style={{ fontSize: 32, fontWeight: 'bold', color: uiColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
                   {weeklyAmount}
                 </Text>
-                <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel'), marginTop: 4 }}>Points/Week</Text>
+                <Text style={{ fontSize: 13, color: uiColor('secondaryLabel'), marginTop: 4 }}>Points/Week</Text>
               </View>
             </View>
 
@@ -425,20 +436,20 @@ export default function DonorScreen() {
                 paddingVertical: 14,
                 borderRadius: 10,
                 borderCurve: 'continuous',
-                backgroundColor: PlatformColor('tertiarySystemFill'),
+                backgroundColor: uiColor('tertiarySystemFill'),
                 opacity: pressed ? 0.7 : saving ? 0.5 : 1,
               })}
             >
               {saving ? (
-                <ActivityIndicator size="small" color={PlatformColor('systemBlue')} />
+                <ActivityIndicator size="small" color={uiColor('systemBlue')} />
               ) : (
                 <>
                   <SymbolView
                     name={isActive ? 'pause.fill' : 'play.fill'}
-                    tintColor={PlatformColor('systemBlue')}
+                    tintColor={uiColor('systemBlue')}
                     size={14}
                   />
-                  <Text style={{ color: PlatformColor('systemBlue'), fontSize: 16, fontWeight: '600' }}>
+                  <Text style={{ color: uiColor('systemBlue'), fontSize: 16, fontWeight: '600' }}>
                     {isActive ? 'Pause' : 'Resume'} Sharing
                   </Text>
                 </>
@@ -449,34 +460,34 @@ export default function DonorScreen() {
 
         {isGetLinked && isActive && (
           <Card>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 16 }}>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: uiColor('label'), marginBottom: 16 }}>
               Weekly Cap
             </Text>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
-              <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel') }}>Cap</Text>
-              <Text selectable style={{ fontSize: 13, color: PlatformColor('label'), fontVariant: ['tabular-nums'] }}>
+              <Text style={{ fontSize: 13, color: uiColor('secondaryLabel') }}>Cap</Text>
+              <Text selectable style={{ fontSize: 13, color: uiColor('label'), fontVariant: ['tabular-nums'] }}>
                 {impact.capAmount.toFixed(2)} pts
               </Text>
             </View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel') }}>Redeemed</Text>
-              <Text selectable style={{ fontSize: 13, color: PlatformColor('label'), fontVariant: ['tabular-nums'] }}>
+              <Text style={{ fontSize: 13, color: uiColor('secondaryLabel') }}>Redeemed</Text>
+              <Text selectable style={{ fontSize: 13, color: uiColor('label'), fontVariant: ['tabular-nums'] }}>
                 {impact.redeemedThisWeek.toFixed(2)} pts
               </Text>
             </View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel') }}>Reserved</Text>
-              <Text selectable style={{ fontSize: 13, color: PlatformColor('label'), fontVariant: ['tabular-nums'] }}>
+              <Text style={{ fontSize: 13, color: uiColor('secondaryLabel') }}>Reserved</Text>
+              <Text selectable style={{ fontSize: 13, color: uiColor('label'), fontVariant: ['tabular-nums'] }}>
                 {impact.reservedThisWeek.toFixed(2)} pts
               </Text>
             </View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel') }}>Remaining</Text>
-              <Text selectable style={{ fontSize: 13, color: impact.capReached ? PlatformColor('systemRed') : PlatformColor('systemGreen'), fontVariant: ['tabular-nums'] }}>
+              <Text style={{ fontSize: 13, color: uiColor('secondaryLabel') }}>Remaining</Text>
+              <Text selectable style={{ fontSize: 13, color: impact.capReached ? uiColor('systemRed') : uiColor('systemGreen'), fontVariant: ['tabular-nums'] }}>
                 {impact.remainingThisWeek.toFixed(2)} pts
               </Text>
             </View>
-            <Text style={{ fontSize: 12, color: PlatformColor('tertiaryLabel'), marginTop: 8 }}>
+            <Text style={{ fontSize: 12, color: uiColor('tertiaryLabel'), marginTop: 8 }}>
               Tracking week in {impact.timezone}
             </Text>
           </Card>
@@ -484,34 +495,34 @@ export default function DonorScreen() {
 
         {/* GET Account Balance Card */}
         <Card>
-          <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 12 }}>
+          <Text style={{ fontSize: 17, fontWeight: '600', color: uiColor('label'), marginBottom: 12 }}>
             Available GET Balance
           </Text>
 
           {isGetLinked ? (
             <View style={{ gap: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <SymbolView name="checkmark.circle.fill" tintColor={PlatformColor('systemGreen')} size={16} />
-                <Text style={{ fontSize: 14, color: PlatformColor('systemGreen') }}>
+                <SymbolView name="checkmark.circle.fill" tintColor={uiColor('systemGreen')} size={16} />
+                <Text style={{ fontSize: 14, color: uiColor('systemGreen') }}>
                   Linked{getLinkedAt ? ` on ${new Date(getLinkedAt).toLocaleDateString()}` : ''}
                 </Text>
               </View>
 
               <View style={{
-                backgroundColor: PlatformColor('tertiarySystemFill'),
+                backgroundColor: uiColor('tertiarySystemFill'),
                 borderRadius: 12,
                 padding: 14,
                 borderCurve: 'continuous',
               }}>
-                <Text style={{ fontSize: 12, color: PlatformColor('secondaryLabel'), marginBottom: 4 }}>
+                <Text style={{ fontSize: 12, color: uiColor('secondaryLabel'), marginBottom: 4 }}>
                   Total Available (Flexi + Banana + Slug)
                 </Text>
-                <Text style={{ fontSize: 28, color: PlatformColor('systemBlue'), fontWeight: '700', fontVariant: ['tabular-nums'] }}>
+                <Text style={{ fontSize: 28, color: uiColor('systemBlue'), fontWeight: '700', fontVariant: ['tabular-nums'] }}>
                   {totalAvailableBalance.toFixed(2)} pts
                 </Text>
               </View>
 
-              <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel') }}>Tracked accounts</Text>
+              <Text style={{ fontSize: 13, color: uiColor('secondaryLabel') }}>Tracked accounts</Text>
               {ucscTrackedAccounts.length > 0 ? (
                 <View style={{ gap: 0 }}>
                   {ucscTrackedAccounts.map((account) => (
@@ -521,19 +532,19 @@ export default function DonorScreen() {
                       alignItems: 'center',
                       paddingVertical: 8,
                       borderBottomWidth: 0.5,
-                      borderBottomColor: PlatformColor('separator'),
+                      borderBottomColor: uiColor('separator'),
                     }}>
-                      <Text style={{ fontSize: 15, color: PlatformColor('label'), flex: 1, marginRight: 8 }}>
+                      <Text style={{ fontSize: 15, color: uiColor('label'), flex: 1, marginRight: 8 }}>
                         {account.accountDisplayName}
                       </Text>
-                      <Text selectable style={{ fontSize: 15, color: PlatformColor('systemBlue'), fontWeight: '600', fontVariant: ['tabular-nums'] }}>
+                      <Text selectable style={{ fontSize: 15, color: uiColor('systemBlue'), fontWeight: '600', fontVariant: ['tabular-nums'] }}>
                         {account.balance ?? 'n/a'} pts
                       </Text>
                     </View>
                   ))}
                 </View>
               ) : (
-                <Text style={{ fontSize: 13, color: PlatformColor('tertiaryLabel') }}>
+                <Text style={{ fontSize: 13, color: uiColor('tertiaryLabel') }}>
                   Linked, but no tracked UCSC balance accounts were returned.
                 </Text>
               )}
@@ -549,16 +560,16 @@ export default function DonorScreen() {
                   paddingVertical: 12,
                   borderRadius: 10,
                   borderCurve: 'continuous',
-                  backgroundColor: PlatformColor('tertiarySystemFill'),
+                  backgroundColor: uiColor('tertiarySystemFill'),
                   opacity: pressed ? 0.7 : refreshingBalance ? 0.5 : 1,
                 })}
               >
                 {refreshingBalance ? (
-                  <ActivityIndicator size="small" color={PlatformColor('systemBlue')} />
+                  <ActivityIndicator size="small" color={uiColor('systemBlue')} />
                 ) : (
                   <>
-                    <SymbolView name="arrow.clockwise" tintColor={PlatformColor('systemBlue')} size={14} />
-                    <Text style={{ color: PlatformColor('systemBlue'), fontWeight: '600', fontSize: 15 }}>Refresh Balance</Text>
+                    <SymbolView name="arrow.clockwise" tintColor={uiColor('systemBlue')} size={14} />
+                    <Text style={{ color: uiColor('systemBlue'), fontWeight: '600', fontSize: 15 }}>Refresh Balance</Text>
                   </>
                 )}
               </Pressable>
@@ -571,18 +582,18 @@ export default function DonorScreen() {
                   paddingVertical: 12,
                   borderRadius: 10,
                   borderCurve: 'continuous',
-                  backgroundColor: PlatformColor('tertiarySystemFill'),
+                  backgroundColor: uiColor('tertiarySystemFill'),
                   opacity: pressed ? 0.7 : unlinkingGet ? 0.5 : 1,
                 })}
               >
-                <Text style={{ color: PlatformColor('systemRed'), fontWeight: '600', fontSize: 15 }}>
+                <Text style={{ color: uiColor('systemRed'), fontWeight: '600', fontSize: 15 }}>
                   {unlinkingGet ? 'Unlinking...' : 'Unlink GET'}
                 </Text>
               </Pressable>
             </View>
           ) : (
             <View style={{ gap: 12 }}>
-              <Text style={{ fontSize: 14, color: PlatformColor('secondaryLabel'), lineHeight: 20 }}>
+              <Text style={{ fontSize: 14, color: uiColor('secondaryLabel'), lineHeight: 20 }}>
                 Continue to GET and sign in. Once it says 'validated', tap the share icon then copy, and paste the URL below to finish linking.
               </Text>
 
@@ -597,16 +608,16 @@ export default function DonorScreen() {
                   paddingVertical: 12,
                   borderRadius: 10,
                   borderCurve: 'continuous',
-                  backgroundColor: PlatformColor('tertiarySystemFill'),
+                  backgroundColor: uiColor('tertiarySystemFill'),
                   opacity: pressed ? 0.7 : linkingGet ? 0.5 : 1,
                 })}
               >
                 {linkingGet ? (
-                  <ActivityIndicator size="small" color={PlatformColor('systemBlue')} />
+                  <ActivityIndicator size="small" color={uiColor('systemBlue')} />
                 ) : (
                   <>
-                    <SymbolView name="arrow.up.right" tintColor={PlatformColor('systemBlue')} size={14} />
-                    <Text style={{ color: PlatformColor('systemBlue'), fontWeight: '600', fontSize: 15 }}>Open GET Login</Text>
+                    <SymbolView name="arrow.up.right" tintColor={uiColor('systemBlue')} size={14} />
+                    <Text style={{ color: uiColor('systemBlue'), fontWeight: '600', fontSize: 15 }}>Open GET Login</Text>
                   </>
                 )}
               </Pressable>
@@ -614,18 +625,18 @@ export default function DonorScreen() {
               <TextInput
                 style={{
                   borderWidth: 0.5,
-                  borderColor: PlatformColor('separator'),
+                  borderColor: uiColor('separator'),
                   borderRadius: 10,
                   borderCurve: 'continuous',
                   padding: 12,
                   fontSize: 15,
-                  color: PlatformColor('label'),
-                  backgroundColor: PlatformColor('secondarySystemGroupedBackground'),
+                  color: uiColor('label'),
+                  backgroundColor: uiColor('secondarySystemGroupedBackground'),
                 }}
                 value={getLoginUrlInput}
                 onChangeText={setGetLoginUrlInput}
                 placeholder="Paste validated GET URL here"
-                placeholderTextColor={PlatformColor('placeholderText')}
+                placeholderTextColor={uiColor('placeholderText')}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
@@ -638,7 +649,7 @@ export default function DonorScreen() {
                   paddingVertical: 14,
                   borderRadius: 10,
                   borderCurve: 'continuous',
-                  backgroundColor: PlatformColor('systemBlue'),
+                  backgroundColor: uiColor('systemBlue'),
                   opacity: pressed ? 0.7 : linkingGet ? 0.5 : 1,
                 })}
               >
@@ -662,7 +673,7 @@ export default function DonorScreen() {
             opacity: pressed ? 0.5 : isSigningOut ? 0.5 : 1,
           })}
         >
-          <Text style={{ color: PlatformColor('systemRed'), fontSize: 15 }}>
+          <Text style={{ color: uiColor('systemRed'), fontSize: 15 }}>
             {isSigningOut ? 'Signing out...' : 'Log out'}
           </Text>
         </Pressable>

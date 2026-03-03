@@ -1,10 +1,11 @@
-import { View, Text, Pressable, Alert, PlatformColor, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, Alert, ActivityIndicator, Platform } from 'react-native';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { SymbolView } from 'expo-symbols';
 import { supabase } from '../../../../lib/supabase';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { useState } from 'react';
+import { uiColor } from '../../lib/ui-color';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -16,6 +17,25 @@ export default function SignIn() {
     try {
       const redirectUrl = Linking.createURL('auth/callback');
       console.log('Redirect URL:', redirectUrl);
+
+      if (Platform.OS === 'web') {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: redirectUrl,
+            queryParams: {
+              prompt: 'select_account',
+            },
+          },
+        });
+
+        if (error) {
+          Alert.alert('Error', error.message);
+          return;
+        }
+
+        return;
+      }
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -66,26 +86,26 @@ export default function SignIn() {
       justifyContent: 'center',
       alignItems: 'center',
       padding: 24,
-      backgroundColor: PlatformColor('systemGroupedBackground'),
+      backgroundColor: uiColor('systemGroupedBackground'),
     }}>
       <View style={{ alignItems: 'center', marginBottom: 48 }}>
         <SymbolView
           name="fork.knife.circle.fill"
-          tintColor={PlatformColor('systemBlue')}
+          tintColor={uiColor('systemBlue')}
           size={64}
           weight="light"
         />
         <Text style={{
           fontSize: 42,
           fontWeight: 'bold',
-          color: PlatformColor('label'),
+          color: uiColor('label'),
           marginTop: 16,
         }}>
           SlugSwap
         </Text>
         <Text style={{
           fontSize: 17,
-          color: PlatformColor('secondaryLabel'),
+          color: uiColor('secondaryLabel'),
           marginTop: 8,
         }}>
           Share dining points with fellow students
@@ -108,11 +128,11 @@ export default function SignIn() {
             })}
           >
             {loading ? (
-              <ActivityIndicator color={PlatformColor('label')} />
+              <ActivityIndicator color={uiColor('label')} />
             ) : (
               <>
-                <SymbolView name="person.crop.circle" tintColor={PlatformColor('label')} size={20} />
-                <Text style={{ color: PlatformColor('label'), fontSize: 17, fontWeight: '600' }}>
+                <SymbolView name="person.crop.circle" tintColor={uiColor('label')} size={20} />
+                <Text style={{ color: uiColor('label'), fontSize: 17, fontWeight: '600' }}>
                   Sign in with Google
                 </Text>
               </>
@@ -132,7 +152,7 @@ export default function SignIn() {
             paddingHorizontal: 32,
             borderRadius: 14,
             borderCurve: 'continuous',
-            backgroundColor: PlatformColor('systemBlue'),
+            backgroundColor: uiColor('systemBlue'),
             opacity: pressed ? 0.7 : loading ? 0.6 : 1,
             width: '100%',
           })}
