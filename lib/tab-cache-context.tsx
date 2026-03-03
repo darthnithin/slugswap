@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, ReactNode } from 'react';
 import type { DonorImpact } from './api';
 
 export interface GetAccountBalance {
@@ -34,19 +34,41 @@ export function TabCacheProvider({ children }: { children: ReactNode }) {
   const [hasLoadedRequest, setHasLoadedRequest] = useState(false);
   const [shareSnapshot, setShareSnapshotState] = useState<ShareTabSnapshot | null>(null);
 
+  const markShareLoaded = useCallback(() => {
+    setHasLoadedShare(true);
+  }, []);
+
+  const markRequestLoaded = useCallback(() => {
+    setHasLoadedRequest(true);
+  }, []);
+
+  const setShareSnapshot = useCallback((snapshot: ShareTabSnapshot) => {
+    setShareSnapshotState(snapshot);
+    setHasLoadedShare(true);
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      hasLoadedShare,
+      hasLoadedRequest,
+      shareSnapshot,
+      markShareLoaded,
+      markRequestLoaded,
+      setShareSnapshot,
+    }),
+    [
+      hasLoadedShare,
+      hasLoadedRequest,
+      shareSnapshot,
+      markShareLoaded,
+      markRequestLoaded,
+      setShareSnapshot,
+    ]
+  );
+
   return (
     <TabCacheContext.Provider
-      value={{
-        hasLoadedShare,
-        hasLoadedRequest,
-        shareSnapshot,
-        markShareLoaded: () => setHasLoadedShare(true),
-        markRequestLoaded: () => setHasLoadedRequest(true),
-        setShareSnapshot: (snapshot) => {
-          setShareSnapshotState(snapshot);
-          setHasLoadedShare(true);
-        },
-      }}
+      value={value}
     >
       {children}
     </TabCacheContext.Provider>

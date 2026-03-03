@@ -382,7 +382,7 @@ export default function RequesterScreen() {
               <Text style={{ fontSize: 12, color: uiColor('secondaryLabel') }}>
                 {checkoutDetail}
               </Text>
-              <Text selectable style={{ fontSize: 12, color: PlatformColor('tertiaryLabel') }}>
+              <Text selectable style={{ fontSize: 12, color: uiColor('tertiaryLabel') }}>
                 {donorCourtesyLabel}
               </Text>
             </View>

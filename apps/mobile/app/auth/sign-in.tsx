@@ -15,7 +15,10 @@ export default function SignIn() {
   const handleGoogleSignIn = async () => {
     setLoading(true);
     try {
-      const redirectUrl = Linking.createURL('auth/callback');
+      const redirectUrl =
+        Platform.OS === 'web' && typeof window !== 'undefined'
+          ? new URL('/app/auth/callback', window.location.origin).toString()
+          : Linking.createURL('auth/callback');
       console.log('Redirect URL:', redirectUrl);
 
       if (Platform.OS === 'web') {

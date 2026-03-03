@@ -71,11 +71,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       segments
     });
 
+    const isRootRoute = pathname === '/' && segments.join('/') === '';
+
     // Prevent redirect loops
     if (!session && !inAuthGroup && pathname !== '/auth/sign-in') {
       console.log('Redirecting to sign-in');
       router.replace('/auth/sign-in');
-    } else if (session && (inAuthGroup || pathname === '/')) {
+    } else if (session && (inAuthGroup || isRootRoute)) {
       console.log('Redirecting to share tab');
       router.replace('/(tabs)/(share)');
     }

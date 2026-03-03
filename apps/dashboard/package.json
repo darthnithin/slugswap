@@ -4,10 +4,14 @@
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
     "@supabase/supabase-js": "^2.95.3",
+    "@tailwindcss/postcss": "^4.1.12",
     "drizzle-orm": "^0.45.1",
+    "framer-motion": "^12.23.24",
+    "lucide-react": "^0.542.0",
     "next": "^15.5.12",
     "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react-dom": "19.1.0",
+    "tailwindcss": "^4.1.12"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
@@ -15,8 +19,10 @@
     "typescript": "^5.9.3"
   },
   "scripts": {
+    "predev": "npm run build:mobile-web",
     "dev": "next dev",
-    "build": "next build",
+    "build:mobile-web": "rm -rf public/app && mkdir -p public/app && sh -c 'if [ ! -x ../../node_modules/.bin/expo ]; then npm --prefix ../.. install --include=dev; fi; rm -rf ../mobile/node_modules; if command -v dotenv >/dev/null 2>&1; then dotenv -e ../../.env -- sh -c \"PATH=../../node_modules/.bin:\\$PATH EXPO_BASE_URL=app npm --prefix ../mobile run web:build -- --output-dir ../dashboard/public/app\"; else PATH=../../node_modules/.bin:$PATH EXPO_BASE_URL=app npm --prefix ../mobile run web:build -- --output-dir ../dashboard/public/app; fi'",
+    "build": "npm run build:mobile-web && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"
   }
