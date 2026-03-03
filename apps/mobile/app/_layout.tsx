@@ -8,13 +8,13 @@ import {
   Linking,
   Modal,
   Platform,
-  PlatformColor,
   Pressable,
   Text,
   View,
 } from 'react-native';
 import Constants from 'expo-constants';
 import { getMobileAppConfig } from '../../../lib/api';
+import { uiColor } from '../lib/ui-color';
 
 type RequiredUpdateGate = {
   installedVersion: string;
@@ -218,9 +218,9 @@ export default function RootLayout() {
     }
   }, [requiredUpdateGate]);
 
-  const modalBgColor = Platform.OS === 'ios' ? PlatformColor('systemBackground') : '#1f1f1f';
-  const labelColor = Platform.OS === 'ios' ? PlatformColor('label') : '#ffffff';
-  const secondaryColor = Platform.OS === 'ios' ? PlatformColor('secondaryLabel') : '#b7b7b7';
+  const modalBgColor = Platform.OS === 'ios' ? uiColor('systemBackground') : '#1f1f1f';
+  const labelColor = Platform.OS === 'ios' ? uiColor('label') : '#ffffff';
+  const secondaryColor = Platform.OS === 'ios' ? uiColor('secondaryLabel') : '#b7b7b7';
 
   try {
     return (

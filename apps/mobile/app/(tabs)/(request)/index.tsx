@@ -1,4 +1,4 @@
-import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert, PlatformColor, RefreshControl } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert, RefreshControl } from 'react-native';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { BlurView } from 'expo-blur';
 import { SymbolView } from 'expo-symbols';
@@ -7,6 +7,7 @@ import { supabase } from '../../../../../lib/supabase';
 import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode, checkRedemption, type CheckoutRail } from '../../../../../lib/api';
 import { PDF417Barcode } from '../../../components/PDF417Barcode';
 import { useTabCache } from '../../../../../lib/tab-cache-context';
+import { uiColor } from '../../../lib/ui-color';
 
 interface ClaimCode {
   id: string;
@@ -234,7 +235,7 @@ export default function RequesterScreen() {
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={PlatformColor('systemBlue')} />
+        <ActivityIndicator size="large" color={uiColor('systemBlue')} />
       </View>
     );
   }
@@ -247,25 +248,25 @@ export default function RequesterScreen() {
       >
         {/* Weekly Allowance Card */}
         <Card>
-          <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 16 }}>
+          <Text style={{ fontSize: 17, fontWeight: '600', color: uiColor('label'), marginBottom: 16 }}>
             Weekly Allowance
           </Text>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <View>
-              <Text selectable style={{ fontSize: 48, fontWeight: 'bold', color: PlatformColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
+              <Text selectable style={{ fontSize: 48, fontWeight: 'bold', color: uiColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
                 {remainingAllowance}
               </Text>
-              <Text style={{ fontSize: 14, color: PlatformColor('secondaryLabel') }}>points remaining</Text>
+              <Text style={{ fontSize: 14, color: uiColor('secondaryLabel') }}>points remaining</Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
-              <Text style={{ fontSize: 18, color: PlatformColor('tertiaryLabel'), fontVariant: ['tabular-nums'] }}>
+              <Text style={{ fontSize: 18, color: uiColor('tertiaryLabel'), fontVariant: ['tabular-nums'] }}>
                 of {weeklyAllowance}
               </Text>
             </View>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <SymbolView name="clock" tintColor={PlatformColor('tertiaryLabel')} size={12} />
-            <Text style={{ fontSize: 13, color: PlatformColor('tertiaryLabel') }}>
+            <SymbolView name="clock" tintColor={uiColor('tertiaryLabel')} size={12} />
+            <Text style={{ fontSize: 13, color: uiColor('tertiaryLabel') }}>
               Resets in {daysUntilReset} {daysUntilReset === 1 ? 'day' : 'days'}
             </Text>
           </View>
@@ -275,28 +276,28 @@ export default function RequesterScreen() {
         {redemptionInfo && (
           <Card>
             <View style={{ alignItems: 'center', gap: 12 }}>
-              <SymbolView name="checkmark.circle.fill" tintColor={PlatformColor('systemGreen')} size={48} />
-              <Text style={{ fontSize: 22, fontWeight: '700', color: PlatformColor('systemGreen') }}>
+              <SymbolView name="checkmark.circle.fill" tintColor={uiColor('systemGreen')} size={48} />
+              <Text style={{ fontSize: 22, fontWeight: '700', color: uiColor('systemGreen') }}>
                 Redeemed!
               </Text>
-              <Text style={{ fontSize: 17, color: PlatformColor('label'), fontVariant: ['tabular-nums'] }}>
+              <Text style={{ fontSize: 17, color: uiColor('label'), fontVariant: ['tabular-nums'] }}>
                 {redemptionInfo.amount} points used
               </Text>
               {redemptionInfo.accountName && (
-                <Text style={{ fontSize: 14, color: PlatformColor('secondaryLabel') }}>
+                <Text style={{ fontSize: 14, color: uiColor('secondaryLabel') }}>
                   from {redemptionInfo.accountName}
                 </Text>
               )}
               {redeemedRail && (
                 <View style={{
                   marginTop: 4,
-                  backgroundColor: PlatformColor('tertiarySystemFill'),
+                  backgroundColor: uiColor('tertiarySystemFill'),
                   borderRadius: 10,
                   borderCurve: 'continuous',
                   paddingVertical: 8,
                   paddingHorizontal: 10,
                 }}>
-                  <Text style={{ fontSize: 13, color: PlatformColor('label'), fontWeight: '600' }}>
+                  <Text style={{ fontSize: 13, color: uiColor('label'), fontWeight: '600' }}>
                     Cashier selection: {redeemedRail === 'flexi-dollars' ? 'Flexi Dollars' : 'Points or Bucks'}
                   </Text>
                 </View>
@@ -309,7 +310,7 @@ export default function RequesterScreen() {
                   paddingHorizontal: 24,
                   borderRadius: 10,
                   borderCurve: 'continuous',
-                  backgroundColor: PlatformColor('systemGreen'),
+                  backgroundColor: uiColor('systemGreen'),
                   opacity: pressed ? 0.7 : 1,
                 })}
               >
@@ -322,18 +323,18 @@ export default function RequesterScreen() {
         {/* Active Code or Generate Button */}
         {!redemptionInfo && currentCode ? (
           <Card>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: PlatformColor('label'), marginBottom: 16 }}>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: uiColor('label'), marginBottom: 16 }}>
               Your Claim Code
             </Text>
             <View style={{
-              backgroundColor: PlatformColor('systemBackground'),
+              backgroundColor: uiColor('systemBackground'),
               padding: 16,
               borderRadius: 12,
               borderCurve: 'continuous',
               alignItems: 'center',
               marginBottom: 12,
               borderWidth: 0.5,
-              borderColor: PlatformColor('separator'),
+              borderColor: uiColor('separator'),
             }}>
               <PDF417Barcode value={currentCode.code} width={280} height={100} />
             </View>
@@ -341,7 +342,7 @@ export default function RequesterScreen() {
               fontSize: 14,
               fontWeight: '600',
               letterSpacing: 2,
-              color: PlatformColor('secondaryLabel'),
+              color: uiColor('secondaryLabel'),
               marginBottom: 12,
               fontFamily: 'Menlo',
             }}>
@@ -354,11 +355,11 @@ export default function RequesterScreen() {
               padding: 14,
               borderRadius: 12,
               borderCurve: 'continuous',
-              backgroundColor: PlatformColor('tertiarySystemFill'),
+              backgroundColor: uiColor('tertiarySystemFill'),
             }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <SymbolView name="megaphone.fill" tintColor={PlatformColor('systemBlue')} size={14} />
-                <Text style={{ fontSize: 13, fontWeight: '600', color: PlatformColor('secondaryLabel') }}>
+                <SymbolView name="megaphone.fill" tintColor={uiColor('systemBlue')} size={14} />
+                <Text style={{ fontSize: 13, fontWeight: '600', color: uiColor('secondaryLabel') }}>
                   At checkout, say:
                 </Text>
               </View>
@@ -371,14 +372,14 @@ export default function RequesterScreen() {
                 paddingHorizontal: 12,
                 borderRadius: 999,
                 borderCurve: 'continuous',
-                backgroundColor: PlatformColor('systemBlue'),
+                backgroundColor: uiColor('systemBlue'),
               }}>
                 <SymbolView name="checkmark.circle.fill" tintColor="#fff" size={13} />
                 <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>
                   {checkoutInstruction}
                 </Text>
               </View>
-              <Text style={{ fontSize: 12, color: PlatformColor('secondaryLabel') }}>
+              <Text style={{ fontSize: 12, color: uiColor('secondaryLabel') }}>
                 {checkoutDetail}
               </Text>
               <Text selectable style={{ fontSize: 12, color: PlatformColor('tertiaryLabel') }}>
@@ -386,15 +387,15 @@ export default function RequesterScreen() {
               </Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 12 }}>
-              <SymbolView name="clock.badge.exclamationmark" tintColor={PlatformColor('systemRed')} size={14} />
-              <Text style={{ fontSize: 14, color: PlatformColor('systemRed'), fontVariant: ['tabular-nums'] }}>
+              <SymbolView name="clock.badge.exclamationmark" tintColor={uiColor('systemRed')} size={14} />
+              <Text style={{ fontSize: 14, color: uiColor('systemRed'), fontVariant: ['tabular-nums'] }}>
                 Expires in {timeRemaining}
               </Text>
             </View>
-            <Text style={{ textAlign: 'center', fontSize: 13, color: PlatformColor('secondaryLabel') }}>
+            <Text style={{ textAlign: 'center', fontSize: 13, color: uiColor('secondaryLabel') }}>
               Show this code at the dining hall.
             </Text>
-            <Text style={{ marginTop: 8, textAlign: 'center', fontSize: 12, color: PlatformColor('tertiaryLabel') }}>
+            <Text style={{ marginTop: 8, textAlign: 'center', fontSize: 12, color: uiColor('tertiaryLabel') }}>
               Refreshing every 5s{refreshingCode ? ' ...' : ''}
             </Text>
           </Card>
@@ -410,7 +411,7 @@ export default function RequesterScreen() {
               paddingVertical: 18,
               borderRadius: 14,
               borderCurve: 'continuous',
-              backgroundColor: PlatformColor('systemBlue'),
+              backgroundColor: uiColor('systemBlue'),
               opacity: pressed ? 0.7 : (remainingAllowance === 0 || generating) ? 0.5 : 1,
             })}
           >
@@ -427,23 +428,23 @@ export default function RequesterScreen() {
 
         {/* Recent Claims */}
         <View style={{ gap: 12 }}>
-          <Text style={{ fontSize: 20, fontWeight: '600', color: PlatformColor('label') }}>
+          <Text style={{ fontSize: 20, fontWeight: '600', color: uiColor('label') }}>
             Recent Claims
           </Text>
           {claimHistory.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 32 }}>
-              <SymbolView name="tray" tintColor={PlatformColor('tertiaryLabel')} size={32} />
-              <Text style={{ color: PlatformColor('tertiaryLabel'), marginTop: 8, fontSize: 15 }}>No claims yet</Text>
+              <SymbolView name="tray" tintColor={uiColor('tertiaryLabel')} size={32} />
+              <Text style={{ color: uiColor('tertiaryLabel'), marginTop: 8, fontSize: 15 }}>No claims yet</Text>
             </View>
           ) : (
             claimHistory.map((claim) => (
               <Card key={claim.id} style={{ padding: 16 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View style={{ flex: 1, marginRight: 12 }}>
-                    <Text selectable style={{ fontSize: 14, fontWeight: '600', color: PlatformColor('label'), marginBottom: 4, fontFamily: 'Menlo' }}>
+                    <Text selectable style={{ fontSize: 14, fontWeight: '600', color: uiColor('label'), marginBottom: 4, fontFamily: 'Menlo' }}>
                       {claim.code}
                     </Text>
-                    <Text style={{ fontSize: 13, color: PlatformColor('tertiaryLabel') }}>
+                    <Text style={{ fontSize: 13, color: uiColor('tertiaryLabel') }}>
                       {new Date(claim.createdAt).toLocaleDateString()}
                     </Text>
                   </View>
@@ -451,18 +452,18 @@ export default function RequesterScreen() {
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                       <SymbolView
                         name={claim.status === 'redeemed' ? 'checkmark.circle.fill' : 'xmark.circle.fill'}
-                        tintColor={claim.status === 'redeemed' ? PlatformColor('systemGreen') : PlatformColor('systemRed')}
+                        tintColor={claim.status === 'redeemed' ? uiColor('systemGreen') : uiColor('systemRed')}
                         size={14}
                       />
                       <Text style={{
                         fontSize: 12,
                         fontWeight: '600',
-                        color: claim.status === 'redeemed' ? PlatformColor('systemGreen') : PlatformColor('systemRed'),
+                        color: claim.status === 'redeemed' ? uiColor('systemGreen') : uiColor('systemRed'),
                       }}>
                         {claim.status.toUpperCase()}
                       </Text>
                     </View>
-                    <Text style={{ fontSize: 13, color: PlatformColor('secondaryLabel'), fontVariant: ['tabular-nums'] }}>
+                    <Text style={{ fontSize: 13, color: uiColor('secondaryLabel'), fontVariant: ['tabular-nums'] }}>
                       {claim.amount} pts
                     </Text>
                   </View>
