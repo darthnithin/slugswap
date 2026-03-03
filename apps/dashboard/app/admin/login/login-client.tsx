@@ -29,7 +29,8 @@ async function readError(response: Response): Promise<string> {
 export default function AdminLoginClient({ supabaseUrl, supabaseAnonKey }: LoginProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const exchangeInFlightRef = useRef(false);
+const exchangeInFlightRef = useRef(false);
+const OAUTH_TARGET_KEY = "slugswap_oauth_target";
 
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [isRedirecting, setIsRedirecting] = useState(false);
@@ -74,6 +75,10 @@ export default function AdminLoginClient({ supabaseUrl, supabaseAnonKey }: Login
             setError(message);
           }
           return;
+        }
+
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(OAUTH_TARGET_KEY);
         }
 
         router.replace("/admin");
@@ -144,6 +149,10 @@ export default function AdminLoginClient({ supabaseUrl, supabaseAnonKey }: Login
     setIsRedirecting(true);
 
     try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(OAUTH_TARGET_KEY, "admin");
+      }
+
       const { error: signInError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {

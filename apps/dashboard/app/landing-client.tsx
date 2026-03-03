@@ -194,13 +194,20 @@ export default function LandingClient({
     if (typeof window === "undefined") return;
 
     const { pathname, search, hash } = window.location;
+    const searchParams = new URLSearchParams(search);
+    const oauthTarget = window.localStorage.getItem("slugswap_oauth_target");
     const hasOAuthPayload =
       hash.includes("access_token=") ||
       hash.includes("refresh_token=") ||
-      search.includes("code=") ||
-      search.includes("error=");
+      searchParams.has("code") ||
+      searchParams.has("error");
 
     if (pathname === "/" && hasOAuthPayload) {
+      if (oauthTarget === "admin") {
+        window.localStorage.removeItem("slugswap_oauth_target");
+        window.location.replace(`/admin/login${search}${hash}`);
+        return;
+      }
       window.location.replace(`/app/auth/callback${search}${hash}`);
     }
   }, []);
