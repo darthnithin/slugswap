@@ -189,6 +189,7 @@ export default function RootLayout() {
     console.log('Environment check:');
     console.log('SUPABASE_URL:', process.env.EXPO_PUBLIC_SUPABASE_URL ? 'SET' : 'MISSING');
     console.log('SUPABASE_KEY:', process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ? 'SET' : 'MISSING');
+    console.log('API_URL:', process.env.EXPO_PUBLIC_API_URL || 'MISSING (using fallback)');
 
     void runUpdateChecks();
 

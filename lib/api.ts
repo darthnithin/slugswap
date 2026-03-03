@@ -1,6 +1,107 @@
 import { supabase } from './supabase';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const FALLBACK_LOCAL_API_URL = 'http://localhost:3000';
+const FALLBACK_REMOTE_API_URL = 'https://slugswap.vercel.app';
+
+function readExpoDevHost(): string | null {
+  const constants = Constants as unknown as Record<string, unknown>;
+  const expoConfig = constants.expoConfig as Record<string, unknown> | undefined;
+  const manifest = constants.manifest as Record<string, unknown> | undefined;
+  const manifest2 = constants.manifest2 as Record<string, unknown> | undefined;
+  const manifest2Extra = manifest2?.extra as Record<string, unknown> | undefined;
+  const expoClient = manifest2Extra?.expoClient as Record<string, unknown> | undefined;
+
+  const candidates = [expoConfig?.hostUri, manifest?.debuggerHost, expoClient?.hostUri];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string' || !candidate.trim()) continue;
+    const withoutProtocol = candidate.replace(/^https?:\/\//, '');
+    const host = withoutProtocol.split('/')[0]?.split(':')[0]?.trim();
+    if (host) return host;
+  }
+
+  return null;
+}
+
+function rewriteLocalhostUrl(urlValue: string, host: string): string {
+  try {
+    const parsed = new URL(urlValue);
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+      parsed.hostname = host;
+      return parsed.toString().replace(/\/$/, '');
+    }
+  } catch {
+    // Keep original value when URL parsing fails.
+  }
+
+  return urlValue;
+}
+
+function resolveApiBaseUrl(): string {
+  const configuredUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+  const expoDevHost = readExpoDevHost();
+
+  if (configuredUrl) {
+    if (Platform.OS !== 'web' && expoDevHost) {
+      return rewriteLocalhostUrl(configuredUrl, expoDevHost);
+    }
+
+    return configuredUrl;
+  }
+
+  if (Platform.OS === 'web') {
+    return FALLBACK_LOCAL_API_URL;
+  }
+
+  if (expoDevHost) {
+    return `http://${expoDevHost}:3000`;
+  }
+
+  return FALLBACK_REMOTE_API_URL;
+}
+
+function normalizeBaseUrl(url: string): string {
+  return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+function isLikelyNetworkFailure(error: unknown): boolean {
+  if (error instanceof TypeError) return true;
+  if (!(error instanceof Error)) return false;
+  return /network request failed|fetch failed|networkerror/i.test(error.message);
+}
+
+const API_BASE_URL = normalizeBaseUrl(resolveApiBaseUrl());
+const REMOTE_API_BASE_URL = normalizeBaseUrl(FALLBACK_REMOTE_API_URL);
+
+async function fetchWithFallback(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    const canRetryRemote =
+      Platform.OS !== 'web' &&
+      API_BASE_URL !== REMOTE_API_BASE_URL &&
+      url.startsWith(`${API_BASE_URL}/api/`) &&
+      isLikelyNetworkFailure(error);
+
+    if (!canRetryRemote) {
+      throw error;
+    }
+
+    const fallbackUrl = url.replace(API_BASE_URL, REMOTE_API_BASE_URL);
+    console.warn('Primary API request failed; retrying with remote API.', {
+      primaryUrl: url,
+      fallbackUrl,
+    });
+
+    return fetch(fallbackUrl, init);
+  }
+}
+
+if (__DEV__) {
+  console.log('Resolved API_BASE_URL:', API_BASE_URL);
+}
 
 export type DonorImpact = {
   isActive: boolean;
@@ -67,7 +168,7 @@ async function getAuthHeaders(): Promise<HeadersInit> {
 }
 
 export async function setDonation(userId: string, amount: number, userEmail?: string | null) {
-  const response = await fetch(`${API_BASE_URL}/api/donations/set`, {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/donations/set`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, amount, userEmail }),
@@ -82,7 +183,7 @@ export async function setDonation(userId: string, amount: number, userEmail?: st
 }
 
 export async function getDonorImpact(userId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/donations/impact?userId=${userId}`);
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/donations/impact?userId=${userId}`);
 
   if (!response.ok) {
     const errorMessage = await readApiError(response, 'Failed to fetch impact');
@@ -93,7 +194,7 @@ export async function getDonorImpact(userId: string) {
 }
 
 export async function pauseDonation(userId: string, paused: boolean) {
-  const response = await fetch(`${API_BASE_URL}/api/donations/pause`, {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/donations/pause`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, paused }),
@@ -109,7 +210,7 @@ export async function pauseDonation(userId: string, paused: boolean) {
 
 export async function getRequesterAllowance(userId: string) {
   const headers = await getAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/api/requesters/allowance?userId=${userId}`, {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/requesters/allowance?userId=${userId}`, {
     headers,
   });
 
@@ -122,7 +223,7 @@ export async function getRequesterAllowance(userId: string) {
 }
 
 export async function generateClaimCode(userId: string, amount: number) {
-  const response = await fetch(`${API_BASE_URL}/api/claims/generate`, {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, amount }),
@@ -137,7 +238,7 @@ export async function generateClaimCode(userId: string, amount: number) {
 }
 
 export async function getClaimHistory(userId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/claims/history?userId=${userId}`);
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/history?userId=${userId}`);
 
   if (!response.ok) {
     const errorMessage = await readApiError(response, 'Failed to fetch claim history');
@@ -148,7 +249,7 @@ export async function getClaimHistory(userId: string) {
 }
 
 export async function refreshClaimCode(userId: string, claimCodeId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/claims/refresh`, {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, claimCodeId }),
@@ -166,7 +267,7 @@ export async function refreshClaimCode(userId: string, claimCodeId: string) {
 }
 
 export async function checkRedemption(userId: string, claimCodeId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/claims/check-redemption`, {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/check-redemption`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, claimCodeId }),
@@ -185,7 +286,7 @@ export async function checkRedemption(userId: string, claimCodeId: string) {
 }
 
 export async function deleteClaimCode(userId: string, claimCodeId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/claims/delete`, {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/delete`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, claimCodeId }),
@@ -200,7 +301,7 @@ export async function deleteClaimCode(userId: string, claimCodeId: string) {
 }
 
 export async function getGetLoginUrl() {
-  const response = await fetch(`${API_BASE_URL}/api/get/login-url`);
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/get/login-url`);
 
   if (!response.ok) {
     const errorMessage = await readApiError(response, 'Failed to load GET login URL');
@@ -211,7 +312,7 @@ export async function getGetLoginUrl() {
 }
 
 export async function getGetLinkStatus(userId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/get/link-status?userId=${userId}`);
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/get/link-status?userId=${userId}`);
 
   if (!response.ok) {
     const errorMessage = await readApiError(response, 'Failed to fetch GET link status');
@@ -226,7 +327,7 @@ export async function linkGetAccount(params: {
   validatedUrl: string;
   userEmail?: string | null;
 }) {
-  const response = await fetch(`${API_BASE_URL}/api/get/link`, {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/get/link`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
@@ -241,7 +342,7 @@ export async function linkGetAccount(params: {
 }
 
 export async function unlinkGetAccount(userId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/get/link?userId=${userId}`, {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/get/link?userId=${userId}`, {
     method: 'DELETE',
   });
 
@@ -254,7 +355,7 @@ export async function unlinkGetAccount(userId: string) {
 }
 
 export async function getGetAccounts(userId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/get/accounts?userId=${userId}`);
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/get/accounts?userId=${userId}`);
 
   if (!response.ok) {
     const errorMessage = await readApiError(response, 'Failed to fetch GET accounts');
@@ -271,7 +372,7 @@ export async function getUserBalance(params: { name?: string; email?: string; us
   if (params.email) searchParams.set('email', params.email);
   if (params.userId) searchParams.set('userId', params.userId);
 
-  const response = await fetch(`${API_BASE_URL}/api/admin/user-balance?${searchParams.toString()}`, {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/admin/user-balance?${searchParams.toString()}`, {
     headers,
   });
 
@@ -327,7 +428,7 @@ export async function getUserBalance(params: { name?: string; email?: string; us
 }
 
 export async function getMobileAppConfig() {
-  const response = await fetch(`${API_BASE_URL}/api/mobile/config`, {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/mobile/config`, {
     cache: 'no-store',
   });
 
