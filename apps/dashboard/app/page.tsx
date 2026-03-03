@@ -2,6 +2,9 @@ import LandingClient from "./landing-client";
 import { getAdminConfig } from "@/lib/server/config";
 import { getLandingStats } from "@/lib/server/landing-stats";
 
+export const runtime = "nodejs";
+export const revalidate = 60;
+
 export default async function LandingPage() {
   const stats = await getLandingStats();
 
@@ -20,7 +23,7 @@ export default async function LandingPage() {
     <LandingClient
       pointsDistributed={stats.pointsDistributed}
       activeDonors={stats.activeDonors}
-      asOf={stats.asOf}
+      redemptionsCount={stats.redemptionsCount}
       iosStoreUrl={iosStoreUrl}
       androidStoreUrl={androidStoreUrl}
     />

@@ -9,7 +9,7 @@ import { useEffect } from "react";
 type LandingClientProps = {
   pointsDistributed: number;
   activeDonors: number;
-  asOf: string;
+  redemptionsCount: number;
   iosStoreUrl: string | null;
   androidStoreUrl: string | null;
 };
@@ -53,17 +53,6 @@ function formatCurrency(value: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
-}
-
-function formatAsOf(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "just now";
-  return parsed.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }
 
 function CtaButton({
@@ -186,7 +175,7 @@ function CursorFloater({
 export default function LandingClient({
   pointsDistributed,
   activeDonors,
-  asOf,
+  redemptionsCount,
   iosStoreUrl,
   androidStoreUrl,
 }: LandingClientProps) {
@@ -211,8 +200,6 @@ export default function LandingClient({
       window.location.replace(`/app/auth/callback${search}${hash}`);
     }
   }, []);
-
-  const lastUpdated = formatAsOf(asOf);
 
   return (
     <div className="relative min-h-screen overflow-x-clip bg-[#ff6b35] text-black">
@@ -368,11 +355,11 @@ export default function LandingClient({
                 transition={{ duration: 8, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
                 className="absolute -left-8 -top-8 h-24 w-24 border-4 border-black bg-[#f7dc6f]"
               />
-              <h3 className="mb-4 text-5xl font-black md:text-6xl" style={{ fontFamily: "Impact, sans-serif" }}>
-                LIVE NOW
+              <h3 className="mb-4 text-6xl font-black" style={{ fontFamily: "Impact, sans-serif" }}>
+                {formatCount(redemptionsCount)}
               </h3>
               <p className="text-base font-black md:text-xl" style={{ fontFamily: "Arial Black, sans-serif" }}>
-                UPDATED {lastUpdated.toUpperCase()}
+                TOTAL CLAIMS
               </p>
             </motion.div>
           </div>
@@ -521,7 +508,8 @@ export default function LandingClient({
       ))}
 
       <div className="pointer-events-none absolute bottom-4 right-4 border-4 border-black bg-[#f7dc6f] px-4 py-2 text-xs font-black tracking-[0.1em] text-black md:text-sm" style={{ fontFamily: "Arial Black, sans-serif" }}>
-        LIVE METRICS: {formatCurrency(pointsDistributed)} DISTRIBUTED | {formatCount(activeDonors)} DONORS
+        LIVE METRICS: {formatCurrency(pointsDistributed)} DISTRIBUTED | {formatCount(activeDonors)} DONORS |{" "}
+        {formatCount(redemptionsCount)} REDEMPTIONS
       </div>
 
       <div className="sr-only">{CHAOS_COLORS.join(",")}</div>
