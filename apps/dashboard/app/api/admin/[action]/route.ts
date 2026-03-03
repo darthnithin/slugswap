@@ -1,5 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, gte, lt, lte, ne, or, sql as sqlOp } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lt,
+  lte,
+  ne,
+  or,
+  sql as sqlOp,
+} from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 import {
@@ -32,6 +43,21 @@ function getWeekBounds() {
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekStart.getDate() + 7);
   return { weekStart, weekEnd };
+}
+
+async function getActiveWeeklyPool() {
+  const pools = await db
+    .select()
+    .from(schema.weeklyPools)
+    .where(
+      and(
+        lte(schema.weeklyPools.weekStart, new Date()),
+        gte(schema.weeklyPools.weekEnd, new Date())
+      )
+    )
+    .limit(1);
+
+  return pools[0] ?? null;
 }
 
 function unauthorizedResponse() {
@@ -964,28 +990,15 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         );
       }
 
-      const { weekStart, weekEnd } = getWeekBounds();
-
-      // Find current weekly pool
-      const currentPool = await db
-        .select()
-        .from(schema.weeklyPools)
-        .where(
-          and(
-            lte(schema.weeklyPools.weekStart, new Date()),
-            gte(schema.weeklyPools.weekEnd, new Date())
-          )
-        )
-        .limit(1);
-
-      if (!currentPool.length) {
+      const activePool = await getActiveWeeklyPool();
+      if (!activePool) {
         return NextResponse.json(
           { error: "No active weekly pool found" },
           { status: 404 }
         );
       }
 
-      const poolId = currentPool[0].id;
+      const poolId = activePool.id;
 
       // Find existing allowance for this user and week
       const existingAllowances = await db
@@ -1046,6 +1059,217 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       );
     } catch (error: any) {
       console.error("Error updating allowance:", error);
+      return NextResponse.json(
+        { error: error?.message || "Internal server error" },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (action === "update-allowance-all") {
+    if (req.method !== "POST") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    try {
+      const body = (await req.json()) as {
+        weeklyLimit?: number;
+        availablePoints?: number;
+      };
+      const weeklyLimit = body.weeklyLimit ?? body.availablePoints;
+
+      if (typeof weeklyLimit !== "number" || weeklyLimit < 0) {
+        return NextResponse.json(
+          { error: "Invalid weeklyLimit" },
+          { status: 400 }
+        );
+      }
+
+      const activePool = await getActiveWeeklyPool();
+      if (!activePool) {
+        return NextResponse.json(
+          { error: "No active weekly pool found" },
+          { status: 404 }
+        );
+      }
+
+      const allUsers = await db.select({ id: schema.users.id }).from(schema.users);
+      if (!allUsers.length) {
+        return NextResponse.json(
+          {
+            message: "No users found",
+            usersProcessed: 0,
+            updatedCount: 0,
+            insertedCount: 0,
+          },
+          { status: 200 }
+        );
+      }
+
+      const userIds = allUsers.map((user) => user.id);
+      const existingAllowances = await db
+        .select({
+          userId: schema.userAllowances.userId,
+        })
+        .from(schema.userAllowances)
+        .where(
+          and(
+            eq(schema.userAllowances.weeklyPoolId, activePool.id),
+            inArray(schema.userAllowances.userId, userIds)
+          )
+        );
+
+      const existingUserIds = new Set(existingAllowances.map((row) => row.userId));
+      const missingUserIds = userIds.filter((userId) => !existingUserIds.has(userId));
+      const weeklyLimitString = weeklyLimit.toString();
+      const now = new Date();
+
+      if (existingAllowances.length > 0) {
+        await db
+          .update(schema.userAllowances)
+          .set({
+            weeklyLimit: weeklyLimitString,
+            remainingAmount: sqlOp`greatest(${weeklyLimit} - ${schema.userAllowances.usedAmount}, 0)`,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(schema.userAllowances.weeklyPoolId, activePool.id),
+              inArray(schema.userAllowances.userId, Array.from(existingUserIds))
+            )
+          );
+      }
+
+      if (missingUserIds.length > 0) {
+        await db.insert(schema.userAllowances).values(
+          missingUserIds.map((userId) => ({
+            userId,
+            weeklyPoolId: activePool.id,
+            weeklyLimit: weeklyLimitString,
+            usedAmount: "0",
+            remainingAmount: weeklyLimitString,
+            createdAt: now,
+            updatedAt: now,
+          }))
+        );
+      }
+
+      return NextResponse.json(
+        {
+          message: "Weekly caps updated for all users",
+          weeklyLimit,
+          usersProcessed: userIds.length,
+          updatedCount: existingAllowances.length,
+          insertedCount: missingUserIds.length,
+        },
+        { status: 200 }
+      );
+    } catch (error: any) {
+      console.error("Error bulk updating allowances:", error);
+      return NextResponse.json(
+        { error: error?.message || "Internal server error" },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (action === "grant-allowance-all") {
+    if (req.method !== "POST") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    try {
+      const body = (await req.json()) as { topUpPoints?: number };
+      const topUpPoints = body.topUpPoints;
+
+      if (typeof topUpPoints !== "number" || topUpPoints < 0) {
+        return NextResponse.json(
+          { error: "Invalid topUpPoints" },
+          { status: 400 }
+        );
+      }
+
+      const activePool = await getActiveWeeklyPool();
+      if (!activePool) {
+        return NextResponse.json(
+          { error: "No active weekly pool found" },
+          { status: 404 }
+        );
+      }
+
+      const allUsers = await db.select({ id: schema.users.id }).from(schema.users);
+      if (!allUsers.length) {
+        return NextResponse.json(
+          {
+            message: "No users found",
+            usersProcessed: 0,
+            updatedCount: 0,
+            insertedCount: 0,
+          },
+          { status: 200 }
+        );
+      }
+
+      const userIds = allUsers.map((user) => user.id);
+      const existingAllowances = await db
+        .select({
+          userId: schema.userAllowances.userId,
+        })
+        .from(schema.userAllowances)
+        .where(
+          and(
+            eq(schema.userAllowances.weeklyPoolId, activePool.id),
+            inArray(schema.userAllowances.userId, userIds)
+          )
+        );
+
+      const existingUserIds = new Set(existingAllowances.map((row) => row.userId));
+      const missingUserIds = userIds.filter((userId) => !existingUserIds.has(userId));
+      const topUpPointsString = topUpPoints.toString();
+      const now = new Date();
+
+      if (existingAllowances.length > 0) {
+        await db
+          .update(schema.userAllowances)
+          .set({
+            weeklyLimit: sqlOp`(${schema.userAllowances.weeklyLimit} + ${topUpPoints})`,
+            remainingAmount: sqlOp`(${schema.userAllowances.remainingAmount} + ${topUpPoints})`,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(schema.userAllowances.weeklyPoolId, activePool.id),
+              inArray(schema.userAllowances.userId, Array.from(existingUserIds))
+            )
+          );
+      }
+
+      if (missingUserIds.length > 0) {
+        await db.insert(schema.userAllowances).values(
+          missingUserIds.map((userId) => ({
+            userId,
+            weeklyPoolId: activePool.id,
+            weeklyLimit: topUpPointsString,
+            usedAmount: "0",
+            remainingAmount: topUpPointsString,
+            createdAt: now,
+            updatedAt: now,
+          }))
+        );
+      }
+
+      return NextResponse.json(
+        {
+          message: "Top-up applied for all users",
+          topUpPoints,
+          usersProcessed: userIds.length,
+          updatedCount: existingAllowances.length,
+          insertedCount: missingUserIds.length,
+        },
+        { status: 200 }
+      );
+    } catch (error: any) {
+      console.error("Error applying top-up to allowances:", error);
       return NextResponse.json(
         { error: error?.message || "Internal server error" },
         { status: 500 }

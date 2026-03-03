@@ -294,7 +294,11 @@ export default function DashboardHomePage() {
   const [users, setUsers] = useState<Array<{ id: string; email: string; name: string | null }>>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [newAllowance, setNewAllowance] = useState<string>("");
+  const [weeklyCapForAll, setWeeklyCapForAll] = useState<string>("");
+  const [topUpForAll, setTopUpForAll] = useState<string>("");
   const [isUpdatingAllowance, setIsUpdatingAllowance] = useState(false);
+  const [isSettingWeeklyCapForAll, setIsSettingWeeklyCapForAll] = useState(false);
+  const [isGrantingTopUpForAll, setIsGrantingTopUpForAll] = useState(false);
   const [selectedUserDetails, setSelectedUserDetails] = useState<AdminUserBalanceResponse | null>(null);
   const [isLoadingUserDetails, setIsLoadingUserDetails] = useState(false);
   const [userDetailsError, setUserDetailsError] = useState<string | null>(null);
@@ -605,6 +609,124 @@ export default function DashboardHomePage() {
       setIsUpdatingAllowance(false);
     }
   }, [selectedUserId, newAllowance, router, fetchData, fetchUserDetails]);
+
+  const handleSetWeeklyCapForAll = useCallback(async () => {
+    if (!weeklyCapForAll) {
+      setToast("Enter a weekly cap value to apply to everyone");
+      return;
+    }
+
+    const weeklyLimitNum = parseFloat(weeklyCapForAll);
+    if (Number.isNaN(weeklyLimitNum) || weeklyLimitNum < 0) {
+      setToast("Invalid allowance amount");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Set weekly cap to ${weeklyLimitNum} for every user this week? Remaining points will become max(cap - used, 0).`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsSettingWeeklyCapForAll(true);
+    try {
+      const res = await fetch("/api/admin/update-allowance-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          weeklyLimit: weeklyLimitNum,
+        }),
+      });
+
+      if (res.status === 401) {
+        router.replace("/admin/login");
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(await readApiError(res));
+      }
+
+      const data = (await res.json()) as {
+        usersProcessed: number;
+        updatedCount: number;
+        insertedCount: number;
+      };
+      setToast(
+        `Set cap for ${data.usersProcessed} users (${data.updatedCount} existing, ${data.insertedCount} new)`
+      );
+      setWeeklyCapForAll("");
+      void fetchData();
+      if (selectedUserId) {
+        void fetchUserDetails(selectedUserId);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Bulk cap update failed";
+      setToast(`Failed to set weekly cap — ${message}`);
+    } finally {
+      setIsSettingWeeklyCapForAll(false);
+    }
+  }, [weeklyCapForAll, router, fetchData, fetchUserDetails, selectedUserId]);
+
+  const handleGrantTopUpForAll = useCallback(async () => {
+    if (!topUpForAll) {
+      setToast("Enter extra points to grant");
+      return;
+    }
+
+    const topUpPointsNum = parseFloat(topUpForAll);
+    if (Number.isNaN(topUpPointsNum) || topUpPointsNum < 0) {
+      setToast("Invalid top-up amount");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Grant ${topUpPointsNum} extra remaining points to every user this week?`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsGrantingTopUpForAll(true);
+    try {
+      const res = await fetch("/api/admin/grant-allowance-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topUpPoints: topUpPointsNum,
+        }),
+      });
+
+      if (res.status === 401) {
+        router.replace("/admin/login");
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(await readApiError(res));
+      }
+
+      const data = (await res.json()) as {
+        usersProcessed: number;
+        updatedCount: number;
+        insertedCount: number;
+      };
+      setToast(
+        `Granted top-up to ${data.usersProcessed} users (${data.updatedCount} existing, ${data.insertedCount} new)`
+      );
+      setTopUpForAll("");
+      void fetchData();
+      if (selectedUserId) {
+        void fetchUserDetails(selectedUserId);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Top-up failed";
+      setToast(`Failed to grant top-up — ${message}`);
+    } finally {
+      setIsGrantingTopUpForAll(false);
+    }
+  }, [topUpForAll, router, fetchData, fetchUserDetails, selectedUserId]);
 
   const handleDeleteClaim = useCallback(async (claimId: string, userId: string) => {
     if (!window.confirm("Are you sure you want to delete this claim? If it hasn't been redeemed, the points will be refunded.")) {
@@ -1525,6 +1647,90 @@ export default function DashboardHomePage() {
                 <div className="section-header">
                   <span className="section-title">User Allowance Management</span>
                   <span className="section-subtitle">Set allowance and inspect per-user status, usage, and balances</span>
+                </div>
+                <div className="card" style={{ animationDelay: "0.47s" }}>
+                  <div className="config-grid">
+                    <div className="config-item">
+                      <label className="config-label" htmlFor="weekly-cap-all">
+                        Set Weekly Cap for Everyone (Current Week)
+                      </label>
+                      <div className="config-input-wrap">
+                        <input
+                          id="weekly-cap-all"
+                          className="config-input"
+                          type="number"
+                          min={0}
+                          max={1000}
+                          value={weeklyCapForAll}
+                          onChange={(event) => setWeeklyCapForAll(event.target.value)}
+                          placeholder="Enter points"
+                        />
+                        <span className="config-unit">pts</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="config-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setWeeklyCapForAll("")}
+                      disabled={isSettingWeeklyCapForAll}
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => {
+                        void handleSetWeeklyCapForAll();
+                      }}
+                      disabled={isSettingWeeklyCapForAll || !weeklyCapForAll}
+                    >
+                      {isSettingWeeklyCapForAll ? "Setting Cap..." : "Set Cap for Everyone"}
+                    </button>
+                  </div>
+                </div>
+                <div className="card" style={{ animationDelay: "0.475s" }}>
+                  <div className="config-grid">
+                    <div className="config-item">
+                      <label className="config-label" htmlFor="top-up-all">
+                        Grant Extra Remaining Points for Everyone (Optional Top-Up)
+                      </label>
+                      <div className="config-input-wrap">
+                        <input
+                          id="top-up-all"
+                          className="config-input"
+                          type="number"
+                          min={0}
+                          max={1000}
+                          value={topUpForAll}
+                          onChange={(event) => setTopUpForAll(event.target.value)}
+                          placeholder="Enter points"
+                        />
+                        <span className="config-unit">pts</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="config-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setTopUpForAll("")}
+                      disabled={isGrantingTopUpForAll}
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => {
+                        void handleGrantTopUpForAll();
+                      }}
+                      disabled={isGrantingTopUpForAll || !topUpForAll}
+                    >
+                      {isGrantingTopUpForAll ? "Granting Top-Up..." : "Grant Top-Up to Everyone"}
+                    </button>
+                  </div>
                 </div>
                 <div className="card" style={{ animationDelay: "0.48s" }}>
                   <div className="config-grid">

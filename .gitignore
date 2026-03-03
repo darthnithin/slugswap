@@ -93,6 +93,7 @@ apps/mobile/android/
 # Next.js
 .next/
 apps/dashboard/.next/
+apps/dashboard/public/app/
 
 # local editor and skill artifacts
 *.swp

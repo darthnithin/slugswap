@@ -48,6 +48,7 @@ npm run dashboard:deploy:prod  # Vercel production deployment
 npm run mobile:eas:testflight  # Build iOS + submit to TestFlight
 npm run mobile:eas:update      # OTA update to production channel
 ```
+You can run `npm run` to see available run commands.
 
 `apps/dashboard` build now exports Expo web assets into `apps/dashboard/public/app` before `next build`.
 
@@ -57,8 +58,6 @@ npx expo-doctor                # Check for dependency issues, version mismatches
 ```
 
 Run `expo-doctor` when you encounter build errors or after upgrading packages to validate the setup.
-
-No test framework is configured. No linter is configured.
 
 ## Architecture
 
@@ -136,8 +135,8 @@ Mobile API client (`lib/api.ts`) injects Supabase bearer tokens into all request
 - No Lizzie claim creations or redemptions were recorded after pause timestamp.
 
 ## Environment Setup
-
-Copy `.env.example` to `.env` and fill in values. Key groups:
+If setting up a new environment (such as on the cloud or worktree) make sure that the .env files are copied over.
+Copy `.env to `.env` and fill in values. Key groups:
 - `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` — Supabase client
 - `SUPABASE_SERVICE_ROLE_KEY` — Server-side Supabase calls
 - `DATABASE_URL` — Neon Postgres connection string
@@ -157,11 +156,3 @@ After making changes, always tell the user what they need to do to give the chan
 - **New dependencies**: Run `npm install` from the repo root
 
 If a change spans multiple layers (e.g. schema + API + mobile), list all required steps in order. Never assume the user knows what to run — always be explicit.
-
-## Prioritization (from product spec)
-
-When making implementation decisions, follow this order:
-1. User trust and fairness first
-2. Redemption reliability second
-3. Onboarding speed third
-4. Visual polish after core reliability is stable
