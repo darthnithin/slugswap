@@ -19,6 +19,13 @@ npm run dashboard:dev          # Start Next.js dashboard (port 3000)
 npm run dashboard:dev -- -p 3001  # Dashboard on custom port (useful when mobile needs 3000)
 ```
 
+### Web Routes (single-domain deployment)
+- `/` — public landing page
+- `/app` — Expo web client (exported static bundle served by Next.js)
+- `/admin/login` — admin login
+- `/admin` — admin dashboard
+- `/api/*` — API endpoints
+
 ### Database (Drizzle)
 ```bash
 npm run db:generate            # Generate migrations from schema changes
@@ -42,6 +49,8 @@ npm run mobile:eas:testflight  # Build iOS + submit to TestFlight
 npm run mobile:eas:update      # OTA update to production channel
 ```
 
+`apps/dashboard` build now exports Expo web assets into `apps/dashboard/public/app` before `next build`.
+
 ### Troubleshooting
 ```bash
 npx expo-doctor                # Check for dependency issues, version mismatches, and configuration problems
@@ -55,10 +64,11 @@ No test framework is configured. No linter is configured.
 
 ### Monorepo Structure (npm workspaces)
 - `apps/mobile/` — Expo Router (React Native) mobile app
-- `apps/dashboard/` — Next.js 15 App Router: admin dashboard UI **and** all API routes
+- `apps/dashboard/` — Next.js 15 App Router: public landing, admin UI, Expo web host (`/app`), and all API routes
 - `db/` — Drizzle ORM schema (`schema.ts`), migrations, and DB connection (`index.ts`)
 - `lib/` — Shared client-side code (Supabase client, auth context, mobile API client)
 - `packages/` — Empty (reserved for future shared packages)
+- `landing-pages-react/` — Design lab/reference pages (not production-routed)
 
 ### API Layer
 All API routes live in `apps/dashboard/app/api/`. They use a **dynamic route segment + dispatcher** pattern:

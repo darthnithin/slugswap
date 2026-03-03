@@ -1,22 +1,28 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import DashboardHomePage from "./admin-dashboard-client";
-import { ADMIN_SESSION_COOKIE, verifyAdminSessionToken } from "@/lib/server/admin-auth";
+import LandingClient from "./landing-client";
+import { getAdminConfig } from "@/lib/server/config";
+import { getLandingStats } from "@/lib/server/landing-stats";
 
-export default async function Page() {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
-  let isAuthenticated = false;
+export default async function LandingPage() {
+  const stats = await getLandingStats();
+
+  let iosStoreUrl: string | null = null;
+  let androidStoreUrl: string | null = null;
 
   try {
-    isAuthenticated = verifyAdminSessionToken(sessionToken);
-  } catch {
-    isAuthenticated = false;
+    const { config } = await getAdminConfig();
+    iosStoreUrl = config.iosStoreUrl;
+    androidStoreUrl = config.androidStoreUrl;
+  } catch (error) {
+    console.error("Failed to load admin app store config for landing page:", error);
   }
 
-  if (!isAuthenticated) {
-    redirect("/login");
-  }
-
-  return <DashboardHomePage />;
+  return (
+    <LandingClient
+      pointsDistributed={stats.pointsDistributed}
+      activeDonors={stats.activeDonors}
+      asOf={stats.asOf}
+      iosStoreUrl={iosStoreUrl}
+      androidStoreUrl={androidStoreUrl}
+    />
+  );
 }

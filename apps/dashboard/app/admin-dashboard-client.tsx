@@ -316,7 +316,7 @@ export default function DashboardHomePage() {
       ]);
 
       if (statsRes.status === 401 || configRes.status === 401) {
-        router.replace("/login");
+        router.replace("/admin/login");
         return;
       }
 
@@ -356,7 +356,7 @@ export default function DashboardHomePage() {
     try {
       const res = await fetch("/api/admin/users?limit=100", { cache: "no-store" });
       if (res.status === 401) {
-        router.replace("/login");
+        router.replace("/admin/login");
         return;
       }
       if (!res.ok) {
@@ -378,7 +378,7 @@ export default function DashboardHomePage() {
           cache: "no-store",
         });
         if (res.status === 401) {
-          router.replace("/login");
+          router.replace("/admin/login");
           return;
         }
         if (!res.ok) {
@@ -531,7 +531,7 @@ export default function DashboardHomePage() {
       });
 
       if (res.status === 401) {
-        router.replace("/login");
+        router.replace("/admin/login");
         return;
       }
 
@@ -556,7 +556,7 @@ export default function DashboardHomePage() {
     try {
       await fetch("/api/admin/logout", { method: "POST" });
     } finally {
-      window.location.assign("/login?logout=1");
+      window.location.assign("/admin/login?logout=1");
       setIsLoggingOut(false);
     }
   }, []);
@@ -585,7 +585,7 @@ export default function DashboardHomePage() {
       });
 
       if (res.status === 401) {
-        router.replace("/login");
+        router.replace("/admin/login");
         return;
       }
 
@@ -620,7 +620,7 @@ export default function DashboardHomePage() {
       });
 
       if (res.status === 401) {
-        router.replace("/login");
+        router.replace("/admin/login");
         return;
       }
 

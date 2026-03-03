@@ -76,7 +76,7 @@ export default function AdminLoginClient({ supabaseUrl, supabaseAnonKey }: Login
           return;
         }
 
-        router.replace("/");
+        router.replace("/admin");
         router.refresh();
       } catch {
         setError("Unable to reach server");
@@ -147,7 +147,7 @@ export default function AdminLoginClient({ supabaseUrl, supabaseAnonKey }: Login
       const { error: signInError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/login`,
+          redirectTo: `${window.location.origin}/admin/login`,
         },
       });
 

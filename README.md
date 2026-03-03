@@ -51,6 +51,13 @@ Start the dashboard app:
 npm run dashboard:dev -- -p 3001
 ```
 
+Route map (dashboard app):
+- `/` -> public landing page
+- `/app` -> Expo web app (same domain)
+- `/admin/login` -> admin login
+- `/admin` -> admin dashboard
+- `/api/*` -> backend API routes
+
 Deploy dashboard preview:
 
 ```bash
@@ -74,6 +81,10 @@ slugswap/
 ├── scripts/                # Project scripts
 └── .github/workflows/      # CI/CD workflows
 ```
+
+### Landing Design Lab
+
+`landing-pages-react/` stays as a design/reference workspace and is not used for production routing.
 
 ## Product Releases
 

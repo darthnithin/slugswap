@@ -52,6 +52,9 @@ function resolveApiBaseUrl(): string {
   }
 
   if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return window.location.origin;
+    }
     return FALLBACK_LOCAL_API_URL;
   }
 

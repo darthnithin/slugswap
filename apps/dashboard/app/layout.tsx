@@ -23,8 +23,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SlugSwap Control Deck",
-  description: "Operations dashboard for SlugSwap",
+  title: "SlugSwap",
+  description: "Share dining points with fellow students",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
