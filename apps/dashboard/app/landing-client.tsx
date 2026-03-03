@@ -480,62 +480,9 @@ export default function LandingClient({
           </div>
         </div>
 
-        <div className="mx-auto mb-20 max-w-7xl">
-          <div className="relative">
-            {[
-              {
-                quote: '"I had points expiring. Now they feed people!"',
-                name: "MAYA",
-                color: "#f7dc6f",
-                rotate: -2,
-                top: 0,
-                left: 0,
-              },
-              {
-                quote: '"No more choosing textbooks over meals!"',
-                name: "JORDAN",
-                color: "#4ecdc4",
-                rotate: 3,
-                top: 120,
-                left: 200,
-              },
-              {
-                quote: '"Most equitable system on campus."',
-                name: "ALEX",
-                color: "#e74c3c",
-                rotate: -1,
-                top: 240,
-                left: 100,
-              },
-            ].map((test, i) => (
-              <motion.div
-                key={`${test.name}-${i}`}
-                initial={{ opacity: 0, scale: 0.8 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.2 }}
-                whileHover={{ scale: 1.1, rotate: 0, zIndex: 50 }}
-                className="absolute max-w-md border-8 border-black p-8 md:relative"
-                style={{
-                  transform: `rotate(${test.rotate}deg)`,
-                  top: test.top,
-                  left: test.left,
-                  backgroundColor: test.color,
-                  marginBottom: i < 2 ? "80px" : "0",
-                }}
-              >
-                <p className="mb-4 text-2xl font-black" style={{ fontFamily: "Impact, sans-serif" }}>
-                  {test.quote}
-                </p>
-                <p className="text-xl font-bold" style={{ fontFamily: "Arial Black, sans-serif" }}>
-                  {test.name}
-                </p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
+        {/* Placeholder testimonials disabled for now. */}
 
-        <div className="mx-auto mb-20 mt-[500px] max-w-5xl text-center md:mt-20">
+        <div className="mx-auto mb-20 mt-20 max-w-5xl text-center">
           <motion.div initial={{ scale: 0 }} whileInView={{ scale: 1 }} viewport={{ once: true }} className="relative">
             <div className="relative z-20 border-8 border-[#f7dc6f] bg-black p-16 text-white">
               <h2 className="mb-8 text-5xl font-black md:text-8xl" style={{ fontFamily: "Impact, sans-serif" }}>
