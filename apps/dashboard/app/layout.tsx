@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Instrument_Serif, JetBrains_Mono, Outfit } from "next/font/google";
 import type { ReactNode } from "react";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const instrumentSerif = Instrument_Serif({
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         className={`${instrumentSerif.variable} ${outfit.variable} ${jetbrainsMono.variable}`}
       >
         {children}
+        <Analytics />
       </body>
     </html>
   );
