@@ -1,4 +1,4 @@
-import { View, Text, TextInput, Pressable, ActivityIndicator, Alert, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, TextInput, Pressable, ActivityIndicator, Alert, ScrollView, RefreshControl, Platform } from 'react-native';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { BlurView } from 'expo-blur';
 import { SymbolView } from 'expo-symbols';
@@ -286,29 +286,47 @@ export default function DonorScreen() {
 
   const handleUnlinkGet = () => {
     if (!userId) return;
-    Alert.alert('Unlink GET?', 'Requesters will not be able to generate claim codes until a donor links again.', [
+
+    const runUnlink = async () => {
+      setUnlinkingGet(true);
+      try {
+        await unlinkGetAccount(userId);
+        setIsGetLinked(false);
+        setGetLinkedAt(null);
+        setGetAccounts([]);
+        cacheShareSnapshot({
+          isGetLinked: false,
+          getLinkedAt: null,
+          getAccounts: [],
+        });
+        Alert.alert('Unlinked', 'Your donor GET account has been unlinked.');
+      } catch (error: any) {
+        Alert.alert('Error', error.message || 'Failed to unlink GET account');
+      } finally {
+        setUnlinkingGet(false);
+      }
+    };
+
+    const confirmationMessage =
+      'Requesters will not be able to generate claim codes until a donor links again.';
+
+    if (Platform.OS === 'web') {
+      const confirmed =
+        typeof globalThis.confirm === 'function'
+          ? globalThis.confirm(`Unlink GET?\n\n${confirmationMessage}`)
+          : true;
+      if (!confirmed) return;
+      void runUnlink();
+      return;
+    }
+
+    Alert.alert('Unlink GET?', confirmationMessage, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Unlink',
         style: 'destructive',
-        onPress: async () => {
-          setUnlinkingGet(true);
-          try {
-            await unlinkGetAccount(userId);
-            setIsGetLinked(false);
-            setGetLinkedAt(null);
-            setGetAccounts([]);
-            cacheShareSnapshot({
-              isGetLinked: false,
-              getLinkedAt: null,
-              getAccounts: [],
-            });
-            Alert.alert('Unlinked', 'Your donor GET account has been unlinked.');
-          } catch (error: any) {
-            Alert.alert('Error', error.message || 'Failed to unlink GET account');
-          } finally {
-            setUnlinkingGet(false);
-          }
+        onPress: () => {
+          void runUnlink();
         },
       },
     ]);

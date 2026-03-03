@@ -1,4 +1,4 @@
-import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert, RefreshControl, PlatformColor } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert, RefreshControl } from 'react-native';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { BlurView } from 'expo-blur';
 import { SymbolView } from 'expo-symbols';
@@ -382,7 +382,7 @@ export default function RequesterScreen() {
               <Text style={{ fontSize: 12, color: uiColor('secondaryLabel') }}>
                 {checkoutDetail}
               </Text>
-              <Text selectable style={{ fontSize: 12, color: PlatformColor('tertiaryLabel') }}>
+              <Text selectable style={{ fontSize: 12, color: uiColor('tertiaryLabel') }}>
                 {donorCourtesyLabel}
               </Text>
             </View>
