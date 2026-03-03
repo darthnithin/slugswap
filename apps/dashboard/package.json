@@ -21,7 +21,7 @@
   "scripts": {
     "predev": "npm run build:mobile-web",
     "dev": "next dev",
-    "build:mobile-web": "rm -rf public/app && mkdir -p public/app && dotenv -e ../../.env -- sh -c 'EXPO_BASE_URL=app npm --prefix ../mobile run web:build -- --output-dir ../dashboard/public/app'",
+    "build:mobile-web": "rm -rf public/app && mkdir -p public/app && sh -c 'if command -v dotenv >/dev/null 2>&1; then dotenv -e ../../.env -- sh -c \"EXPO_BASE_URL=app npm --prefix ../mobile run web:build -- --output-dir ../dashboard/public/app\"; else EXPO_BASE_URL=app npm --prefix ../mobile run web:build -- --output-dir ../dashboard/public/app; fi'",
     "build": "npm run build:mobile-web && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"
