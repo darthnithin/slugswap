@@ -111,6 +111,8 @@ type AdminStatsResponse = {
     email: string | null;
     amount: number;
     status: string;
+    hasLinkedGet: boolean;
+    trackedGetBalanceTotal: number | null;
     capAmount: number;
     redeemedThisWeek: number;
     reservedThisWeek: number;
@@ -2059,6 +2061,11 @@ export default function DashboardHomePage() {
                         )
                           ? donor.status
                           : "active";
+                        const donorGetBalanceLabel = !donor.hasLinkedGet
+                          ? "GET not linked"
+                          : donor.trackedGetBalanceTotal === null
+                            ? "GET unavailable"
+                            : `GET ${formatNum(donor.trackedGetBalanceTotal)} pts`;
 
                         return (
                           <div className="donor-row" key={`${donor.userId}-${index}`}>
@@ -2069,6 +2076,7 @@ export default function DashboardHomePage() {
                               <div className="donor-email">
                                 {donor.email ? donor.email.split("@")[0] : "—"}
                               </div>
+                              <div className="donor-balance">{donorGetBalanceLabel}</div>
                               <div className="donor-email">
                                 Cap {formatNum(donor.capAmount)} · Redeemed {formatNum(donor.redeemedThisWeek)} · Reserved {formatNum(donor.reservedThisWeek)} · Remaining {formatNum(donor.remainingThisWeek)} · {donor.capReached ? "Cap reached" : "Within cap"}
                               </div>
