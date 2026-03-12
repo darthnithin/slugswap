@@ -45,6 +45,44 @@ function getWeekBounds() {
   return { weekStart, weekEnd };
 }
 
+const TRACKED_GET_ACCOUNT_NAMES = new Set([
+  "flexi dollars",
+  "banana bucks",
+  "slug points",
+]);
+
+function getTrackedGetBalanceTotal(
+  accounts: Array<{ accountDisplayName: string; balance: number | null }>
+): number | null {
+  let total = 0;
+  let foundTrackedBalance = false;
+
+  for (const account of accounts) {
+    if (!TRACKED_GET_ACCOUNT_NAMES.has(account.accountDisplayName.trim().toLowerCase())) {
+      continue;
+    }
+    if (typeof account.balance !== "number" || Number.isNaN(account.balance)) {
+      continue;
+    }
+
+    total += account.balance;
+    foundTrackedBalance = true;
+  }
+
+  return foundTrackedBalance ? total : null;
+}
+
+async function fetchTrackedGetBalanceTotal(userId: string): Promise<number | null> {
+  try {
+    const { sessionId } = await getActiveGetSession(userId);
+    const accounts = await retrieveAccounts(sessionId);
+    return getTrackedGetBalanceTotal(accounts);
+  } catch (error) {
+    console.warn(`Failed to fetch live GET balance for donor ${userId}:`, error);
+    return null;
+  }
+}
+
 async function getActiveWeeklyPool() {
   const pools = await db
     .select()
@@ -437,9 +475,11 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           status: schema.donations.status,
           userName: schema.users.name,
           userEmail: schema.users.email,
+          linkedGetUserId: schema.getCredentials.userId,
         })
         .from(schema.donations)
         .leftJoin(schema.users, eq(schema.donations.userId, schema.users.id))
+        .leftJoin(schema.getCredentials, eq(schema.donations.userId, schema.getCredentials.userId))
         .orderBy(desc(schema.donations.amount))
         .limit(10);
 
@@ -598,6 +638,16 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         .select({ count: sqlOp<number>`count(*)` })
         .from(schema.getCredentials);
 
+      const topDonorsWithGetBalance = await Promise.all(
+        topDonors.map(async (donor) => ({
+          ...donor,
+          hasLinkedGet: Boolean(donor.linkedGetUserId),
+          trackedGetBalanceTotal: donor.linkedGetUserId
+            ? await fetchTrackedGetBalanceTotal(donor.userId)
+            : null,
+        }))
+      );
+
       return NextResponse.json(
         {
           timestamp: new Date().toISOString(),
@@ -649,7 +699,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             createdAt: c.createdAt.toISOString(),
             expiresAt: c.expiresAt.toISOString(),
           })),
-          topDonors: topDonors.map((d) => {
+          topDonors: topDonorsWithGetBalance.map((d) => {
             const fallbackCap = parseFloat(d.amount);
             const usage = usageMap.get(d.userId);
             return {
@@ -658,6 +708,8 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
               email: d.userEmail,
               amount: parseFloat(d.amount),
               status: d.status,
+              hasLinkedGet: d.hasLinkedGet,
+              trackedGetBalanceTotal: d.trackedGetBalanceTotal,
               capAmount: usage?.capAmount ?? fallbackCap,
               redeemedThisWeek: usage?.redeemedThisWeek ?? 0,
               reservedThisWeek: usage?.reservedThisWeek ?? 0,
@@ -756,12 +808,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         }
       }
 
-      const trackedAccountNames = new Set(["flexi dollars", "banana bucks", "slug points"]);
-      const trackedGetBalanceTotal = (getBalance ?? []).reduce((sum, account) => {
-        if (!trackedAccountNames.has(account.accountDisplayName.trim().toLowerCase())) return sum;
-        if (typeof account.balance !== "number" || Number.isNaN(account.balance)) return sum;
-        return sum + account.balance;
-      }, 0);
+      const trackedGetBalanceTotal = getTrackedGetBalanceTotal(getBalance ?? []) ?? 0;
 
       // Weekly allowance
       const currentPool = await db
