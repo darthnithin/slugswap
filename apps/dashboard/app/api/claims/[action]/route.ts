@@ -17,9 +17,60 @@ export const runtime = "nodejs";
 type Ctx = { params: Promise<{ action: string }> };
 type CheckoutRail = "points-or-bucks" | "flexi-dollars";
 type BalanceSnapshotEntry = { id: string; name: string; balance: number | null };
+type ClaimGenerationFailureReason =
+  | "allowance_exhausted"
+  | "pool_exhausted"
+  | "pool_unavailable";
 
 const FLEXI_ACCOUNT_NAME = "flexi dollars";
 const POINTS_OR_BUCKS_ACCOUNT_NAMES = new Set(["banana bucks", "slug points"]);
+const POOL_EXHAUSTED_MESSAGE =
+  "Your personal allowance is still there, but the shared pool is empty. Check back later.";
+const POOL_UNAVAILABLE_MESSAGE =
+  "Points are temporarily unavailable right now. Please try again in a moment.";
+
+function claimGenerationErrorResponse(
+  error: string,
+  status: number,
+  reason?: ClaimGenerationFailureReason,
+  extra?: Record<string, unknown>
+) {
+  return NextResponse.json(
+    {
+      error,
+      ...(reason ? { reason } : {}),
+      ...(extra ?? {}),
+    },
+    { status }
+  );
+}
+
+function classifyClaimGenerationError(message: string): {
+  error: string;
+  reason?: ClaimGenerationFailureReason;
+  status: number;
+} {
+  if (message.includes("No eligible donors available under weekly cap limits")) {
+    return {
+      error: POOL_EXHAUSTED_MESSAGE,
+      reason: "pool_exhausted",
+      status: 409,
+    };
+  }
+
+  if (message.includes("No linked donor GET account available")) {
+    return {
+      error: POOL_UNAVAILABLE_MESSAGE,
+      reason: "pool_unavailable",
+      status: 503,
+    };
+  }
+
+  return {
+    error: message || "Internal server error",
+    status: 500,
+  };
+}
 
 function toTrackedBalanceSnapshot(accounts: GetAccount[]): BalanceSnapshotEntry[] {
   return accounts.map((account) => ({
@@ -151,9 +202,11 @@ async function handleGenerate(req: NextRequest) {
     const allowance = userAllowance[0];
     const remaining = parseFloat(allowance.remainingAmount);
     if (claimAmount > remaining) {
-      return NextResponse.json(
-        { error: "Insufficient allowance", remaining },
-        { status: 400 }
+      return claimGenerationErrorResponse(
+        "Insufficient allowance",
+        400,
+        "allowance_exhausted",
+        { remaining }
       );
     }
 
@@ -235,33 +288,29 @@ async function handleGenerate(req: NextRequest) {
     }
 
     if (hadCapReject && fetchFailures.length === 0) {
-      return NextResponse.json(
-        { error: "No eligible donors available under weekly cap limits." },
-        { status: 400 }
+      return claimGenerationErrorResponse(
+        POOL_EXHAUSTED_MESSAGE,
+        409,
+        "pool_exhausted"
       );
     }
 
-    return NextResponse.json(
-      {
-        error:
-          fetchFailures.length > 0
-            ? `All donor barcode attempts failed: ${fetchFailures[0]}`
-            : "No eligible donors available.",
-      },
-      { status: 500 }
+    return claimGenerationErrorResponse(
+      POOL_UNAVAILABLE_MESSAGE,
+      503,
+      "pool_unavailable",
+      fetchFailures.length > 0
+        ? { upstreamError: `All donor barcode attempts failed: ${fetchFailures[0]}` }
+        : undefined
     );
   } catch (error: any) {
     console.error("Error generating claim code:", error);
     const message = error?.message || "Internal server error";
-    const status =
-      typeof message === "string" &&
-      (message.includes("No eligible donors available") ||
-        message.includes("No linked donor GET account available"))
-        ? 400
-        : 500;
-    return NextResponse.json(
-      { error: message },
-      { status }
+    const classified = classifyClaimGenerationError(message);
+    return claimGenerationErrorResponse(
+      classified.error,
+      classified.status,
+      classified.reason
     );
   }
 }

@@ -123,6 +123,11 @@ export type DonorImpact = {
 };
 
 export type CheckoutRail = "points-or-bucks" | "flexi-dollars";
+export type ClaimGenerationFailureReason =
+  | 'allowance_exhausted'
+  | 'pool_low'
+  | 'pool_exhausted'
+  | 'pool_unavailable';
 
 type ClaimCodePayload = {
   id: string;
@@ -147,17 +152,47 @@ export type MobileUpdatePolicyResponse = {
   updatedAt: string;
 };
 
-async function readApiError(response: Response, fallback: string): Promise<string> {
+function normalizeClaimGenerationFailureReason(
+  reason: unknown
+): ClaimGenerationFailureReason | undefined {
+  if (
+    reason === 'allowance_exhausted' ||
+    reason === 'pool_low' ||
+    reason === 'pool_exhausted' ||
+    reason === 'pool_unavailable'
+  ) {
+    return reason;
+  }
+
+  return undefined;
+}
+
+async function readApiErrorPayload(
+  response: Response,
+  fallback: string
+): Promise<{ message: string; reason?: ClaimGenerationFailureReason }> {
   const bodyText = await response.text();
-  if (!bodyText) return fallback;
+  if (!bodyText) return { message: fallback };
 
   try {
-    const parsed = JSON.parse(bodyText) as { error?: string; message?: string };
-    return parsed.error || parsed.message || fallback;
+    const parsed = JSON.parse(bodyText) as {
+      error?: string;
+      message?: string;
+      reason?: unknown;
+    };
+    return {
+      message: parsed.error || parsed.message || fallback,
+      reason: normalizeClaimGenerationFailureReason(parsed.reason),
+    };
   } catch {
     // Some upstream failures return plain text (for example, Vercel 502 pages).
-    return bodyText.slice(0, 200) || fallback;
+    return { message: bodyText.slice(0, 200) || fallback };
   }
+}
+
+async function readApiError(response: Response, fallback: string): Promise<string> {
+  const payload = await readApiErrorPayload(response, fallback);
+  return payload.message;
 }
 
 async function getAuthHeaders(): Promise<HeadersInit> {
@@ -234,8 +269,10 @@ export async function generateClaimCode(userId: string, amount: number) {
   });
 
   if (!response.ok) {
-    const errorMessage = await readApiError(response, 'Failed to generate claim code');
-    throw new Error(errorMessage);
+    const { message, reason } = await readApiErrorPayload(response, 'Failed to generate claim code');
+    const error = new Error(message) as Error & { reason?: ClaimGenerationFailureReason };
+    error.reason = reason;
+    throw error;
   }
 
   return response.json() as Promise<{ success: boolean; claimCode: ClaimCodePayload }>;

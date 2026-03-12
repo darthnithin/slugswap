@@ -91,6 +91,7 @@ SlugSwap uses a pooled weekly model:
 - Acceptance criteria:
   - Requesters cannot claim above allowance.
   - Total claims cannot exceed available pool.
+  - Requester-visible states clearly distinguish `allowance exhausted`, `shared pool exhausted`, and `temporary school-system unavailability`.
 
 2. As the product owner, I need claim codes to be safe against abuse so trust remains high.
 - Acceptance criteria:
