@@ -356,7 +356,7 @@ export default function LandingClient({
             >
               <div className="absolute right-0 top-0 h-0 w-0 border-l-[100px] border-l-transparent border-t-[100px] border-t-[#9b59b6]" />
               <h3 className="relative z-10 mb-4 font-black leading-none" style={{ fontFamily: "Impact, sans-serif" }}>
-                <span className="block text-5xl md:text-6xl">{formatPoints(availablePointsThisWeek)}</span>
+                <span className="block text-5xl md:text-6xl">${formatPoints(availablePointsThisWeek)}</span>
                 <span className="mt-2 block text-2xl md:text-3xl">POINTS AVAILABLE</span>
               </h3>
               <p className="relative z-10 text-lg font-black md:text-xl" style={{ fontFamily: "Arial Black, sans-serif" }}>
