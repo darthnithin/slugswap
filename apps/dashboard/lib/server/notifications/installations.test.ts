@@ -60,7 +60,7 @@ test("registers a native expo installation", async () => {
       webPushEnabled: false,
       webPushPublicKey: null,
       serviceWorkerPath: "/notifications-sw.js",
-      serviceWorkerScope: "/app/",
+      serviceWorkerScope: "/app",
     }
   );
 
@@ -103,7 +103,7 @@ test("rejects web registration when VAPID config is unavailable", async () => {
       webPushEnabled: false,
       webPushPublicKey: null,
       serviceWorkerPath: "/notifications-sw.js",
-      serviceWorkerScope: "/app/",
+      serviceWorkerScope: "/app",
     }
   );
 
@@ -140,7 +140,7 @@ test("registers a web installation when VAPID config exists", async () => {
       webPushEnabled: true,
       webPushPublicKey: "public-key",
       serviceWorkerPath: "/notifications-sw.js",
-      serviceWorkerScope: "/app/",
+      serviceWorkerScope: "/app",
     }
   );
 

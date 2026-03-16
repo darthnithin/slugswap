@@ -178,7 +178,7 @@ test("supports the donor notification lifecycle for a single installation", asyn
       webPushEnabled: true,
       webPushPublicKey: "public-key",
       serviceWorkerPath: "/notifications-sw.js",
-      serviceWorkerScope: "/app/",
+      serviceWorkerScope: "/app",
     }
   );
 

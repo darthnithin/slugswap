@@ -17,7 +17,7 @@ export type WebPushSendResult = {
 };
 
 const SERVICE_WORKER_PATH = "/notifications-sw.js";
-const SERVICE_WORKER_SCOPE = "/app/";
+const SERVICE_WORKER_SCOPE = "/app";
 
 let vapidConfigured = false;
 
