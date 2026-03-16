@@ -891,6 +891,148 @@ body {
   border-top: 1px solid var(--border);
 }
 
+.admin-root .notification-studio {
+  display: grid;
+  gap: 18px;
+}
+
+.admin-root .notification-message-input {
+  width: 100%;
+  min-height: 136px;
+  resize: vertical;
+  padding: 14px 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 60%),
+    var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  outline: none;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.admin-root .notification-message-input:hover {
+  border-color: var(--border-hover);
+}
+
+.admin-root .notification-message-input:focus {
+  border-color: var(--accent-gold-dim);
+  box-shadow: 0 0 0 3px var(--accent-gold-glow);
+}
+
+.admin-root .notification-message-input::placeholder {
+  color: color-mix(in srgb, var(--text-muted) 82%, transparent);
+}
+
+.admin-root .notification-recipient-note {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--accent-gold-dim) 30%, var(--border) 70%);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at top right, rgba(201, 148, 62, 0.1), transparent 42%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.015), transparent 60%),
+    var(--bg-elevated);
+  overflow: hidden;
+}
+
+.admin-root .notification-recipient-note::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 30%);
+  opacity: 0.45;
+}
+
+.admin-root .notification-recipient-header,
+.admin-root .notification-recipient-row {
+  position: relative;
+  z-index: 1;
+}
+
+.admin-root .notification-recipient-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-root .notification-recipient-name {
+  font-size: 1rem;
+  color: var(--text-primary);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.admin-root .notification-recipient-meta {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.admin-root .notification-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(201, 148, 62, 0.28);
+  background: rgba(201, 148, 62, 0.14);
+  color: var(--accent-gold-bright);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.admin-root .notification-recipient-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.admin-root .notification-recipient-row span:first-child {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 0.63rem;
+  font-family: var(--font-mono);
+}
+
+.admin-root .notification-recipient-row span:last-child {
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.admin-root .notification-recipient-empty {
+  padding: 16px 18px;
+  border: 1px dashed color-mix(in srgb, var(--border-hover) 65%, transparent);
+  border-radius: 14px;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.6;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.012), transparent 100%);
+}
+
 .admin-root .btn {
   padding: 9px 20px;
   border-radius: var(--radius-sm);
@@ -1501,6 +1643,16 @@ body {
   .admin-root .chart-header-right {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .admin-root .notification-recipient-header,
+  .admin-root .notification-recipient-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .admin-root .notification-recipient-row span:last-child {
+    text-align: left;
   }
 }
 

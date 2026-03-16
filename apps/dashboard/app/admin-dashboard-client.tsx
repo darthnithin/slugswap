@@ -199,6 +199,17 @@ type AdminUserBalanceResponse = {
   } | null;
 };
 
+type AdminNotificationTarget = {
+  userId: string;
+  email: string | null;
+  name: string | null;
+  activeInstallations: number;
+  channels: string[];
+  platforms: string[];
+  lastSeenAt: string | null;
+  notifyOnSpend: boolean;
+};
+
 const SECTION_TITLES: Record<NavSection, string> = {
   overview: "Overview",
   pool: "Pool Health",
@@ -308,6 +319,10 @@ export default function DashboardHomePage() {
   const [toast, setToast] = useState<string | null>(null);
   const [users, setUsers] = useState<Array<{ id: string; email: string; name: string | null }>>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [notificationTargets, setNotificationTargets] = useState<AdminNotificationTarget[]>([]);
+  const [selectedNotificationUserId, setSelectedNotificationUserId] = useState<string>("");
+  const [notificationTitle, setNotificationTitle] = useState("SlugSwap admin message");
+  const [notificationMessage, setNotificationMessage] = useState("");
   const [newAllowance, setNewAllowance] = useState<string>("");
   const [weeklyCapForAll, setWeeklyCapForAll] = useState<string>("");
   const [topUpForAll, setTopUpForAll] = useState<string>("");
@@ -317,7 +332,7 @@ export default function DashboardHomePage() {
   const [selectedUserDetails, setSelectedUserDetails] = useState<AdminUserBalanceResponse | null>(null);
   const [isLoadingUserDetails, setIsLoadingUserDetails] = useState(false);
   const [userDetailsError, setUserDetailsError] = useState<string | null>(null);
-  const [isSendingTestNotification, setIsSendingTestNotification] = useState(false);
+  const [isSendingAdminNotification, setIsSendingAdminNotification] = useState(false);
   const [deletingClaimId, setDeletingClaimId] = useState<string | null>(null);
   const [chartGranularity, setChartGranularity] = useState<ChartGranularity>("weekly");
 
@@ -389,6 +404,23 @@ export default function DashboardHomePage() {
     }
   }, [router]);
 
+  const fetchNotificationTargets = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/notification-targets", { cache: "no-store" });
+      if (res.status === 401) {
+        router.replace("/admin/login");
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(await readApiError(res));
+      }
+      const data = (await res.json()) as { targets: AdminNotificationTarget[] };
+      setNotificationTargets(data.targets);
+    } catch (err) {
+      console.error("Error fetching notification targets:", err);
+    }
+  }, [router]);
+
   const fetchUserDetails = useCallback(
     async (userId: string) => {
       setIsLoadingUserDetails(true);
@@ -419,6 +451,7 @@ export default function DashboardHomePage() {
   useEffect(() => {
     void fetchData();
     void fetchUsers();
+    void fetchNotificationTargets();
     const interval = window.setInterval(() => {
       void fetchData();
     }, 30_000);
@@ -426,7 +459,7 @@ export default function DashboardHomePage() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [fetchData, fetchUsers]);
+  }, [fetchData, fetchUsers, fetchNotificationTargets]);
 
   useEffect(() => {
     if (!toast) return;
@@ -776,46 +809,68 @@ export default function DashboardHomePage() {
     }
   }, [router, fetchData]);
 
-  const handleSendTestNotification = useCallback(async () => {
-    if (!selectedUserId) {
-      setToast("Select a user first");
+  const selectedNotificationTarget = useMemo(
+    () =>
+      notificationTargets.find((target) => target.userId === selectedNotificationUserId) ?? null,
+    [notificationTargets, selectedNotificationUserId]
+  );
+
+  const handleSendAdminNotification = useCallback(async () => {
+    if (!selectedNotificationUserId) {
+      setToast("Choose a notification recipient");
       return;
     }
 
-    setIsSendingTestNotification(true);
+    const trimmedMessage = notificationMessage.trim();
+    const trimmedTitle = notificationTitle.trim() || "SlugSwap admin message";
+
+    if (!trimmedMessage) {
+      setToast("Write a message before sending");
+      return;
+    }
+
+    setIsSendingAdminNotification(true);
     try {
-      const res = await fetch("/api/admin/test-notification", {
+      const res = await fetch("/api/admin/send-notification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: selectedUserId }),
+        body: JSON.stringify({
+          userId: selectedNotificationUserId,
+          title: trimmedTitle,
+          message: trimmedMessage,
+        }),
       });
 
       if (res.status === 401) {
         router.replace("/admin/login");
         return;
       }
-
       if (!res.ok) {
         throw new Error(await readApiError(res));
       }
 
-      const data = (await res.json()) as {
-        message?: string;
-        successCount: number;
-        totalInstallations: number;
-      };
-      setToast(
-        data.message ||
-          `Sent test notification to ${data.successCount} of ${data.totalInstallations} installations`
-      );
-      void fetchUserDetails(selectedUserId);
+      const data = (await res.json()) as { message?: string };
+      setToast(data.message || "Notification sent");
+      setNotificationMessage("");
+      void fetchNotificationTargets();
+      if (selectedUserId === selectedNotificationUserId) {
+        void fetchUserDetails(selectedUserId);
+      }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to send test notification";
-      setToast(`Failed to send test notification — ${message}`);
+      const message = err instanceof Error ? err.message : "Failed to send notification";
+      setToast(`Failed to send notification — ${message}`);
     } finally {
-      setIsSendingTestNotification(false);
+      setIsSendingAdminNotification(false);
     }
-  }, [selectedUserId, router, fetchUserDetails]);
+  }, [
+    fetchNotificationTargets,
+    fetchUserDetails,
+    notificationMessage,
+    notificationTitle,
+    router,
+    selectedNotificationUserId,
+    selectedUserId,
+  ]);
 
   const poolMetrics = useMemo(() => {
     if (!statsData) {
@@ -1790,6 +1845,141 @@ export default function DashboardHomePage() {
                   </div>
                 </div>
                 <div className="card" style={{ animationDelay: "0.48s" }}>
+                  <div className="card-header">
+                    <span className="card-title">Send Notifications</span>
+                    <span className="card-badge">
+                      {notificationTargets.length} live target{notificationTargets.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="notification-studio">
+                    <div className="config-grid">
+                      <div className="config-item">
+                        <label className="config-label" htmlFor="notification-user-select">
+                          Recipient
+                        </label>
+                        <select
+                          id="notification-user-select"
+                          className="config-select"
+                          value={selectedNotificationUserId}
+                          onChange={(event) => setSelectedNotificationUserId(event.target.value)}
+                        >
+                          <option value="">Choose a reachable user...</option>
+                          {notificationTargets.map((target) => (
+                            <option key={target.userId} value={target.userId}>
+                              {(target.name || target.email || target.userId) +
+                                ` · ${target.activeInstallations} live`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="config-item">
+                        <label className="config-label" htmlFor="notification-title">
+                          Title
+                        </label>
+                        <div className="config-input-wrap">
+                          <input
+                            id="notification-title"
+                            className="config-input"
+                            type="text"
+                            value={notificationTitle}
+                            onChange={(event) => setNotificationTitle(event.target.value)}
+                            placeholder="SlugSwap admin message"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="config-item">
+                      <label className="config-label" htmlFor="notification-message">
+                        Message
+                      </label>
+                      <textarea
+                        id="notification-message"
+                        className="notification-message-input"
+                        value={notificationMessage}
+                        onChange={(event) => setNotificationMessage(event.target.value)}
+                        placeholder="Write the push message you want this user to receive."
+                      />
+                    </div>
+
+                    {selectedNotificationTarget ? (
+                      <div className="notification-recipient-note">
+                        <div className="notification-recipient-header">
+                          <div>
+                            <div className="notification-recipient-name">
+                              {selectedNotificationTarget.name ||
+                                selectedNotificationTarget.email ||
+                                selectedNotificationTarget.userId}
+                            </div>
+                            <div className="notification-recipient-meta">
+                              {selectedNotificationTarget.email || selectedNotificationTarget.userId}
+                            </div>
+                          </div>
+                          <span className="notification-pill">
+                            {selectedNotificationTarget.activeInstallations} active
+                          </span>
+                        </div>
+                        <div className="notification-recipient-row">
+                          <span>Channels</span>
+                          <span>
+                            {selectedNotificationTarget.channels.join(", ") || "—"}
+                          </span>
+                        </div>
+                        <div className="notification-recipient-row">
+                          <span>Platforms</span>
+                          <span>
+                            {selectedNotificationTarget.platforms.join(", ") || "—"}
+                          </span>
+                        </div>
+                        <div className="notification-recipient-row">
+                          <span>Donor spend alerts</span>
+                          <span>
+                            {selectedNotificationTarget.notifyOnSpend ? "Enabled" : "Not enabled"}
+                          </span>
+                        </div>
+                        <div className="notification-recipient-row">
+                          <span>Last seen</span>
+                          <span>{formatDateTime(selectedNotificationTarget.lastSeenAt)}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="notification-recipient-empty">
+                        Pick a user with active installations to compose a direct admin push.
+                      </div>
+                    )}
+
+                    <div className="config-actions">
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => {
+                          setSelectedNotificationUserId("");
+                          setNotificationTitle("SlugSwap admin message");
+                          setNotificationMessage("");
+                        }}
+                        disabled={isSendingAdminNotification}
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => {
+                          void handleSendAdminNotification();
+                        }}
+                        disabled={
+                          isSendingAdminNotification ||
+                          !selectedNotificationUserId ||
+                          !notificationMessage.trim()
+                        }
+                      >
+                        {isSendingAdminNotification ? "Sending..." : "Send Message"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="card" style={{ animationDelay: "0.485s" }}>
                   <div className="config-grid">
                     <div className="config-item">
                       <label className="config-label" htmlFor="user-select">
@@ -2006,32 +2196,9 @@ export default function DashboardHomePage() {
                           </div>
                         </div>
 
-                        <div className="config-actions" style={{ justifyContent: "space-between" }}>
-                          <div
-                            style={{
-                              color: "var(--text-muted)",
-                              fontSize: "0.82rem",
-                            }}
-                          >
-                            Sends a real Expo/web push through the current active installations for this user.
-                          </div>
-                          <button
-                            type="button"
-                            className="btn btn-primary"
-                            onClick={() => {
-                              void handleSendTestNotification();
-                            }}
-                            disabled={
-                              isSendingTestNotification ||
-                              selectedUserDetails.notifications.activeInstallations === 0
-                            }
-                          >
-                            {isSendingTestNotification
-                              ? "Sending..."
-                              : selectedUserDetails.notifications.activeInstallations === 0
-                                ? "No Active Installations"
-                                : "Send Test Notification"}
-                          </button>
+                        <div className="notification-recipient-empty">
+                          Quick health check: this snapshot shows whether the user is reachable. Use
+                          the dedicated Send Notifications panel above to compose and send a push.
                         </div>
 
                         <div>

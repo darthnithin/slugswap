@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   notifyDonorSpendWithDependencies,
+  sendUserAdminNotificationWithDependencies,
   sendUserTestNotificationWithDependencies,
   type DonorSpendNotificationSenders,
   type DonorSpendNotificationStore,
@@ -302,4 +303,50 @@ test("fails admin test notification cleanly when user has no active installation
   assert.equal(installationStatuses.length, 0);
   assert.equal(expoPayloads.length, 0);
   assert.equal(webPayloads.length, 0);
+});
+
+test("sends a custom admin notification payload", async () => {
+  const { store } = createStore({
+    activeInstallations: [
+      {
+        id: "expo-good",
+        channel: "expo",
+        expoPushToken: "ExpoPushToken[custom-token]",
+        webPushSubscription: null,
+      },
+    ],
+  });
+  const { senders, expoPayloads } = createSenders();
+
+  const result = await sendUserAdminNotificationWithDependencies(
+    {
+      userId: "user-3",
+      title: "Pool update",
+      body: "Dinner service is extra busy tonight, claim early.",
+      adminEmail: "admin@example.com",
+      eventType: "admin_notification",
+    },
+    store,
+    senders
+  );
+
+  assert.deepEqual(result, {
+    ok: true,
+    successCount: 1,
+    totalInstallations: 1,
+    error: null,
+  });
+  assert.equal(expoPayloads[0]?.title, "Pool update");
+  assert.equal(
+    expoPayloads[0]?.body,
+    "Dinner service is extra busy tonight, claim early."
+  );
+  assert.equal(
+    (expoPayloads[0]?.data as Record<string, unknown>).eventType,
+    "admin_notification"
+  );
+  assert.equal(
+    (expoPayloads[0]?.data as Record<string, unknown>).triggeredBy,
+    "admin@example.com"
+  );
 });

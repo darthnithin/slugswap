@@ -50,6 +50,27 @@ const API_ENDPOINTS: ApiEndpoint[] = [
     requiresAuth: true,
     bodyExample: JSON.stringify({ userId: "<user-id>" }, null, 2),
   },
+  {
+    path: "/api/admin/notification-targets",
+    method: "GET",
+    description: "List users with active notification installations for admin sends",
+    requiresAuth: true,
+  },
+  {
+    path: "/api/admin/send-notification",
+    method: "POST",
+    description: "Send a custom admin push notification to a user's active installations",
+    requiresAuth: true,
+    bodyExample: JSON.stringify(
+      {
+        userId: "<user-id>",
+        title: "SlugSwap admin message",
+        message: "Dinner service is busier than usual tonight. Claim a little earlier if you can.",
+      },
+      null,
+      2
+    ),
+  },
   { path: "/api/admin/config", method: "GET", description: "Get pool configuration", requiresAuth: true },
   {
     path: "/api/admin/config",

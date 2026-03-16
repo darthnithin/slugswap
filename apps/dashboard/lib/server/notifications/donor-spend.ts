@@ -56,9 +56,12 @@ type NotificationDeliveryResult = {
   lastError: string | null;
 };
 
-export type SendUserTestNotificationInput = {
+export type SendUserAdminNotificationInput = {
   userId: string;
+  title: string;
+  body: string;
   adminEmail?: string | null;
+  eventType?: string | null;
 };
 
 export type DonorSpendNotificationStore = {
@@ -321,8 +324,8 @@ export async function notifyDonorSpendWithDependencies(
   });
 }
 
-export async function sendUserTestNotificationWithDependencies(
-  input: SendUserTestNotificationInput,
+export async function sendUserAdminNotificationWithDependencies(
+  input: SendUserAdminNotificationInput,
   store: Pick<DonorSpendNotificationStore, "listActiveInstallations" | "markInstallationStatus">,
   senders: DonorSpendNotificationSenders
 ): Promise<{ ok: boolean; successCount: number; totalInstallations: number; error: string | null }> {
@@ -330,12 +333,13 @@ export async function sendUserTestNotificationWithDependencies(
   const delivery = await deliverNotificationToActiveInstallations(
     {
       userId: input.userId,
-      title: "SlugSwap test notification",
-      body: `Triggered from the admin panel${input.adminEmail ? ` by ${input.adminEmail}` : ""}.`,
+      title: input.title,
+      body: input.body,
       data: {
-        title: "SlugSwap test notification",
-        body: `Triggered from the admin panel${input.adminEmail ? ` by ${input.adminEmail}` : ""}.`,
-        eventType: "admin_test_notification",
+        title: input.title,
+        body: input.body,
+        eventType: input.eventType || "admin_notification",
+        triggeredBy: input.adminEmail || "unknown",
         sentAt,
       },
     },
@@ -351,6 +355,24 @@ export async function sendUserTestNotificationWithDependencies(
   };
 }
 
+export async function sendUserTestNotificationWithDependencies(
+  input: { userId: string; adminEmail?: string | null },
+  store: Pick<DonorSpendNotificationStore, "listActiveInstallations" | "markInstallationStatus">,
+  senders: DonorSpendNotificationSenders
+): Promise<{ ok: boolean; successCount: number; totalInstallations: number; error: string | null }> {
+  return sendUserAdminNotificationWithDependencies(
+    {
+      userId: input.userId,
+      title: "SlugSwap test notification",
+      body: `Triggered from the admin panel${input.adminEmail ? ` by ${input.adminEmail}` : ""}.`,
+      adminEmail: input.adminEmail,
+      eventType: "admin_test_notification",
+    },
+    store,
+    senders
+  );
+}
+
 export async function notifyDonorSpend(
   input: NotifyDonorSpendInput
 ): Promise<void> {
@@ -362,9 +384,19 @@ export async function notifyDonorSpend(
 }
 
 export async function sendUserTestNotification(
-  input: SendUserTestNotificationInput
+  input: { userId: string; adminEmail?: string | null }
 ): Promise<{ ok: boolean; successCount: number; totalInstallations: number; error: string | null }> {
   return sendUserTestNotificationWithDependencies(
+    input,
+    createDefaultStore(),
+    createDefaultSenders()
+  );
+}
+
+export async function sendUserAdminNotification(
+  input: SendUserAdminNotificationInput
+): Promise<{ ok: boolean; successCount: number; totalInstallations: number; error: string | null }> {
+  return sendUserAdminNotificationWithDependencies(
     input,
     createDefaultStore(),
     createDefaultSenders()
