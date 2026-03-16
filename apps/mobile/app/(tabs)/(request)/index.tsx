@@ -4,7 +4,15 @@ import { BlurView } from 'expo-blur';
 import { SymbolView } from 'expo-symbols';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../../../lib/supabase';
-import { getRequesterAllowance, generateClaimCode, getClaimHistory, refreshClaimCode, checkRedemption, type CheckoutRail } from '../../../../../lib/api';
+import {
+  getRequesterAllowance,
+  generateClaimCode,
+  getClaimHistory,
+  refreshClaimCode,
+  checkRedemption,
+  type CheckoutRail,
+  type ClaimGenerationFailureReason,
+} from '../../../../../lib/api';
 import { PDF417Barcode } from '../../../components/PDF417Barcode';
 import { useTabCache } from '../../../../../lib/tab-cache-context';
 import { uiColor } from '../../../lib/ui-color';
@@ -23,6 +31,35 @@ interface ClaimCode {
 
 const FLEXI_ACCOUNT_NAME = 'flexi dollars';
 const POINTS_OR_BUCKS_ACCOUNT_NAMES = new Set(['banana bucks', 'slug points']);
+const DEFAULT_CLAIM_AMOUNT = 10;
+const POOL_EXHAUSTED_TITLE = "We're all out of points right now";
+const POOL_EXHAUSTED_MESSAGE =
+  'Your personal allowance is still there, but the shared pool is empty. Check back later.';
+const LEGACY_POOL_EXHAUSTED_MESSAGES = [
+  'No eligible donors available under weekly cap limits.',
+  'No eligible donors available.',
+];
+
+function getClaimFailureReason(error: unknown): ClaimGenerationFailureReason | null {
+  if (!error || typeof error !== 'object') return null;
+
+  if ('reason' in error) {
+    const reason = (error as { reason?: unknown }).reason;
+    if (typeof reason === 'string') {
+      return reason as ClaimGenerationFailureReason;
+    }
+  }
+
+  const message = 'message' in error ? (error as { message?: unknown }).message : undefined;
+  if (
+    typeof message === 'string' &&
+    LEGACY_POOL_EXHAUSTED_MESSAGES.some((legacyMessage) => message.includes(legacyMessage))
+  ) {
+    return 'pool_exhausted';
+  }
+
+  return null;
+}
 
 function inferCheckoutRail(accountName?: string): CheckoutRail | null {
   if (!accountName) return null;
@@ -74,6 +111,7 @@ export default function RequesterScreen() {
     amount: number;
     accountName?: string;
   } | null>(null);
+  const [poolExhaustedMessage, setPoolExhaustedMessage] = useState<string | null>(null);
   const redeemedRail = inferCheckoutRail(redemptionInfo?.accountName);
   const activeCheckoutRail: CheckoutRail = currentCode?.recommendedRail ?? 'points-or-bucks';
   const checkoutInstruction =
@@ -186,6 +224,9 @@ export default function RequesterScreen() {
       setWeeklyAllowance(allowanceData.weeklyLimit);
       setRemainingAllowance(allowanceData.remainingAmount);
       setDaysUntilReset(allowanceData.daysUntilReset);
+      if (allowanceData.remainingAmount < DEFAULT_CLAIM_AMOUNT) {
+        setPoolExhaustedMessage(null);
+      }
 
       const historyData = await getClaimHistory(user.id);
       setClaimHistory(historyData.claims);
@@ -208,9 +249,8 @@ export default function RequesterScreen() {
   const handleGenerateCode = async () => {
     if (!userId) return;
 
-    const DEFAULT_CLAIM_AMOUNT = 10;
-
     if (remainingAllowance < DEFAULT_CLAIM_AMOUNT) {
+      setPoolExhaustedMessage(null);
       Alert.alert('Insufficient Allowance', `You need at least ${DEFAULT_CLAIM_AMOUNT} points remaining`);
       return;
     }
@@ -218,6 +258,7 @@ export default function RequesterScreen() {
     setGenerating(true);
     try {
       const result = await generateClaimCode(userId, DEFAULT_CLAIM_AMOUNT);
+      setPoolExhaustedMessage(null);
       setCurrentCode({
         ...result.claimCode,
         recommendedRail: result.claimCode.recommendedRail ?? 'points-or-bucks',
@@ -225,7 +266,14 @@ export default function RequesterScreen() {
       });
       await loadUserAndAllowance();
     } catch (error: any) {
+      const reason = getClaimFailureReason(error);
+      if (reason === 'pool_exhausted') {
+        console.log('Claim generation blocked: shared pool exhausted.');
+        setPoolExhaustedMessage(POOL_EXHAUSTED_MESSAGE);
+        return;
+      }
       console.error('Error generating code:', error);
+      setPoolExhaustedMessage(null);
       Alert.alert('Error', error.message || 'Failed to generate claim code');
     } finally {
       setGenerating(false);
@@ -398,6 +446,37 @@ export default function RequesterScreen() {
             <Text style={{ marginTop: 8, textAlign: 'center', fontSize: 12, color: uiColor('tertiaryLabel') }}>
               Refreshing every 5s{refreshingCode ? ' ...' : ''}
             </Text>
+          </Card>
+        ) : !redemptionInfo && poolExhaustedMessage && remainingAllowance >= DEFAULT_CLAIM_AMOUNT ? (
+          <Card>
+            <View style={{ alignItems: 'center', gap: 12 }}>
+              <SymbolView name="exclamationmark.circle.fill" tintColor={uiColor('systemOrange')} size={40} />
+              <Text style={{ fontSize: 22, fontWeight: '700', color: uiColor('label'), textAlign: 'center' }}>
+                {POOL_EXHAUSTED_TITLE}
+              </Text>
+              <Text style={{ fontSize: 15, color: uiColor('secondaryLabel'), textAlign: 'center', lineHeight: 22 }}>
+                {poolExhaustedMessage}
+              </Text>
+              <Pressable
+                onPress={handleGenerateCode}
+                disabled={generating}
+                style={({ pressed }) => ({
+                  marginTop: 4,
+                  paddingVertical: 12,
+                  paddingHorizontal: 24,
+                  borderRadius: 10,
+                  borderCurve: 'continuous',
+                  backgroundColor: uiColor('systemBlue'),
+                  opacity: pressed || generating ? 0.7 : 1,
+                })}
+              >
+                {generating ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Try Again</Text>
+                )}
+              </Pressable>
+            </View>
           </Card>
         ) : !redemptionInfo ? (
           <Pressable

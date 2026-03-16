@@ -11,15 +11,67 @@ import {
 } from "@/lib/server/claims/donor-selection";
 import { retrieveAccounts, type GetAccount } from "@/lib/server/get/tools";
 import { getActiveGetSession } from "@/lib/server/get/session";
+import { syncDonorPauseStateFromAccounts } from "@/lib/server/get/tracked-balance";
 
 export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
 type CheckoutRail = "points-or-bucks" | "flexi-dollars";
 type BalanceSnapshotEntry = { id: string; name: string; balance: number | null };
+type ClaimGenerationFailureReason =
+  | "allowance_exhausted"
+  | "pool_exhausted"
+  | "pool_unavailable";
 
 const FLEXI_ACCOUNT_NAME = "flexi dollars";
 const POINTS_OR_BUCKS_ACCOUNT_NAMES = new Set(["banana bucks", "slug points"]);
+const POOL_EXHAUSTED_MESSAGE =
+  "Your personal allowance is still there, but the shared pool is empty. Check back later.";
+const POOL_UNAVAILABLE_MESSAGE =
+  "Points are temporarily unavailable right now. Please try again in a moment.";
+
+function claimGenerationErrorResponse(
+  error: string,
+  status: number,
+  reason?: ClaimGenerationFailureReason,
+  extra?: Record<string, unknown>
+) {
+  return NextResponse.json(
+    {
+      error,
+      ...(reason ? { reason } : {}),
+      ...(extra ?? {}),
+    },
+    { status }
+  );
+}
+
+function classifyClaimGenerationError(message: string): {
+  error: string;
+  reason?: ClaimGenerationFailureReason;
+  status: number;
+} {
+  if (message.includes("No eligible donors available under weekly cap limits")) {
+    return {
+      error: POOL_EXHAUSTED_MESSAGE,
+      reason: "pool_exhausted",
+      status: 409,
+    };
+  }
+
+  if (message.includes("No linked donor GET account available")) {
+    return {
+      error: POOL_EXHAUSTED_MESSAGE,
+      reason: "pool_exhausted",
+      status: 409,
+    };
+  }
+
+  return {
+    error: message || "Internal server error",
+    status: 500,
+  };
+}
 
 function toTrackedBalanceSnapshot(accounts: GetAccount[]): BalanceSnapshotEntry[] {
   return accounts.map((account) => ({
@@ -151,14 +203,17 @@ async function handleGenerate(req: NextRequest) {
     const allowance = userAllowance[0];
     const remaining = parseFloat(allowance.remainingAmount);
     if (claimAmount > remaining) {
-      return NextResponse.json(
-        { error: "Insufficient allowance", remaining },
-        { status: 400 }
+      return claimGenerationErrorResponse(
+        "Insufficient allowance",
+        400,
+        "allowance_exhausted",
+        { remaining }
       );
     }
 
     const ranked = await rankDonorCandidatesForClaim(claimAmount);
     let hadCapReject = false;
+    let hadDepletedBalanceReject = false;
     const fetchFailures: string[] = [];
 
     for (const candidate of ranked.candidates) {
@@ -176,19 +231,27 @@ async function handleGenerate(req: NextRequest) {
       }
 
       try {
-        const { code, expiresAt, sessionId: donorSessionId } =
-          await fetchLiveClaimCodeFromGet(candidate.donorUserId);
+        const { sessionId: donorSessionId } = await getActiveGetSession(
+          candidate.donorUserId
+        );
+        const accounts = await retrieveAccounts(donorSessionId);
+        const { trackedBalance } = await syncDonorPauseStateFromAccounts(
+          candidate.donorUserId,
+          accounts
+        );
 
-        let balanceSnapshot: string | null = null;
-        let recommendedRail: CheckoutRail = "points-or-bucks";
-        try {
-          const accounts = await retrieveAccounts(donorSessionId);
-          const snapshot = toTrackedBalanceSnapshot(accounts);
-          balanceSnapshot = JSON.stringify(snapshot);
-          recommendedRail = chooseCheckoutRail(snapshot, claimAmount);
-        } catch (error) {
-          console.warn("Failed to snapshot donor balances:", error);
+        if (trackedBalance != null && trackedBalance <= 0) {
+          hadDepletedBalanceReject = true;
+          continue;
         }
+
+        const snapshot = toTrackedBalanceSnapshot(accounts);
+        const balanceSnapshot = JSON.stringify(snapshot);
+        const recommendedRail = chooseCheckoutRail(snapshot, claimAmount);
+        const { code, expiresAt } = await fetchLiveClaimCodeFromGet(
+          candidate.donorUserId,
+          donorSessionId
+        );
 
         const [claimCode] = await db
           .insert(schema.claimCodes)
@@ -234,34 +297,30 @@ async function handleGenerate(req: NextRequest) {
       }
     }
 
-    if (hadCapReject && fetchFailures.length === 0) {
-      return NextResponse.json(
-        { error: "No eligible donors available under weekly cap limits." },
-        { status: 400 }
+    if ((hadCapReject || hadDepletedBalanceReject) && fetchFailures.length === 0) {
+      return claimGenerationErrorResponse(
+        POOL_EXHAUSTED_MESSAGE,
+        409,
+        "pool_exhausted"
       );
     }
 
-    return NextResponse.json(
-      {
-        error:
-          fetchFailures.length > 0
-            ? `All donor barcode attempts failed: ${fetchFailures[0]}`
-            : "No eligible donors available.",
-      },
-      { status: 500 }
+    return claimGenerationErrorResponse(
+      POOL_UNAVAILABLE_MESSAGE,
+      503,
+      "pool_unavailable",
+      fetchFailures.length > 0
+        ? { upstreamError: `All donor barcode attempts failed: ${fetchFailures[0]}` }
+        : undefined
     );
   } catch (error: any) {
     console.error("Error generating claim code:", error);
     const message = error?.message || "Internal server error";
-    const status =
-      typeof message === "string" &&
-      (message.includes("No eligible donors available") ||
-        message.includes("No linked donor GET account available"))
-        ? 400
-        : 500;
-    return NextResponse.json(
-      { error: message },
-      { status }
+    const classified = classifyClaimGenerationError(message);
+    return claimGenerationErrorResponse(
+      classified.error,
+      classified.status,
+      classified.reason
     );
   }
 }
@@ -461,6 +520,7 @@ async function detectRedemption(
   try {
     const { sessionId } = await getActiveGetSession(claim.donorUserId);
     currentAccounts = await retrieveAccounts(sessionId);
+    await syncDonorPauseStateFromAccounts(claim.donorUserId, currentAccounts);
   } catch (error) {
     console.warn("Failed to poll donor balances for redemption check:", error);
     return null;

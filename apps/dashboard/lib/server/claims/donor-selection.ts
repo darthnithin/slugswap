@@ -6,15 +6,13 @@ import {
   type DonorWeeklyUsage,
 } from "@/lib/server/claims/donor-usage";
 import { getActiveGetSession } from "@/lib/server/get/session";
-import { retrieveAccounts, type GetAccount } from "@/lib/server/get/tools";
+import { retrieveAccounts } from "@/lib/server/get/tools";
+import {
+  getTrackedBalanceTotal,
+  syncDonorPauseStateFromAccounts,
+} from "@/lib/server/get/tracked-balance";
 import { getAdminConfig, type DonorSelectionPolicy } from "@/lib/server/config";
 import { type WeekWindow } from "@/lib/server/timezone";
-
-const TRACKED_BALANCE_ACCOUNT_NAMES = new Set([
-  "flexi dollars",
-  "banana bucks",
-  "slug points",
-]);
 
 export type RankedDonorCandidate = {
   donorUserId: string;
@@ -34,27 +32,12 @@ function parsePoints(value: string | number): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function trackedBalanceTotal(accounts: GetAccount[]): number | null {
-  const tracked = accounts.filter((account) =>
-    TRACKED_BALANCE_ACCOUNT_NAMES.has(account.accountDisplayName.trim().toLowerCase())
-  );
-
-  let total = 0;
-  let found = false;
-  for (const account of tracked) {
-    if (typeof account.balance !== "number" || Number.isNaN(account.balance)) continue;
-    total += account.balance;
-    found = true;
-  }
-
-  return found ? total : null;
-}
-
 async function fetchLiveTrackedBalance(donorUserId: string): Promise<number | null> {
   try {
     const { sessionId } = await getActiveGetSession(donorUserId);
     const accounts = await retrieveAccounts(sessionId);
-    return trackedBalanceTotal(accounts);
+    const { trackedBalance } = await syncDonorPauseStateFromAccounts(donorUserId, accounts);
+    return trackedBalance ?? getTrackedBalanceTotal(accounts);
   } catch (error) {
     console.warn(`Failed to retrieve live balance for donor ${donorUserId}:`, error);
     return null;
@@ -157,7 +140,15 @@ export async function rankDonorCandidatesForClaim(
       (candidate) => typeof candidate.liveTrackedBalance === "number"
     );
 
-    candidates = withBalances;
+    candidates = withBalances.filter(
+      (candidate) =>
+        candidate.liveTrackedBalance == null || candidate.liveTrackedBalance > 0
+    );
+
+    if (candidates.length === 0) {
+      throw new Error("No eligible donors available under weekly cap limits.");
+    }
+
     if (hasLiveBalance) {
       candidates.sort(highestBalanceSort);
     } else {

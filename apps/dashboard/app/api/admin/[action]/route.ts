@@ -21,7 +21,11 @@ import {
 import { getDonorWeeklyUsageMap } from "@/lib/server/claims/donor-usage";
 import { getPacificWeekWindow } from "@/lib/server/timezone";
 import { getActiveGetSession } from "@/lib/server/get/session";
-import { retrieveAccounts } from "@/lib/server/get/tools";
+import { retrieveAccounts, type GetAccount } from "@/lib/server/get/tools";
+import {
+  getTrackedBalanceTotal,
+  syncDonorPauseStateFromAccounts,
+} from "@/lib/server/get/tracked-balance";
 import {
   authenticateAdminBearerToken,
   clearAdminSessionCookie,
@@ -45,38 +49,12 @@ function getWeekBounds() {
   return { weekStart, weekEnd };
 }
 
-const TRACKED_GET_ACCOUNT_NAMES = new Set([
-  "flexi dollars",
-  "banana bucks",
-  "slug points",
-]);
-
-function getTrackedGetBalanceTotal(
-  accounts: Array<{ accountDisplayName: string; balance: number | null }>
-): number | null {
-  let total = 0;
-  let foundTrackedBalance = false;
-
-  for (const account of accounts) {
-    if (!TRACKED_GET_ACCOUNT_NAMES.has(account.accountDisplayName.trim().toLowerCase())) {
-      continue;
-    }
-    if (typeof account.balance !== "number" || Number.isNaN(account.balance)) {
-      continue;
-    }
-
-    total += account.balance;
-    foundTrackedBalance = true;
-  }
-
-  return foundTrackedBalance ? total : null;
-}
-
 async function fetchTrackedGetBalanceTotal(userId: string): Promise<number | null> {
   try {
     const { sessionId } = await getActiveGetSession(userId);
     const accounts = await retrieveAccounts(sessionId);
-    return getTrackedGetBalanceTotal(accounts);
+    const { trackedBalance } = await syncDonorPauseStateFromAccounts(userId, accounts);
+    return trackedBalance ?? getTrackedBalanceTotal(accounts);
   } catch (error) {
     console.warn(`Failed to fetch live GET balance for donor ${userId}:`, error);
     return null;
@@ -795,12 +773,13 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         where: eq(schema.getCredentials.userId, user.id),
       });
 
-      let getBalance: Array<{ id: string; accountDisplayName: string; balance: number | null }> | null = null;
+      let getBalance: GetAccount[] | null = null;
       let getAccountsError: string | null = null;
       if (getCredential) {
         try {
           const { sessionId } = await getActiveGetSession(user.id);
           getBalance = await retrieveAccounts(sessionId);
+          await syncDonorPauseStateFromAccounts(user.id, getBalance);
         } catch (error: any) {
           getAccountsError = error?.message || "Failed to fetch GET balances";
           console.warn("Failed to fetch GET balance:", error);
@@ -808,7 +787,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         }
       }
 
-      const trackedGetBalanceTotal = getTrackedGetBalanceTotal(getBalance ?? []) ?? 0;
+      const trackedGetBalanceTotal = getTrackedBalanceTotal(getBalance ?? []) ?? 0;
 
       // Weekly allowance
       const currentPool = await db

@@ -14,6 +14,7 @@ import {
   verifyPin,
 } from "@/lib/server/get/tools";
 import { getActiveGetSession } from "@/lib/server/get/session";
+import { syncDonorPauseStateFromAccounts } from "@/lib/server/get/tracked-balance";
 
 export const runtime = "nodejs";
 
@@ -148,6 +149,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
 
       const { sessionId } = await getActiveGetSession(userId);
       const accounts = await retrieveAccounts(sessionId);
+      await syncDonorPauseStateFromAccounts(userId, accounts);
 
       return NextResponse.json(
         { linked: true, accounts },
