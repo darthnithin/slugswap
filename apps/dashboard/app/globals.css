@@ -1091,6 +1091,13 @@ body {
   font-weight: 300;
 }
 
+.admin-root .donor-balance {
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--accent-gold) 78%, white 22%);
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+
 .admin-root .donor-amount {
   font-family: var(--font-mono);
   font-size: 0.95rem;
