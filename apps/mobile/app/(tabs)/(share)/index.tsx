@@ -25,9 +25,8 @@ import { useTabCache, type GetAccountBalance, type ShareTabSnapshot } from '../.
 import { useFocusEffect } from 'expo-router';
 import { uiColor } from '../../../lib/ui-color';
 import Constants from 'expo-constants';
-import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import { getOrCreateNotificationInstallationId } from '../../../../../lib/notification-installation';
+import { registerNativePushToken } from '../../../../../lib/native-notifications';
 import { ensureWebPushSubscription, supportsWebPushNotifications } from '../../../../../lib/web-notifications';
 
 const UCSC_TRACKED_BALANCE_ACCOUNTS = new Set([
@@ -257,39 +256,17 @@ export default function DonorScreen() {
     const installationId = await getCurrentInstallationId();
 
     if (supportsNativePush) {
-      if (!Device.isDevice) {
-        throw new Error('Push notifications require a physical device.');
-      }
-
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'default',
-          importance: Notifications.AndroidImportance.DEFAULT,
-        });
-      }
-
-      const existingPermissions = await Notifications.getPermissionsAsync();
-      let finalStatus = existingPermissions.status;
-      if (finalStatus !== 'granted') {
-        const requested = await Notifications.requestPermissionsAsync();
-        finalStatus = requested.status;
-      }
-
-      if (finalStatus !== 'granted') {
-        throw new Error('Notifications permission denied.');
-      }
-
       const projectId = getExpoProjectId();
       if (!projectId) {
         throw new Error('Missing Expo project ID for push registration.');
       }
 
-      const token = await Notifications.getExpoPushTokenAsync({ projectId });
+      const nativeRegistration = await registerNativePushToken(projectId);
       await registerNotificationInstallation({
         installationId,
         channel: 'expo',
-        platform: Platform.OS === 'ios' ? 'ios' : 'android',
-        expoPushToken: token.data,
+        platform: nativeRegistration.platform,
+        expoPushToken: nativeRegistration.token,
       });
       return 'expo';
     }
