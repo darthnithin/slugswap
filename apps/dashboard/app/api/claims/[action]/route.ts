@@ -61,9 +61,9 @@ function classifyClaimGenerationError(message: string): {
 
   if (message.includes("No linked donor GET account available")) {
     return {
-      error: POOL_UNAVAILABLE_MESSAGE,
-      reason: "pool_unavailable",
-      status: 503,
+      error: POOL_EXHAUSTED_MESSAGE,
+      reason: "pool_exhausted",
+      status: 409,
     };
   }
 
