@@ -8,8 +8,9 @@ import { useEffect } from "react";
 
 type LandingClientProps = {
   pointsDistributed: number;
+  availablePointsThisWeek: number;
   activeDonors: number;
-  redemptionsCount: number;
+  totalUsers: number;
   iosStoreUrl: string | null;
   androidStoreUrl: string | null;
 };
@@ -44,6 +45,21 @@ type FloaterItem = (typeof FLOATERS)[number];
 
 function formatCount(value: number): string {
   return value.toLocaleString("en-US");
+}
+
+function formatPoints(value: number): string {
+  if (Math.abs(value) >= 1000) {
+    return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  }
+
+  if (Number.isInteger(value)) {
+    return value.toLocaleString("en-US");
+  }
+
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  });
 }
 
 function formatCurrency(value: number): string {
@@ -174,8 +190,9 @@ function CursorFloater({
 
 export default function LandingClient({
   pointsDistributed,
+  availablePointsThisWeek,
   activeDonors,
-  redemptionsCount,
+  totalUsers,
   iosStoreUrl,
   androidStoreUrl,
 }: LandingClientProps) {
@@ -269,10 +286,10 @@ export default function LandingClient({
               initial={{ x: -100, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               transition={{ duration: 0.8 }}
-              className="relative"
+              className="relative z-30"
             >
               <h2
-                className="relative z-10 -rotate-3 font-black leading-none tracking-tighter text-black [font-size:clamp(4.25rem,17vw,16rem)]"
+                className="relative -rotate-3 font-black leading-none tracking-tighter text-black [font-size:clamp(4.25rem,17vw,16rem)]"
                 style={{ fontFamily: "Impact, sans-serif", WebkitTextStroke: "4px #fff", paintOrder: "stroke fill" }}
               >
                 SHARE
@@ -288,7 +305,7 @@ export default function LandingClient({
               initial={{ x: 100, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               transition={{ duration: 0.8, delay: 0.1 }}
-              className="relative -mt-4 ml-6 md:-mt-20 md:ml-20"
+              className="relative z-20 -mt-4 ml-6 md:-mt-20 md:ml-20"
             >
               <h2
                 className="rotate-2 font-black leading-none tracking-tighter text-[#4ecdc4] [font-size:clamp(4rem,16.2vw,15.8rem)]"
@@ -302,7 +319,7 @@ export default function LandingClient({
               initial={{ x: -100, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               transition={{ duration: 0.8, delay: 0.2 }}
-              className="relative -mt-4 md:-mt-20"
+              className="relative z-10 -mt-4 md:-mt-20"
             >
               <h2
                 className="-rotate-1 font-black leading-none tracking-tighter text-[#e74c3c] [font-size:clamp(3.95rem,15.8vw,15.5rem)]"
@@ -338,11 +355,12 @@ export default function LandingClient({
               className="relative -rotate-2 border-8 border-black bg-[#4ecdc4] p-8"
             >
               <div className="absolute right-0 top-0 h-0 w-0 border-l-[100px] border-l-transparent border-t-[100px] border-t-[#9b59b6]" />
-              <h3 className="relative z-10 mb-4 text-6xl font-black" style={{ fontFamily: "Impact, sans-serif" }}>
-                {formatCount(activeDonors)}
+              <h3 className="relative z-10 mb-4 font-black leading-none" style={{ fontFamily: "Impact, sans-serif" }}>
+                <span className="block text-5xl md:text-6xl">{formatPoints(availablePointsThisWeek)}</span>
+                <span className="mt-2 block text-2xl md:text-3xl">POINTS AVAILABLE</span>
               </h3>
-              <p className="relative z-10 text-xl font-black" style={{ fontFamily: "Arial Black, sans-serif" }}>
-                ACTIVE DONORS
+              <p className="relative z-10 text-lg font-black md:text-xl" style={{ fontFamily: "Arial Black, sans-serif" }}>
+                From {formatCount(activeDonors)} active donors.
               </p>
             </motion.div>
 
@@ -356,10 +374,10 @@ export default function LandingClient({
                 className="absolute -left-8 -top-8 h-24 w-24 border-4 border-black bg-[#f7dc6f]"
               />
               <h3 className="mb-4 text-6xl font-black" style={{ fontFamily: "Impact, sans-serif" }}>
-                {formatCount(redemptionsCount)}
+                {formatCount(totalUsers)}
               </h3>
               <p className="text-base font-black md:text-xl" style={{ fontFamily: "Arial Black, sans-serif" }}>
-                TOTAL CLAIMS
+                TOTAL USERS
               </p>
             </motion.div>
           </div>
@@ -509,7 +527,7 @@ export default function LandingClient({
 
       <div className="pointer-events-none absolute bottom-4 right-4 border-4 border-black bg-[#f7dc6f] px-4 py-2 text-xs font-black tracking-[0.1em] text-black md:text-sm" style={{ fontFamily: "Arial Black, sans-serif" }}>
         LIVE METRICS: {formatCurrency(pointsDistributed)} DISTRIBUTED | {formatCount(activeDonors)} DONORS |{" "}
-        {formatCount(redemptionsCount)} REDEMPTIONS
+        {formatCount(totalUsers)} USERS
       </div>
 
       <div className="sr-only">{CHAOS_COLORS.join(",")}</div>

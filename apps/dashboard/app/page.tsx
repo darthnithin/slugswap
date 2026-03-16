@@ -22,8 +22,9 @@ export default async function LandingPage() {
   return (
     <LandingClient
       pointsDistributed={stats.pointsDistributed}
+      availablePointsThisWeek={stats.availablePointsThisWeek}
       activeDonors={stats.activeDonors}
-      redemptionsCount={stats.redemptionsCount}
+      totalUsers={stats.totalUsers}
       iosStoreUrl={iosStoreUrl}
       androidStoreUrl={androidStoreUrl}
     />
