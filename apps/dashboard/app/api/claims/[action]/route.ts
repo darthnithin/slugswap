@@ -11,6 +11,7 @@ import {
 } from "@/lib/server/claims/donor-selection";
 import { retrieveAccounts, type GetAccount } from "@/lib/server/get/tools";
 import { getActiveGetSession } from "@/lib/server/get/session";
+import { notifyDonorSpend } from "@/lib/server/notifications/donor-spend";
 
 export const runtime = "nodejs";
 
@@ -511,6 +512,16 @@ async function detectRedemption(
             updatedAt: new Date(),
           })
           .where(eq(schema.userAllowances.id, allowance.id));
+      }
+
+      try {
+        await notifyDonorSpend({
+          claimCodeId: claim.id,
+          donorUserId: claim.donorUserId,
+          amount: delta,
+        });
+      } catch (error) {
+        console.error("Failed to notify donor about spend:", error);
       }
 
       return { amount: delta, accountName: snap.name, redeemedAt: now };

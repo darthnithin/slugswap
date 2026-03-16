@@ -40,8 +40,15 @@ const API_ENDPOINTS: ApiEndpoint[] = [
   {
     path: "/api/admin/user-balance",
     method: "GET",
-    description: "User snapshot (?userId=) with GET link, balances, allowance, requester/donor usage",
+    description: "User snapshot (?userId=) with GET link, balances, allowance, usage, and notification status",
     requiresAuth: true,
+  },
+  {
+    path: "/api/admin/test-notification",
+    method: "POST",
+    description: "Send a real test notification to a user's active installations",
+    requiresAuth: true,
+    bodyExample: JSON.stringify({ userId: "<user-id>" }, null, 2),
   },
   { path: "/api/admin/config", method: "GET", description: "Get pool configuration", requiresAuth: true },
   {

@@ -22,6 +22,7 @@ import { getDonorWeeklyUsageMap } from "@/lib/server/claims/donor-usage";
 import { getPacificWeekWindow } from "@/lib/server/timezone";
 import { getActiveGetSession } from "@/lib/server/get/session";
 import { retrieveAccounts } from "@/lib/server/get/tools";
+import { sendUserTestNotification } from "@/lib/server/notifications/donor-spend";
 import {
   authenticateAdminBearerToken,
   clearAdminSessionCookie,
@@ -913,6 +914,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       let donorUsage: {
         status: string;
         weeklyAmount: number;
+        notifyOnSpend: boolean;
         redeemedThisWeek: number;
         reservedThisWeek: number;
         remainingThisWeek: number;
@@ -969,6 +971,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         donorUsage = {
           status: donation.status,
           weeklyAmount,
+          notifyOnSpend: donation.notifyOnSpend,
           redeemedThisWeek,
           reservedThisWeek,
           remainingThisWeek: weeklyAmount - (redeemedThisWeek + reservedThisWeek),
@@ -976,6 +979,20 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           allTimeRedeemedCount: Number(donorAllTimeRedeemed[0]?.count || 0),
         };
       }
+
+      const notificationRows = await db
+        .select({
+          id: schema.notificationInstallations.id,
+          channel: schema.notificationInstallations.channel,
+          platform: schema.notificationInstallations.platform,
+          status: schema.notificationInstallations.status,
+          lastSeenAt: schema.notificationInstallations.lastSeenAt,
+          updatedAt: schema.notificationInstallations.updatedAt,
+        })
+        .from(schema.notificationInstallations)
+        .where(eq(schema.notificationInstallations.userId, user.id));
+
+      const activeNotificationRows = notificationRows.filter((row) => row.status === "active");
 
       return NextResponse.json(
         {
@@ -996,6 +1013,21 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           },
           getBalance,
           trackedGetBalanceTotal,
+          notifications: {
+            totalInstallations: notificationRows.length,
+            activeInstallations: activeNotificationRows.length,
+            channels: Array.from(new Set(activeNotificationRows.map((row) => row.channel))),
+            platforms: Array.from(new Set(activeNotificationRows.map((row) => row.platform))),
+            statuses: {
+              active: notificationRows.filter((row) => row.status === "active").length,
+              inactive: notificationRows.filter((row) => row.status === "inactive").length,
+              invalid: notificationRows.filter((row) => row.status === "invalid").length,
+            },
+            lastSeenAt: activeNotificationRows
+              .map((row) => row.lastSeenAt)
+              .sort((a, b) => b.getTime() - a.getTime())[0]
+              ?.toISOString() ?? null,
+          },
           weeklyAllowance: allowanceInfo,
           requesterUsage: {
             allTimeClaimsCount: Number(requesterAllTimeClaims[0]?.count || 0),
@@ -1014,6 +1046,59 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       );
     } catch (error: any) {
       console.error("Error fetching user balance:", error);
+      return NextResponse.json(
+        { error: error?.message || "Internal server error" },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (action === "test-notification") {
+    if (req.method !== "POST") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    try {
+      const adminIdentity = getAdminIdentityFromRequest(req);
+      const body = (await req.json()) as { userId?: string };
+      const userId = body.userId?.trim();
+
+      if (!userId) {
+        return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+      }
+
+      const user = await db.query.users.findFirst({
+        where: eq(schema.users.id, userId),
+      });
+      if (!user) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      const result = await sendUserTestNotification({
+        userId,
+        adminEmail: adminIdentity?.email ?? null,
+      });
+
+      if (!result.ok) {
+        const status = result.totalInstallations === 0 ? 409 : 502;
+        return NextResponse.json(
+          { error: result.error || "Failed to send test notification" },
+          { status }
+        );
+      }
+
+      return NextResponse.json(
+        {
+          success: true,
+          userId,
+          successCount: result.successCount,
+          totalInstallations: result.totalInstallations,
+          message: `Sent test notification to ${result.successCount} of ${result.totalInstallations} active installation${result.totalInstallations === 1 ? "" : "s"}.`,
+        },
+        { status: 200 }
+      );
+    } catch (error: any) {
+      console.error("Error sending admin test notification:", error);
       return NextResponse.json(
         { error: error?.message || "Internal server error" },
         { status: 500 }

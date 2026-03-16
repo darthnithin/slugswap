@@ -3,6 +3,7 @@ import { and, eq, gte, lt, sql as sqlOp } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 import { getPacificWeekWindow } from "@/lib/server/timezone";
+import { requireMobileIdentity } from "@/lib/server/mobile-auth";
 
 export const runtime = "nodejs";
 
@@ -94,7 +95,8 @@ async function handleImpact(req: NextRequest) {
     return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
   }
   try {
-    const userId = new URL(req.url).searchParams.get("userId");
+    const url = new URL(req.url);
+    const userId = url.searchParams.get("userId");
     if (!userId) {
       return NextResponse.json({ error: "Missing userId" }, { status: 400 });
     }
@@ -112,6 +114,10 @@ async function handleImpact(req: NextRequest) {
           isActive: false,
           weeklyAmount: 0,
           status: "paused",
+          notificationsEnabled: true,
+          hasActiveNotificationInstallation: false,
+          currentInstallationActive: false,
+          currentInstallationChannel: null,
           peopleHelped: 0,
           pointsContributed: 0,
           capAmount: 0,
@@ -131,8 +137,16 @@ async function handleImpact(req: NextRequest) {
     const weeklyAmount = parseFloat(donation.amount);
     const now = new Date();
     const weekWindow = getPacificWeekWindow(now);
+    const currentInstallationId = url.searchParams.get("installationId")?.trim() || null;
 
-    const [peopleHelped, allTimeContributed, redeemedThisWeek, reservedThisWeek] =
+    const [
+      peopleHelped,
+      allTimeContributed,
+      redeemedThisWeek,
+      reservedThisWeek,
+      activeNotificationInstallations,
+      currentInstallation,
+    ] =
       await Promise.all([
         db
           .select({ count: sqlOp<number>`count(distinct ${schema.claimCodes.userId})` })
@@ -175,6 +189,23 @@ async function handleImpact(req: NextRequest) {
               gte(schema.claimCodes.expiresAt, now)
             )
           ),
+        db
+          .select({ count: sqlOp<number>`count(*)` })
+          .from(schema.notificationInstallations)
+          .where(
+            and(
+              eq(schema.notificationInstallations.userId, userId),
+              eq(schema.notificationInstallations.status, "active")
+            )
+          ),
+        currentInstallationId
+          ? db.query.notificationInstallations.findFirst({
+              where: and(
+                eq(schema.notificationInstallations.installationId, currentInstallationId),
+                eq(schema.notificationInstallations.userId, userId)
+              ),
+            })
+          : Promise.resolve(null),
       ]);
 
     const redeemedWeekAmount = parseFloat(redeemedThisWeek[0]?.total || "0");
@@ -186,6 +217,11 @@ async function handleImpact(req: NextRequest) {
         isActive: donation.status === "active",
         weeklyAmount,
         status: donation.status,
+        notificationsEnabled: donation.notifyOnSpend,
+        hasActiveNotificationInstallation:
+          Number(activeNotificationInstallations[0]?.count || 0) > 0,
+        currentInstallationActive: currentInstallation?.status === "active",
+        currentInstallationChannel: currentInstallation?.channel ?? null,
         peopleHelped: peopleHelped[0]?.count || 0,
         pointsContributed: parseFloat(allTimeContributed[0]?.total || "0"),
         capAmount: weeklyAmount,
@@ -242,11 +278,45 @@ async function handlePause(req: NextRequest) {
   }
 }
 
+async function handleNotificationPreference(req: NextRequest) {
+  if (req.method !== "PATCH") {
+    return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+  }
+
+  try {
+    const identity = await requireMobileIdentity(req);
+    const { enabled } = (await req.json()) as { enabled?: boolean };
+    if (typeof enabled !== "boolean") {
+      return NextResponse.json({ error: "Missing or invalid enabled flag" }, { status: 400 });
+    }
+
+    const [updated] = await db
+      .update(schema.donations)
+      .set({
+        notifyOnSpend: enabled,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.donations.userId, identity.userId))
+      .returning();
+
+    if (!updated) {
+      return NextResponse.json({ error: "Donation not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, enabled: updated.notifyOnSpend }, { status: 200 });
+  } catch (error: any) {
+    const message = error?.message || "Internal server error";
+    const status = message === "Missing authorization header" || message === "Invalid token" ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
+}
+
 async function dispatch(req: NextRequest, ctx: Ctx) {
   const { action } = await ctx.params;
   if (action === "set") return handleSet(req);
   if (action === "impact") return handleImpact(req);
   if (action === "pause") return handlePause(req);
+  if (action === "notification-preference") return handleNotificationPreference(req);
   return NextResponse.json({ error: "Not found" }, { status: 404 });
 }
 

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, decimal, integer } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, decimal, integer, boolean, jsonb } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey(),
@@ -18,6 +18,7 @@ export const donations = pgTable("donations", {
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date"),
   status: text("status").notNull().default("active"),
+  notifyOnSpend: boolean("notify_on_spend").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -97,6 +98,38 @@ export const getCredentials = pgTable("get_credentials", {
   encryptedPin: text("encrypted_pin").notNull(),
   linkedAt: timestamp("linked_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const notificationInstallations = pgTable("notification_installations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .references(() => users.id)
+    .notNull(),
+  installationId: text("installation_id").notNull().unique(),
+  channel: text("channel").notNull(),
+  platform: text("platform").notNull(),
+  status: text("status").notNull().default("active"),
+  expoPushToken: text("expo_push_token"),
+  webPushSubscription: jsonb("web_push_subscription"),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const donorSpendNotifications = pgTable("donor_spend_notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  claimCodeId: uuid("claim_code_id")
+    .references(() => claimCodes.id)
+    .notNull()
+    .unique(),
+  donorUserId: uuid("donor_user_id")
+    .references(() => users.id)
+    .notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  status: text("status").notNull().default("pending"),
+  failureReason: text("failure_reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  sentAt: timestamp("sent_at"),
 });
 
 export const adminConfig = pgTable("admin_config", {

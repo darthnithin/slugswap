@@ -39,7 +39,8 @@
     },
     "scheme": "slugswap",
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-notifications"
     ],
     "extra": {
       "router": {},

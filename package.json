@@ -37,6 +37,7 @@
     "mobile:eas:update": "cd apps/mobile && eas update --channel production",
     "mobile:eas:update:preview": "cd apps/mobile && eas update --channel preview",
     "ci:check": "npm run typecheck",
+    "test:notifications": "tsx --tsconfig apps/dashboard/tsconfig.json --test apps/dashboard/lib/server/notifications/*.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",

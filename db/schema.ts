@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, timestamp, decimal } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, timestamp, decimal, boolean, jsonb } from "drizzle-orm/pg-core";
 
 // Users table - syncs with Supabase Auth
 export const users = pgTable("users", {
@@ -18,6 +18,7 @@ export const donations = pgTable("donations", {
   startDate: timestamp("start_date").notNull(), // When donation period starts
   endDate: timestamp("end_date"), // null = ongoing, set = cancelled
   status: text("status").notNull().default("active"), // active, paused, cancelled
+  notifyOnSpend: boolean("notify_on_spend").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -79,6 +80,33 @@ export const getCredentials = pgTable("get_credentials", {
   encryptedPin: text("encrypted_pin").notNull(),
   linkedAt: timestamp("linked_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Notification installations table - tracks per-install notification targets across native + web
+export const notificationInstallations = pgTable("notification_installations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  installationId: text("installation_id").notNull().unique(),
+  channel: text("channel").notNull(), // expo | web
+  platform: text("platform").notNull(), // ios | android | web
+  status: text("status").notNull().default("active"), // active | inactive | invalid
+  expoPushToken: text("expo_push_token"),
+  webPushSubscription: jsonb("web_push_subscription"),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Donor spend notifications table - idempotent delivery log per redeemed claim
+export const donorSpendNotifications = pgTable("donor_spend_notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  claimCodeId: uuid("claim_code_id").references(() => claimCodes.id).notNull().unique(),
+  donorUserId: uuid("donor_user_id").references(() => users.id).notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  status: text("status").notNull().default("pending"), // pending | sent | failed | skipped
+  failureReason: text("failure_reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  sentAt: timestamp("sent_at"),
 });
 
 // Admin config table - persistent global settings

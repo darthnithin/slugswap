@@ -2,6 +2,9 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { useRouter, useSegments, usePathname } from 'expo-router';
+import { unregisterNotificationInstallation } from './api';
+import { getStoredNotificationInstallationId } from './notification-installation';
+import { unsubscribeCurrentWebPush } from './web-notifications';
 
 type AuthContextType = {
   session: Session | null;
@@ -84,7 +87,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session, segments, isLoading, initialized, pathname]);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      const installationId = await getStoredNotificationInstallationId();
+      if (installationId) {
+        try {
+          await unregisterNotificationInstallation(installationId);
+        } catch (error) {
+          console.warn('Failed to unregister notifications during sign-out:', error);
+        }
+      }
+
+      try {
+        await unsubscribeCurrentWebPush();
+      } catch (error) {
+        console.warn('Failed to unsubscribe web push during sign-out:', error);
+      }
+    } finally {
+      await supabase.auth.signOut();
+    }
     router.replace('/auth/sign-in');
   };
 

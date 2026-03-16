@@ -159,6 +159,18 @@ type AdminUserBalanceResponse = {
   };
   getBalance: Array<{ id: string; accountDisplayName: string; balance: number | null }> | null;
   trackedGetBalanceTotal: number;
+  notifications: {
+    totalInstallations: number;
+    activeInstallations: number;
+    channels: string[];
+    platforms: string[];
+    statuses: {
+      active: number;
+      inactive: number;
+      invalid: number;
+    };
+    lastSeenAt: string | null;
+  };
   weeklyAllowance: {
     weeklyLimit: number;
     usedAmount: number;
@@ -178,6 +190,7 @@ type AdminUserBalanceResponse = {
   donorUsage: {
     status: string;
     weeklyAmount: number;
+    notifyOnSpend: boolean;
     redeemedThisWeek: number;
     reservedThisWeek: number;
     remainingThisWeek: number;
@@ -304,6 +317,7 @@ export default function DashboardHomePage() {
   const [selectedUserDetails, setSelectedUserDetails] = useState<AdminUserBalanceResponse | null>(null);
   const [isLoadingUserDetails, setIsLoadingUserDetails] = useState(false);
   const [userDetailsError, setUserDetailsError] = useState<string | null>(null);
+  const [isSendingTestNotification, setIsSendingTestNotification] = useState(false);
   const [deletingClaimId, setDeletingClaimId] = useState<string | null>(null);
   const [chartGranularity, setChartGranularity] = useState<ChartGranularity>("weekly");
 
@@ -761,6 +775,47 @@ export default function DashboardHomePage() {
       setDeletingClaimId(null);
     }
   }, [router, fetchData]);
+
+  const handleSendTestNotification = useCallback(async () => {
+    if (!selectedUserId) {
+      setToast("Select a user first");
+      return;
+    }
+
+    setIsSendingTestNotification(true);
+    try {
+      const res = await fetch("/api/admin/test-notification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: selectedUserId }),
+      });
+
+      if (res.status === 401) {
+        router.replace("/admin/login");
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(await readApiError(res));
+      }
+
+      const data = (await res.json()) as {
+        message?: string;
+        successCount: number;
+        totalInstallations: number;
+      };
+      setToast(
+        data.message ||
+          `Sent test notification to ${data.successCount} of ${data.totalInstallations} installations`
+      );
+      void fetchUserDetails(selectedUserId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to send test notification";
+      setToast(`Failed to send test notification — ${message}`);
+    } finally {
+      setIsSendingTestNotification(false);
+    }
+  }, [selectedUserId, router, fetchUserDetails]);
 
   const poolMetrics = useMemo(() => {
     if (!statsData) {
@@ -1910,6 +1965,9 @@ export default function DashboardHomePage() {
                                   Status: {selectedUserDetails.donorUsage.status} · Cap: {formatNum(selectedUserDetails.donorUsage.weeklyAmount)} pts
                                 </div>
                                 <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                                  Spend alerts: {selectedUserDetails.donorUsage.notifyOnSpend ? "Enabled" : "Disabled"}
+                                </div>
+                                <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
                                   Redeemed: {formatNum(selectedUserDetails.donorUsage.redeemedThisWeek)} · Reserved: {formatNum(selectedUserDetails.donorUsage.reservedThisWeek)} · Remaining: {formatNum(selectedUserDetails.donorUsage.remainingThisWeek)}
                                 </div>
                                 <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
@@ -1927,6 +1985,53 @@ export default function DashboardHomePage() {
                               {formatDateTime(selectedUserDetails.weekWindow.weekStart)} to {formatDateTime(selectedUserDetails.weekWindow.weekEnd)}
                             </div>
                           </div>
+
+                          <div className="config-item">
+                            <div className="config-label">Notification Installations</div>
+                            <div style={{ color: "var(--text-primary)" }}>
+                              Active: {selectedUserDetails.notifications.activeInstallations} / {selectedUserDetails.notifications.totalInstallations}
+                            </div>
+                            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                              Channels: {selectedUserDetails.notifications.channels.length ? selectedUserDetails.notifications.channels.join(", ") : "—"}
+                            </div>
+                            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                              Platforms: {selectedUserDetails.notifications.platforms.length ? selectedUserDetails.notifications.platforms.join(", ") : "—"}
+                            </div>
+                            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                              Status counts: {selectedUserDetails.notifications.statuses.active} active · {selectedUserDetails.notifications.statuses.inactive} inactive · {selectedUserDetails.notifications.statuses.invalid} invalid
+                            </div>
+                            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                              Last seen: {formatDateTime(selectedUserDetails.notifications.lastSeenAt)}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="config-actions" style={{ justifyContent: "space-between" }}>
+                          <div
+                            style={{
+                              color: "var(--text-muted)",
+                              fontSize: "0.82rem",
+                            }}
+                          >
+                            Sends a real Expo/web push through the current active installations for this user.
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => {
+                              void handleSendTestNotification();
+                            }}
+                            disabled={
+                              isSendingTestNotification ||
+                              selectedUserDetails.notifications.activeInstallations === 0
+                            }
+                          >
+                            {isSendingTestNotification
+                              ? "Sending..."
+                              : selectedUserDetails.notifications.activeInstallations === 0
+                                ? "No Active Installations"
+                                : "Send Test Notification"}
+                          </button>
                         </div>
 
                         <div>

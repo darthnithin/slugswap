@@ -110,6 +110,10 @@ export type DonorImpact = {
   isActive: boolean;
   weeklyAmount: number;
   status: string;
+  notificationsEnabled: boolean;
+  hasActiveNotificationInstallation: boolean;
+  currentInstallationActive: boolean;
+  currentInstallationChannel: NotificationChannel | null;
   peopleHelped: number;
   pointsContributed: number;
   capAmount: number;
@@ -120,6 +124,25 @@ export type DonorImpact = {
   weekStart: string;
   weekEnd: string;
   timezone: string;
+};
+
+export type NotificationChannel = "expo" | "web";
+export type NotificationPlatform = "ios" | "android" | "web";
+
+export type WebPushSubscriptionPayload = {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys?: {
+    p256dh?: string;
+    auth?: string;
+  };
+};
+
+export type NotificationClientConfig = {
+  webPushEnabled: boolean;
+  webPushPublicKey: string | null;
+  serviceWorkerPath: string;
+  serviceWorkerScope: string;
 };
 
 export type CheckoutRail = "points-or-bucks" | "flexi-dollars";
@@ -186,8 +209,15 @@ export async function setDonation(userId: string, amount: number, userEmail?: st
   return response.json();
 }
 
-export async function getDonorImpact(userId: string) {
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/donations/impact?userId=${userId}`);
+export async function getDonorImpact(userId: string, installationId?: string | null) {
+  const searchParams = new URLSearchParams({ userId });
+  if (installationId) {
+    searchParams.set("installationId", installationId);
+  }
+
+  const response = await fetchWithFallback(
+    `${API_BASE_URL}/api/donations/impact?${searchParams.toString()}`
+  );
 
   if (!response.ok) {
     const errorMessage = await readApiError(response, 'Failed to fetch impact');
@@ -210,6 +240,83 @@ export async function pauseDonation(userId: string, paused: boolean) {
   }
 
   return response.json();
+}
+
+export async function getNotificationClientConfig() {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/notifications/config`);
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, "Failed to fetch notification config");
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<NotificationClientConfig>;
+}
+
+export async function registerNotificationInstallation(payload: {
+  installationId: string;
+  channel: NotificationChannel;
+  platform: NotificationPlatform;
+  expoPushToken?: string;
+  webPushSubscription?: WebPushSubscriptionPayload;
+}) {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(
+    `${API_BASE_URL}/api/notifications/register-installation`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(
+      response,
+      "Failed to register notification installation"
+    );
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{ success: boolean }>;
+}
+
+export async function unregisterNotificationInstallation(installationId: string) {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(
+    `${API_BASE_URL}/api/notifications/unregister-installation`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ installationId }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(
+      response,
+      "Failed to unregister notification installation"
+    );
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{ success: boolean }>;
+}
+
+export async function setDonorNotificationPreference(enabled: boolean) {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/donations/notification-preference`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ enabled }),
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to update spend alerts');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{ success: boolean; enabled: boolean }>;
 }
 
 export async function getRequesterAllowance(userId: string) {

@@ -1,15 +1,34 @@
-import { View, Text, TextInput, Pressable, ActivityIndicator, Alert, ScrollView, RefreshControl, Platform } from 'react-native';
+import { View, Text, TextInput, Pressable, ActivityIndicator, Alert, ScrollView, RefreshControl, Platform, Switch, Linking } from 'react-native';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { BlurView } from 'expo-blur';
 import { SymbolView } from 'expo-symbols';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../../../../lib/auth-context';
 import { supabase } from '../../../../../lib/supabase';
-import { setDonation, getDonorImpact, pauseDonation, getGetAccounts, getGetLinkStatus, getGetLoginUrl, linkGetAccount, unlinkGetAccount, type DonorImpact } from '../../../../../lib/api';
+import {
+  setDonation,
+  getDonorImpact,
+  pauseDonation,
+  getGetAccounts,
+  getGetLinkStatus,
+  getGetLoginUrl,
+  linkGetAccount,
+  unlinkGetAccount,
+  getNotificationClientConfig,
+  registerNotificationInstallation,
+  setDonorNotificationPreference,
+  type DonorImpact,
+  type NotificationChannel,
+} from '../../../../../lib/api';
 import * as WebBrowser from 'expo-web-browser';
 import { useTabCache, type GetAccountBalance, type ShareTabSnapshot } from '../../../../../lib/tab-cache-context';
 import { useFocusEffect } from 'expo-router';
 import { uiColor } from '../../../lib/ui-color';
+import Constants from 'expo-constants';
+import * as Device from 'expo-device';
+import * as Notifications from 'expo-notifications';
+import { getOrCreateNotificationInstallationId } from '../../../../../lib/notification-installation';
+import { ensureWebPushSubscription, supportsWebPushNotifications } from '../../../../../lib/web-notifications';
 
 const UCSC_TRACKED_BALANCE_ACCOUNTS = new Set([
   'flexi dollars',
@@ -21,6 +40,10 @@ const EMPTY_IMPACT: DonorImpact = {
   isActive: false,
   weeklyAmount: 0,
   status: 'paused',
+  notificationsEnabled: true,
+  hasActiveNotificationInstallation: false,
+  currentInstallationActive: false,
+  currentInstallationChannel: null,
   peopleHelped: 0,
   pointsContributed: 0,
   capAmount: 0,
@@ -44,6 +67,19 @@ function normalizeDonorImpact(raw: Partial<DonorImpact> | null | undefined): Don
     isActive: !!raw.isActive,
     weeklyAmount: toSafeNumber(raw.weeklyAmount),
     status: typeof raw.status === 'string' ? raw.status : EMPTY_IMPACT.status,
+    notificationsEnabled: typeof raw.notificationsEnabled === 'boolean' ? raw.notificationsEnabled : EMPTY_IMPACT.notificationsEnabled,
+    hasActiveNotificationInstallation:
+      typeof raw.hasActiveNotificationInstallation === 'boolean'
+        ? raw.hasActiveNotificationInstallation
+        : EMPTY_IMPACT.hasActiveNotificationInstallation,
+    currentInstallationActive:
+      typeof raw.currentInstallationActive === 'boolean'
+        ? raw.currentInstallationActive
+        : EMPTY_IMPACT.currentInstallationActive,
+    currentInstallationChannel:
+      raw.currentInstallationChannel === 'expo' || raw.currentInstallationChannel === 'web'
+        ? raw.currentInstallationChannel
+        : EMPTY_IMPACT.currentInstallationChannel,
     peopleHelped: toSafeNumber(raw.peopleHelped),
     pointsContributed: toSafeNumber(raw.pointsContributed),
     capAmount: toSafeNumber(raw.capAmount),
@@ -55,6 +91,18 @@ function normalizeDonorImpact(raw: Partial<DonorImpact> | null | undefined): Don
     weekEnd: typeof raw.weekEnd === 'string' ? raw.weekEnd : EMPTY_IMPACT.weekEnd,
     timezone: typeof raw.timezone === 'string' ? raw.timezone : EMPTY_IMPACT.timezone,
   };
+}
+
+function getExpoProjectId(): string | null {
+  const constantsAny = Constants as unknown as {
+    expoConfig?: { extra?: { eas?: { projectId?: string } } };
+    easConfig?: { projectId?: string };
+  };
+  return (
+    constantsAny.expoConfig?.extra?.eas?.projectId ??
+    constantsAny.easConfig?.projectId ??
+    null
+  );
 }
 
 function Card({ children, style }: { children: React.ReactNode; style?: any }) {
@@ -100,6 +148,21 @@ export default function DonorScreen() {
   const [getAccounts, setGetAccounts] = useState<GetAccountBalance[]>(shareSnapshot?.getAccounts ?? []);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [spendAlertsBusy, setSpendAlertsBusy] = useState(false);
+  const [spendAlertsPrompted, setSpendAlertsPrompted] = useState(false);
+  const [notificationInstallationId, setNotificationInstallationId] = useState<string | null>(null);
+  const supportsNativePush = Platform.OS === 'ios' || Platform.OS === 'android';
+  const supportsNotificationInstall =
+    supportsNativePush || (Platform.OS === 'web' && supportsWebPushNotifications());
+  const installationLabel = Platform.OS === 'web' ? 'browser' : 'device';
+
+  const getCurrentInstallationId = useCallback(async () => {
+    const nextId = notificationInstallationId ?? await getOrCreateNotificationInstallationId();
+    if (!notificationInstallationId) {
+      setNotificationInstallationId(nextId);
+    }
+    return nextId;
+  }, [notificationInstallationId]);
 
   const loadUserAndImpact = useCallback(async (options?: { showBlockingLoader?: boolean }) => {
     const showBlockingLoader = options?.showBlockingLoader ?? false;
@@ -114,6 +177,7 @@ export default function DonorScreen() {
         return;
       }
 
+      const installationId = await getCurrentInstallationId();
       const linkState = await getGetLinkStatus(user.id);
       let nextGetAccounts: GetAccountBalance[] = [];
       if (linkState.linked) {
@@ -125,7 +189,7 @@ export default function DonorScreen() {
         }
       }
 
-      const impactData = await getDonorImpact(user.id);
+      const impactData = await getDonorImpact(user.id, installationId);
       const normalizedImpact = normalizeDonorImpact(impactData);
       const normalizedWeeklyAmount =
         impactData.weeklyAmount > 0 ? impactData.weeklyAmount.toString() : '';
@@ -159,7 +223,7 @@ export default function DonorScreen() {
         setLoading(false);
       }
     }
-  }, [markShareLoaded, setShareSnapshot]);
+  }, [getCurrentInstallationId, markShareLoaded, setShareSnapshot]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -181,6 +245,168 @@ export default function DonorScreen() {
     });
   }, [getAccounts, getLinkedAt, impact, isActive, isGetLinked, setShareSnapshot, userEmail, userId, weeklyAmount]);
 
+  const updateImpact = useCallback((updater: (prev: DonorImpact) => DonorImpact) => {
+    setImpact((previous) => {
+      const next = updater(previous);
+      cacheShareSnapshot({ impact: next });
+      return next;
+    });
+  }, [cacheShareSnapshot]);
+
+  const ensureCurrentNotificationInstallation = useCallback(async (): Promise<NotificationChannel> => {
+    const installationId = await getCurrentInstallationId();
+
+    if (supportsNativePush) {
+      if (!Device.isDevice) {
+        throw new Error('Push notifications require a physical device.');
+      }
+
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'default',
+          importance: Notifications.AndroidImportance.DEFAULT,
+        });
+      }
+
+      const existingPermissions = await Notifications.getPermissionsAsync();
+      let finalStatus = existingPermissions.status;
+      if (finalStatus !== 'granted') {
+        const requested = await Notifications.requestPermissionsAsync();
+        finalStatus = requested.status;
+      }
+
+      if (finalStatus !== 'granted') {
+        throw new Error('Notifications permission denied.');
+      }
+
+      const projectId = getExpoProjectId();
+      if (!projectId) {
+        throw new Error('Missing Expo project ID for push registration.');
+      }
+
+      const token = await Notifications.getExpoPushTokenAsync({ projectId });
+      await registerNotificationInstallation({
+        installationId,
+        channel: 'expo',
+        platform: Platform.OS === 'ios' ? 'ios' : 'android',
+        expoPushToken: token.data,
+      });
+      return 'expo';
+    }
+
+    if (Platform.OS === 'web') {
+      const config = await getNotificationClientConfig();
+      const webPushSubscription = await ensureWebPushSubscription(config);
+      await registerNotificationInstallation({
+        installationId,
+        channel: 'web',
+        platform: 'web',
+        webPushSubscription,
+      });
+      return 'web';
+    }
+
+    throw new Error('Spend alerts are unavailable on this platform.');
+  }, [getCurrentInstallationId, supportsNativePush]);
+
+  const showNotificationPermissionGuidance = useCallback(() => {
+    Alert.alert(
+      'Enable Notifications',
+      Platform.OS === 'web'
+        ? 'Spend alerts need browser notification permission. If you previously blocked them, update this site in your browser settings.'
+        : 'Spend alerts need notification permission. You can enable notifications in system settings.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        Platform.OS === 'web'
+          ? { text: 'OK' as const }
+          : {
+          text: 'Open Settings',
+          onPress: () => {
+            if (typeof Linking.openSettings === 'function') {
+              void Linking.openSettings();
+            }
+          },
+          },
+      ]
+    );
+  }, []);
+
+  const enableSpendAlertsOnThisDevice = useCallback(async () => {
+    setSpendAlertsBusy(true);
+    try {
+      const channel = await ensureCurrentNotificationInstallation();
+      updateImpact((previous) => ({
+        ...previous,
+        hasActiveNotificationInstallation: true,
+        currentInstallationActive: true,
+        currentInstallationChannel: channel,
+      }));
+      Alert.alert(
+        'Spend alerts ready',
+        `This ${installationLabel} will now receive donor spend notifications.`
+      );
+    } catch (error: any) {
+      const message = error?.message || `Failed to enable push on this ${installationLabel}.`;
+      if (typeof message === 'string' && message.toLowerCase().includes('permission denied')) {
+        showNotificationPermissionGuidance();
+        return;
+      }
+      Alert.alert('Spend alerts', message);
+    } finally {
+      setSpendAlertsBusy(false);
+    }
+  }, [ensureCurrentNotificationInstallation, installationLabel, showNotificationPermissionGuidance, updateImpact]);
+
+  const handleSpendAlertsToggle = useCallback(async (enabled: boolean) => {
+    if (!supportsNotificationInstall) {
+      Alert.alert('Unavailable', 'Spend alerts are unavailable on this platform.');
+      return;
+    }
+
+    if (enabled) {
+      setSpendAlertsBusy(true);
+      try {
+        const channel = await ensureCurrentNotificationInstallation();
+        const result = await setDonorNotificationPreference(true);
+        updateImpact((previous) => ({
+          ...previous,
+          notificationsEnabled: result.enabled,
+          hasActiveNotificationInstallation: true,
+          currentInstallationActive: true,
+          currentInstallationChannel: channel,
+        }));
+        Alert.alert('Spend alerts enabled', 'You will be notified when your donated points are used.');
+      } catch (error: any) {
+        const message = error?.message || 'Failed to enable spend alerts.';
+        updateImpact((previous) => ({
+          ...previous,
+          notificationsEnabled: false,
+        }));
+        if (typeof message === 'string' && message.toLowerCase().includes('permission denied')) {
+          showNotificationPermissionGuidance();
+          return;
+        }
+        Alert.alert('Spend alerts', message);
+      } finally {
+        setSpendAlertsBusy(false);
+      }
+      return;
+    }
+
+    setSpendAlertsBusy(true);
+    try {
+      const result = await setDonorNotificationPreference(false);
+      updateImpact((previous) => ({
+        ...previous,
+        notificationsEnabled: result.enabled,
+      }));
+    } catch (error: any) {
+      Alert.alert('Spend alerts', error?.message || 'Failed to disable spend alerts.');
+    } finally {
+      setSpendAlertsBusy(false);
+    }
+  }, [ensureCurrentNotificationInstallation, showNotificationPermissionGuidance, supportsNotificationInstall, updateImpact]);
+
   const ucscTrackedAccounts = getAccounts.filter((account) =>
     UCSC_TRACKED_BALANCE_ACCOUNTS.has(account.accountDisplayName.trim().toLowerCase())
   );
@@ -188,6 +414,21 @@ export default function DonorScreen() {
     if (typeof account.balance !== 'number' || Number.isNaN(account.balance)) return sum;
     return sum + account.balance;
   }, 0);
+  const spendAlertsNeedsDeviceSetup =
+    supportsNotificationInstall &&
+    impact.notificationsEnabled &&
+    !impact.currentInstallationActive;
+  const spendAlertStatusText = !supportsNotificationInstall
+    ? 'Spend alerts are unavailable on this platform.'
+    : spendAlertsBusy
+      ? 'Updating spend alerts...'
+      : impact.notificationsEnabled
+        ? impact.currentInstallationActive
+          ? `Enabled on this ${installationLabel}.`
+          : impact.hasActiveNotificationInstallation
+            ? `Enabled on another device or browser. Enable it here too if you want alerts on this ${installationLabel}.`
+            : `Enabled, but this ${installationLabel} still needs notification permission.`
+        : 'Spend alerts are off.';
 
   // Load on first mount if we don't already have cached share data.
   useEffect(() => {
@@ -202,6 +443,38 @@ export default function DonorScreen() {
       void loadUserAndImpact({ showBlockingLoader: false });
     }, [hasLoadedShare, hasShareSnapshot, loadUserAndImpact])
   );
+
+  useEffect(() => {
+    if (!supportsNativePush) return;
+    if (!isGetLinked) return;
+    if (impact.weeklyAmount <= 0) return;
+    if (!impact.notificationsEnabled || impact.currentInstallationActive) return;
+    if (spendAlertsPrompted || spendAlertsBusy) return;
+
+    setSpendAlertsPrompted(true);
+    Alert.alert(
+      'Enable Spend Alerts on This Device',
+      'Your donor alerts are on, but this device is not registered yet. Enable notifications to receive spend updates here.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Enable',
+          onPress: () => {
+            void enableSpendAlertsOnThisDevice();
+          },
+        },
+      ]
+    );
+  }, [
+    enableSpendAlertsOnThisDevice,
+    impact.currentInstallationActive,
+    impact.notificationsEnabled,
+    impact.weeklyAmount,
+    isGetLinked,
+    spendAlertsBusy,
+    spendAlertsPrompted,
+    supportsNativePush,
+  ]);
 
   const handleSetContribution = async () => {
     if (!userId) return;
@@ -508,6 +781,54 @@ export default function DonorScreen() {
             <Text style={{ fontSize: 12, color: uiColor('tertiaryLabel'), marginTop: 8 }}>
               Tracking week in {impact.timezone}
             </Text>
+          </Card>
+        )}
+
+        {isGetLinked && impact.weeklyAmount > 0 && (
+          <Card>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={{ fontSize: 17, fontWeight: '600', color: uiColor('label') }}>
+                  Spend alerts
+                </Text>
+                <Text style={{ fontSize: 13, color: uiColor('secondaryLabel') }}>
+                  Get notified when your donated points are used.
+                </Text>
+              </View>
+              <Switch
+                value={impact.notificationsEnabled}
+                onValueChange={(next) => {
+                  void handleSpendAlertsToggle(next);
+                }}
+                disabled={spendAlertsBusy || !supportsNotificationInstall}
+              />
+            </View>
+            <View style={{ marginTop: 10, gap: 8 }}>
+              <Text style={{ fontSize: 12, color: uiColor('tertiaryLabel') }}>
+                {spendAlertStatusText}
+              </Text>
+              {spendAlertsNeedsDeviceSetup && (
+                <Pressable
+                  onPress={() => {
+                    void enableSpendAlertsOnThisDevice();
+                  }}
+                  disabled={spendAlertsBusy}
+                  style={({ pressed }) => ({
+                    alignSelf: 'flex-start',
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    borderRadius: 8,
+                    borderCurve: 'continuous',
+                    backgroundColor: uiColor('tertiarySystemFill'),
+                    opacity: pressed ? 0.7 : spendAlertsBusy ? 0.5 : 1,
+                  })}
+                >
+                  <Text style={{ color: uiColor('systemBlue'), fontWeight: '600', fontSize: 13 }}>
+                    {`Enable on this ${installationLabel}`}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
           </Card>
         )}
 

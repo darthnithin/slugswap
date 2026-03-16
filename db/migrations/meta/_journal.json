@@ -36,6 +36,13 @@
       "when": 1775110000000,
       "tag": "0004_mobile_update_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775200000000,
+      "tag": "0005_donor_spend_notifications",
+      "breakpoints": true
     }
   ]
 }
