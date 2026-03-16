@@ -11,6 +11,7 @@ import {
 } from "@/lib/server/claims/donor-selection";
 import { retrieveAccounts, type GetAccount } from "@/lib/server/get/tools";
 import { getActiveGetSession } from "@/lib/server/get/session";
+import { syncDonorPauseStateFromAccounts } from "@/lib/server/get/tracked-balance";
 
 export const runtime = "nodejs";
 
@@ -212,6 +213,7 @@ async function handleGenerate(req: NextRequest) {
 
     const ranked = await rankDonorCandidatesForClaim(claimAmount);
     let hadCapReject = false;
+    let hadDepletedBalanceReject = false;
     const fetchFailures: string[] = [];
 
     for (const candidate of ranked.candidates) {
@@ -229,19 +231,27 @@ async function handleGenerate(req: NextRequest) {
       }
 
       try {
-        const { code, expiresAt, sessionId: donorSessionId } =
-          await fetchLiveClaimCodeFromGet(candidate.donorUserId);
+        const { sessionId: donorSessionId } = await getActiveGetSession(
+          candidate.donorUserId
+        );
+        const accounts = await retrieveAccounts(donorSessionId);
+        const { trackedBalance } = await syncDonorPauseStateFromAccounts(
+          candidate.donorUserId,
+          accounts
+        );
 
-        let balanceSnapshot: string | null = null;
-        let recommendedRail: CheckoutRail = "points-or-bucks";
-        try {
-          const accounts = await retrieveAccounts(donorSessionId);
-          const snapshot = toTrackedBalanceSnapshot(accounts);
-          balanceSnapshot = JSON.stringify(snapshot);
-          recommendedRail = chooseCheckoutRail(snapshot, claimAmount);
-        } catch (error) {
-          console.warn("Failed to snapshot donor balances:", error);
+        if (trackedBalance != null && trackedBalance <= 0) {
+          hadDepletedBalanceReject = true;
+          continue;
         }
+
+        const snapshot = toTrackedBalanceSnapshot(accounts);
+        const balanceSnapshot = JSON.stringify(snapshot);
+        const recommendedRail = chooseCheckoutRail(snapshot, claimAmount);
+        const { code, expiresAt } = await fetchLiveClaimCodeFromGet(
+          candidate.donorUserId,
+          donorSessionId
+        );
 
         const [claimCode] = await db
           .insert(schema.claimCodes)
@@ -287,7 +297,7 @@ async function handleGenerate(req: NextRequest) {
       }
     }
 
-    if (hadCapReject && fetchFailures.length === 0) {
+    if ((hadCapReject || hadDepletedBalanceReject) && fetchFailures.length === 0) {
       return claimGenerationErrorResponse(
         POOL_EXHAUSTED_MESSAGE,
         409,
@@ -510,6 +520,7 @@ async function detectRedemption(
   try {
     const { sessionId } = await getActiveGetSession(claim.donorUserId);
     currentAccounts = await retrieveAccounts(sessionId);
+    await syncDonorPauseStateFromAccounts(claim.donorUserId, currentAccounts);
   } catch (error) {
     console.warn("Failed to poll donor balances for redemption check:", error);
     return null;

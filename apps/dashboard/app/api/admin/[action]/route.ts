@@ -21,7 +21,11 @@ import {
 import { getDonorWeeklyUsageMap } from "@/lib/server/claims/donor-usage";
 import { getPacificWeekWindow } from "@/lib/server/timezone";
 import { getActiveGetSession } from "@/lib/server/get/session";
-import { retrieveAccounts } from "@/lib/server/get/tools";
+import { retrieveAccounts, type GetAccount } from "@/lib/server/get/tools";
+import {
+  getTrackedBalanceTotal,
+  syncDonorPauseStateFromAccounts,
+} from "@/lib/server/get/tracked-balance";
 import {
   authenticateAdminBearerToken,
   clearAdminSessionCookie,
@@ -743,12 +747,13 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         where: eq(schema.getCredentials.userId, user.id),
       });
 
-      let getBalance: Array<{ id: string; accountDisplayName: string; balance: number | null }> | null = null;
+      let getBalance: GetAccount[] | null = null;
       let getAccountsError: string | null = null;
       if (getCredential) {
         try {
           const { sessionId } = await getActiveGetSession(user.id);
           getBalance = await retrieveAccounts(sessionId);
+          await syncDonorPauseStateFromAccounts(user.id, getBalance);
         } catch (error: any) {
           getAccountsError = error?.message || "Failed to fetch GET balances";
           console.warn("Failed to fetch GET balance:", error);
@@ -756,12 +761,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         }
       }
 
-      const trackedAccountNames = new Set(["flexi dollars", "banana bucks", "slug points"]);
-      const trackedGetBalanceTotal = (getBalance ?? []).reduce((sum, account) => {
-        if (!trackedAccountNames.has(account.accountDisplayName.trim().toLowerCase())) return sum;
-        if (typeof account.balance !== "number" || Number.isNaN(account.balance)) return sum;
-        return sum + account.balance;
-      }, 0);
+      const trackedGetBalanceTotal = getTrackedBalanceTotal(getBalance ?? []) ?? 0;
 
       // Weekly allowance
       const currentPool = await db

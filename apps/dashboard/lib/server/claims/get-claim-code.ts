@@ -14,9 +14,12 @@ function extractBarcodePayload(raw: unknown): string | null {
 }
 
 export async function fetchLiveClaimCodeFromGet(
-  userId: string
+  userId: string,
+  existingSessionId?: string
 ): Promise<{ code: string; expiresAt: Date; sessionId: string }> {
-  const { sessionId } = await getActiveGetSession(userId);
+  const { sessionId } = existingSessionId
+    ? { sessionId: existingSessionId }
+    : await getActiveGetSession(userId);
   const payload = await callGetApi<{ sessionId: string }, unknown>(
     "authentication",
     "retrievePatronBarcodePayload",
