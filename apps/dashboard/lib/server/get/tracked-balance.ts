@@ -1,7 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import { donations } from "@/lib/server/schema";
+import { getActiveGetSession } from "@/lib/server/get/session";
 import { type GetAccount } from "@/lib/server/get/tools";
+import { retrieveAccounts } from "@/lib/server/get/tools";
 
 export const TRACKED_BALANCE_ACCOUNT_NAMES = new Set([
   "flexi dollars",
@@ -47,4 +49,13 @@ export async function syncDonorPauseStateFromAccounts(
     trackedBalance,
     autoPaused: !!updated,
   };
+}
+
+export async function fetchLiveTrackedBalance(
+  donorUserId: string
+): Promise<number | null> {
+  const { sessionId } = await getActiveGetSession(donorUserId);
+  const accounts = await retrieveAccounts(sessionId);
+  const { trackedBalance } = await syncDonorPauseStateFromAccounts(donorUserId, accounts);
+  return trackedBalance ?? getTrackedBalanceTotal(accounts);
 }

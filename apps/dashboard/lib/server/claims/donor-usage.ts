@@ -1,6 +1,6 @@
 import { and, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/server/db";
-import { claimCodes } from "@/lib/server/schema";
+import { claimCodes, donations } from "@/lib/server/schema";
 import { getPacificWeekWindow, type WeekWindow } from "@/lib/server/timezone";
 
 export type DonorCapInput = {
@@ -15,10 +15,12 @@ export type DonorWeeklyUsage = {
   reservedThisWeek: number;
   claimsSelectedThisWeek: number;
   committedThisWeek: number;
+  capRemainingThisWeek: number;
   remainingThisWeek: number;
   capReached: boolean;
   lastSelectedAt: Date | null;
   utilizationRatio: number;
+  liveTrackedBalance: number | null;
 };
 
 function toNumeric(value: string | number | null | undefined): number {
@@ -37,7 +39,7 @@ export function computeUsageFromValues(input: {
 }): DonorWeeklyUsage {
   const capAmount = Math.max(0, input.capAmount);
   const committedThisWeek = input.redeemedThisWeek + input.reservedThisWeek;
-  const remainingThisWeek = capAmount - committedThisWeek;
+  const capRemainingThisWeek = capAmount - committedThisWeek;
   return {
     donorUserId: input.donorUserId,
     capAmount,
@@ -45,10 +47,31 @@ export function computeUsageFromValues(input: {
     reservedThisWeek: input.reservedThisWeek,
     claimsSelectedThisWeek: input.claimsSelectedThisWeek,
     committedThisWeek,
-    remainingThisWeek,
-    capReached: remainingThisWeek <= 0,
+    capRemainingThisWeek,
+    remainingThisWeek: capRemainingThisWeek,
+    capReached: capRemainingThisWeek <= 0,
     lastSelectedAt: input.lastSelectedAt,
     utilizationRatio: capAmount > 0 ? committedThisWeek / capAmount : Number.POSITIVE_INFINITY,
+    liveTrackedBalance: null,
+  };
+}
+
+export function applyLiveTrackedBalance(
+  usage: DonorWeeklyUsage,
+  liveTrackedBalance: number | null | undefined
+): DonorWeeklyUsage {
+  if (typeof liveTrackedBalance !== "number" || Number.isNaN(liveTrackedBalance)) {
+    return usage;
+  }
+
+  const constrainedBalance = Math.max(0, liveTrackedBalance);
+  const remainingThisWeek = Math.min(usage.capRemainingThisWeek, constrainedBalance);
+
+  return {
+    ...usage,
+    liveTrackedBalance: constrainedBalance,
+    remainingThisWeek,
+    capReached: remainingThisWeek <= 0,
   };
 }
 
@@ -165,4 +188,30 @@ export async function getDonorWeeklyUsageMap(
     usageMap,
     weekWindow: window,
   };
+}
+
+export async function getActiveDonorRemainingTotal(now = new Date()): Promise<number> {
+  const donorRows = await db
+    .select({
+      donorUserId: donations.userId,
+      capAmount: donations.amount,
+    })
+    .from(donations)
+    .where(eq(donations.status, "active"));
+
+  if (donorRows.length === 0) {
+    return 0;
+  }
+
+  const donorCaps = donorRows.map((row) => ({
+    donorUserId: row.donorUserId,
+    capAmount: toNumeric(row.capAmount),
+  }));
+
+  const { usageMap } = await getDonorWeeklyUsageMap(donorCaps, now);
+
+  return donorCaps.reduce((sum, donor) => {
+    const remaining = usageMap.get(donor.donorUserId)?.remainingThisWeek ?? 0;
+    return sum + Math.max(0, remaining);
+  }, 0);
 }

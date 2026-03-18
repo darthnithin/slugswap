@@ -680,6 +680,11 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           topDonors: topDonorsWithGetBalance.map((d) => {
             const fallbackCap = parseFloat(d.amount);
             const usage = usageMap.get(d.userId);
+            const capRemainingThisWeek = usage?.capRemainingThisWeek ?? fallbackCap;
+            const remainingThisWeek =
+              typeof d.trackedGetBalanceTotal === "number"
+                ? Math.min(capRemainingThisWeek, Math.max(0, d.trackedGetBalanceTotal))
+                : usage?.remainingThisWeek ?? fallbackCap;
             return {
               userId: d.userId,
               name: d.userName || "Anonymous",
@@ -691,8 +696,8 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
               capAmount: usage?.capAmount ?? fallbackCap,
               redeemedThisWeek: usage?.redeemedThisWeek ?? 0,
               reservedThisWeek: usage?.reservedThisWeek ?? 0,
-              remainingThisWeek: usage?.remainingThisWeek ?? fallbackCap,
-              capReached: usage?.capReached ?? false,
+              remainingThisWeek,
+              capReached: remainingThisWeek <= 0,
               utilizationRatio: usage?.utilizationRatio ?? 0,
             };
           }),
@@ -945,12 +950,17 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
 
         const redeemedThisWeek = parseFloat(donorRedeemedWeek[0]?.total || "0");
         const reservedThisWeek = parseFloat(donorReservedWeek[0]?.total || "0");
+        const capRemainingThisWeek = weeklyAmount - (redeemedThisWeek + reservedThisWeek);
+        const remainingThisWeek =
+          typeof trackedGetBalanceTotal === "number"
+            ? Math.min(capRemainingThisWeek, Math.max(0, trackedGetBalanceTotal))
+            : capRemainingThisWeek;
         donorUsage = {
           status: donation.status,
           weeklyAmount,
           redeemedThisWeek,
           reservedThisWeek,
-          remainingThisWeek: weeklyAmount - (redeemedThisWeek + reservedThisWeek),
+          remainingThisWeek,
           allTimeRedeemedAmount: parseFloat(donorAllTimeRedeemed[0]?.totalAmount || "0"),
           allTimeRedeemedCount: Number(donorAllTimeRedeemed[0]?.count || 0),
         };
