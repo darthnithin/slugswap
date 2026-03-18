@@ -439,7 +439,7 @@ export async function getUserBalance(params: { name?: string; email?: string; us
       accountsFetchError: string | null;
     };
     getBalance: Array<{ id: string; accountDisplayName: string; balance: number | null }> | null;
-    trackedGetBalanceTotal: number;
+    trackedGetBalanceTotal: number | null;
     weeklyAllowance: {
       weeklyLimit: number;
       usedAmount: number;

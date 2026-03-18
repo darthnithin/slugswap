@@ -680,10 +680,14 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           topDonors: topDonorsWithGetBalance.map((d) => {
             const fallbackCap = parseFloat(d.amount);
             const usage = usageMap.get(d.userId);
+            const reservedThisWeek = usage?.reservedThisWeek ?? 0;
             const capRemainingThisWeek = usage?.capRemainingThisWeek ?? fallbackCap;
             const remainingThisWeek =
               typeof d.trackedGetBalanceTotal === "number"
-                ? Math.min(capRemainingThisWeek, Math.max(0, d.trackedGetBalanceTotal))
+                ? Math.min(
+                    capRemainingThisWeek,
+                    Math.max(0, d.trackedGetBalanceTotal - reservedThisWeek)
+                  )
                 : usage?.remainingThisWeek ?? fallbackCap;
             return {
               userId: d.userId,
@@ -695,7 +699,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
               trackedGetBalanceTotal: d.trackedGetBalanceTotal,
               capAmount: usage?.capAmount ?? fallbackCap,
               redeemedThisWeek: usage?.redeemedThisWeek ?? 0,
-              reservedThisWeek: usage?.reservedThisWeek ?? 0,
+              reservedThisWeek,
               remainingThisWeek,
               capReached: remainingThisWeek <= 0,
               utilizationRatio: usage?.utilizationRatio ?? 0,
@@ -792,7 +796,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         }
       }
 
-      const trackedGetBalanceTotal = getTrackedBalanceTotal(getBalance ?? []) ?? 0;
+      const trackedGetBalanceTotal = getTrackedBalanceTotal(getBalance ?? []);
 
       // Weekly allowance
       const currentPool = await db
@@ -953,7 +957,10 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         const capRemainingThisWeek = weeklyAmount - (redeemedThisWeek + reservedThisWeek);
         const remainingThisWeek =
           typeof trackedGetBalanceTotal === "number"
-            ? Math.min(capRemainingThisWeek, Math.max(0, trackedGetBalanceTotal))
+            ? Math.min(
+                capRemainingThisWeek,
+                Math.max(0, trackedGetBalanceTotal - reservedThisWeek)
+              )
             : capRemainingThisWeek;
         donorUsage = {
           status: donation.status,

@@ -65,7 +65,10 @@ export function applyLiveTrackedBalance(
   }
 
   const constrainedBalance = Math.max(0, liveTrackedBalance);
-  const remainingThisWeek = Math.min(usage.capRemainingThisWeek, constrainedBalance);
+  // Active claims have not reduced GET yet, so keep their reservations out of the
+  // donor's effective live balance before we compare against cap-based remaining.
+  const availableLiveBalance = Math.max(0, constrainedBalance - usage.reservedThisWeek);
+  const remainingThisWeek = Math.min(usage.capRemainingThisWeek, availableLiveBalance);
 
   return {
     ...usage,

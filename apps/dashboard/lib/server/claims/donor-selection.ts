@@ -104,31 +104,8 @@ export async function rankDonorCandidatesForClaim(
     throw new Error("No eligible donors available under weekly cap limits.");
   }
 
-  const withBalances = await Promise.all(
-    candidatesWithUsage.map(async (candidate) => {
-      try {
-        const liveTrackedBalance = await fetchLiveTrackedBalance(candidate.donorUserId);
-        return {
-          ...candidate,
-          liveTrackedBalance,
-          usage: applyLiveTrackedBalance(candidate.usage, liveTrackedBalance),
-        };
-      } catch (error) {
-        console.warn(`Failed to retrieve live balance for donor ${candidate.donorUserId}:`, error);
-        return candidate;
-      }
-    })
-  );
-
-  let candidates = withBalances.filter(
-    (candidate) => candidate.usage.remainingThisWeek >= claimAmount
-  );
-
-  if (candidates.length === 0) {
-    throw new Error("No eligible donors available under weekly cap limits.");
-  }
-
   const policy = config.donorSelectionPolicy;
+  let candidates = candidatesWithUsage;
 
   if (policy === "round_robin") {
     candidates.sort(roundRobinSort);
@@ -137,6 +114,33 @@ export async function rankDonorCandidatesForClaim(
   } else if (policy === "least_utilized") {
     candidates.sort(leastUtilizedSort);
   } else {
+    const withBalances = await Promise.all(
+      candidatesWithUsage.map(async (candidate) => {
+        try {
+          const liveTrackedBalance = await fetchLiveTrackedBalance(candidate.donorUserId);
+          return {
+            ...candidate,
+            liveTrackedBalance,
+            usage: applyLiveTrackedBalance(candidate.usage, liveTrackedBalance),
+          };
+        } catch (error) {
+          console.warn(
+            `Failed to retrieve live balance for donor ${candidate.donorUserId}:`,
+            error
+          );
+          return candidate;
+        }
+      })
+    );
+
+    candidates = withBalances.filter(
+      (candidate) => candidate.usage.remainingThisWeek >= claimAmount
+    );
+
+    if (candidates.length === 0) {
+      throw new Error("No eligible donors available under weekly cap limits.");
+    }
+
     const hasLiveBalance = candidates.some(
       (candidate) => typeof candidate.liveTrackedBalance === "number"
     );

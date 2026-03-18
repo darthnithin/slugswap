@@ -85,6 +85,17 @@ function toSafeBalance(value: number | null): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function getAvailableTrackedBalanceAfterReservations(
+  trackedBalance: number | null,
+  reservedThisWeek: number
+): number | null {
+  if (typeof trackedBalance !== "number" || Number.isNaN(trackedBalance)) {
+    return null;
+  }
+
+  return Math.max(0, trackedBalance - reservedThisWeek);
+}
+
 function chooseCheckoutRail(
   snapshot: BalanceSnapshotEntry[],
   claimAmount: number
@@ -240,7 +251,12 @@ async function handleGenerate(req: NextRequest) {
           accounts
         );
 
-        if (trackedBalance != null && trackedBalance <= 0) {
+        const availableTrackedBalance = getAvailableTrackedBalanceAfterReservations(
+          trackedBalance,
+          usage.reservedThisWeek
+        );
+
+        if (availableTrackedBalance != null && availableTrackedBalance < claimAmount) {
           hadDepletedBalanceReject = true;
           continue;
         }
