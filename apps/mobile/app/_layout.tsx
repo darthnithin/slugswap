@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import Constants from 'expo-constants';
 import { getMobileAppConfig } from '../../../lib/api';
-import { uiColor } from '../lib/ui-color';
+import { cardShadow, stealthTheme } from '../lib/stealth-theme';
 
 type RequiredUpdateGate = {
   installedVersion: string;
@@ -218,19 +218,24 @@ export default function RootLayout() {
     }
   }, [requiredUpdateGate]);
 
-  const modalBgColor = Platform.OS === 'ios' ? uiColor('systemBackground') : '#1f1f1f';
-  const labelColor = Platform.OS === 'ios' ? uiColor('label') : '#ffffff';
-  const secondaryColor = Platform.OS === 'ios' ? uiColor('secondaryLabel') : '#b7b7b7';
+  const colors = stealthTheme.colors;
 
   try {
     return (
       <AuthProvider>
-        <StatusBar style="auto" />
+        <StatusBar style="dark" />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="auth/sign-in" />
           <Stack.Screen name="auth/callback" />
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen
+            name="scan-card"
+            options={{
+              headerShown: false,
+              presentation: 'fullScreenModal',
+            }}
+          />
         </Stack>
 
         <Modal
@@ -244,27 +249,30 @@ export default function RootLayout() {
               flex: 1,
               justifyContent: 'center',
               padding: 24,
-              backgroundColor: 'rgba(0, 0, 0, 0.6)',
+              backgroundColor: colors.overlay,
             }}
           >
             <View
               style={{
-                backgroundColor: modalBgColor,
-                borderRadius: 16,
-                padding: 20,
+                backgroundColor: colors.surface,
+                borderRadius: stealthTheme.radii.md,
+                padding: 22,
                 gap: 12,
+                borderWidth: 1,
+                borderColor: colors.border,
+                ...cardShadow('hero'),
               }}
             >
-              <Text selectable style={{ fontSize: 22, fontWeight: '700', color: labelColor }}>
+              <Text selectable style={{ fontSize: 22, fontWeight: '700', color: colors.text }}>
                 Update required
               </Text>
-              <Text selectable style={{ fontSize: 14, color: secondaryColor }}>
+              <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
                 Your app version is no longer supported.
               </Text>
-              <Text selectable style={{ fontSize: 14, color: secondaryColor }}>
+              <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
                 Installed: {requiredUpdateGate?.installedVersion ?? 'unknown'}
               </Text>
-              <Text selectable style={{ fontSize: 14, color: secondaryColor }}>
+              <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
                 Required: {requiredUpdateGate?.requiredVersion ?? 'unknown'}+
               </Text>
 
@@ -274,9 +282,9 @@ export default function RootLayout() {
                 }}
                 style={{
                   marginTop: 8,
-                  borderRadius: 12,
-                  backgroundColor: '#0a84ff',
-                  paddingVertical: 12,
+                  borderRadius: stealthTheme.radii.sm,
+                  backgroundColor: colors.brand,
+                  paddingVertical: 13,
                   alignItems: 'center',
                 }}
               >
@@ -292,9 +300,19 @@ export default function RootLayout() {
   } catch (error) {
     console.error('Error in RootLayout:', error);
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-        <Text style={{ color: 'red', marginBottom: 10 }}>Error loading app:</Text>
-        <Text>{String(error)}</Text>
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 20,
+          backgroundColor: colors.canvas,
+        }}
+      >
+        <Text style={{ color: colors.danger, marginBottom: 10, fontWeight: '700' }}>
+          Error loading app:
+        </Text>
+        <Text style={{ color: colors.text }}>{String(error)}</Text>
       </View>
     );
   }
