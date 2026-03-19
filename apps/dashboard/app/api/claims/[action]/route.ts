@@ -6,6 +6,7 @@ import * as schema from "@/lib/server/schema";
 import {
   fetchLiveClaimCodeFromGet,
 } from "@/lib/server/claims/get-claim-code";
+import { getAdminIdentityFromRequest } from "@/lib/server/admin-auth";
 import {
   getDonorUsageForDonor,
   rankDonorCandidatesForClaim,
@@ -655,21 +656,34 @@ async function handleDelete(req: NextRequest) {
   }
 
   try {
-    const auth = await authenticateAppUser(req);
-    if ("response" in auth) {
-      return auth.response;
-    }
-
-    const { claimCodeId } = (await req.json()) as {
+    const adminIdentity = getAdminIdentityFromRequest(req);
+    const { userId: requestedUserId, claimCodeId } = (await req.json()) as {
+      userId?: string;
       claimCodeId?: string;
     };
-    const userId = auth.user.id;
 
     if (!claimCodeId) {
       return NextResponse.json(
         { error: "Missing claimCodeId" },
         { status: 400 }
       );
+    }
+
+    let userId: string;
+    if (adminIdentity) {
+      if (!requestedUserId) {
+        return NextResponse.json(
+          { error: "Missing userId" },
+          { status: 400 }
+        );
+      }
+      userId = requestedUserId;
+    } else {
+      const auth = await authenticateAppUser(req);
+      if ("response" in auth) {
+        return auth.response;
+      }
+      userId = auth.user.id;
     }
 
     // Fetch the claim to verify ownership and get amount
