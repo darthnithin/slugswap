@@ -19,20 +19,40 @@ type MessagingMode = "end_of_quarter_donor_drive";
 
 interface StoryStats {
   activeDonors: number;
+  uniqueDonors: number;
   claimsThisWeek: number;
+  claimsThisWeekAmount: number;
+  redeemedClaimsThisWeek: number;
+  redeemedAmountThisWeek: number;
   redemptionRate: string;
   totalUsers: number;
   getAccountsLinked: number;
   allTimeClaims: number;
   pointsDistributed: number;
-  avgDonationPerWeek: number;
-  avgPointsPerRequester: number;
+  weeklyInflow: number;
+  availablePointsThisWeek: number;
+  daysLeftInQuarter: number;
+}
+
+interface StoryDataFile {
+  generatedAt: string;
+  liveLabel: string;
+  weekStart: string;
+  weekEnd: string;
+  stats: StoryStats;
+  display: {
+    pointsDistributed: string;
+    weeklyInflow: string;
+    claimsThisWeekAmount: string;
+    redeemedAmountThisWeek: string;
+    availablePointsThisWeek: string;
+  };
 }
 
 export interface StoryCampaignConfig {
   variant: StoryVariant;
   slideIndex: SlideIndex;
-  stats: StoryStats;
+  storyData: StoryDataFile;
   ctaUrl: string;
   messagingMode: MessagingMode;
 }
@@ -89,24 +109,13 @@ const THEMES: Record<StoryVariant, Theme> = {
   },
 };
 
-const STATS: StoryStats = {
-  activeDonors: 1,
-  claimsThisWeek: 12,
-  redemptionRate: "100%",
-  totalUsers: 21,
-  getAccountsLinked: 9,
-  allTimeClaims: 28,
-  pointsDistributed: 497.8,
-  avgDonationPerWeek: 30,
-  avgPointsPerRequester: 19.3,
-};
-
 const CTA_URL = "slugswap.vercel.app";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = path.resolve(
   SCRIPT_DIR,
   "../public/instagram-stories/end-of-quarter-mar-2026",
 );
+const STORY_DATA_PATH = path.join(OUTPUT_DIR, "story-data.json");
 const SHOW_SAFE_GUIDES = false;
 const DISPLAY_FONT =
   "'Bebas Neue', 'Anton', 'Archivo Black', 'League Spartan', 'Impact', sans-serif";
@@ -114,6 +123,36 @@ const SANS_FONT =
   "'Sora', 'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif";
 const MONO_FONT =
   "'IBM Plex Mono', 'SFMono-Regular', 'Menlo', 'Consolas', monospace";
+
+const FALLBACK_STORY_DATA: StoryDataFile = {
+  generatedAt: "2026-03-16T16:34:07.377Z",
+  liveLabel: "LIVE DATA MAR 16",
+  weekStart: "2026-03-16T00:00:00.000Z",
+  weekEnd: "2026-03-23T00:00:00.000Z",
+  stats: {
+    activeDonors: 8,
+    uniqueDonors: 8,
+    claimsThisWeek: 3,
+    claimsThisWeekAmount: 33,
+    redeemedClaimsThisWeek: 3,
+    redeemedAmountThisWeek: 33,
+    redemptionRate: "100%",
+    totalUsers: 163,
+    getAccountsLinked: 48,
+    allTimeClaims: 76,
+    pointsDistributed: 1413.5,
+    weeklyInflow: 1900,
+    availablePointsThisWeek: 1867.1,
+    daysLeftInQuarter: 4,
+  },
+  display: {
+    pointsDistributed: "1,413.5",
+    weeklyInflow: "1,900",
+    claimsThisWeekAmount: "33.0",
+    redeemedAmountThisWeek: "33.0",
+    availablePointsThisWeek: "1,867.1",
+  },
+};
 
 function escapeXml(text: string): string {
   return text
@@ -265,85 +304,59 @@ function baseLayer(theme: Theme, seed: number): string {
 }
 
 function slideOne(config: StoryCampaignConfig, theme: Theme): string {
+  const { stats } = config.storyData;
   const miniWidth = (SAFE_WIDTH - 24 * 2) / 3;
 
   return `
     ${baseLayer(theme, 101)}
-    ${heroLine("END-OF-QUARTER DONOR DRIVE", SAFE_ZONE.left, 280, 44, theme.highlight, theme)}
-    ${heroLine("LOW ON DONORS.", SAFE_ZONE.left, 430, 92, theme.paper, theme, SAFE_WIDTH - 16)}
-    ${heroLine("EXTRA POINTS", SAFE_ZONE.left, 540, 96, theme.secondary, theme, SAFE_WIDTH - 16)}
-    ${heroLine("ARE COMING.", SAFE_ZONE.left, 650, 98, theme.tertiary, theme, SAFE_WIDTH - 16)}
-    ${card(SAFE_ZONE.left, 790, SAFE_WIDTH, 220, theme.quaternary, theme, -2)}
-    <text x="${SAFE_ZONE.left + 36}" y="856" fill="${theme.ink}" font-size="48" font-family="${DISPLAY_FONT}" letter-spacing="0.9">IF YOU&apos;VE GOT EXTRA</text>
-    <text x="${SAFE_ZONE.left + 36}" y="916" fill="${theme.ink}" font-size="48" font-family="${DISPLAY_FONT}" letter-spacing="0.9">POINTS, THIS IS</text>
-    <text x="${SAFE_ZONE.left + 36}" y="976" fill="${theme.ink}" font-size="48" font-family="${DISPLAY_FONT}" letter-spacing="0.9">THE WEEK TO SHARE.</text>
-    ${card(SAFE_ZONE.left, 1060, miniWidth, 156, theme.primary, theme, -1)}
-    ${card(SAFE_ZONE.left + miniWidth + 24, 1060, miniWidth, 156, theme.secondary, theme, 1)}
-    ${card(SAFE_ZONE.left + (miniWidth + 24) * 2, 1060, miniWidth, 156, theme.highlight, theme, -1)}
-    <text x="${SAFE_ZONE.left + 22}" y="1116" fill="${theme.ink}" font-size="26" font-family="${SANS_FONT}" font-weight="800">ACTIVE DONORS</text>
-    <text x="${SAFE_ZONE.left + 22}" y="1190" fill="${theme.ink}" font-size="86" font-family="${DISPLAY_FONT}">${config.stats.activeDonors}</text>
-    <text x="${SAFE_ZONE.left + miniWidth + 46}" y="1116" fill="${theme.ink}" font-size="26" font-family="${SANS_FONT}" font-weight="800">CLAIMS / WEEK</text>
-    <text x="${SAFE_ZONE.left + miniWidth + 46}" y="1190" fill="${theme.ink}" font-size="86" font-family="${DISPLAY_FONT}">${config.stats.claimsThisWeek}</text>
-    <text x="${SAFE_ZONE.left + (miniWidth + 24) * 2 + 22}" y="1116" fill="${theme.ink}" font-size="26" font-family="${SANS_FONT}" font-weight="800">REDEEM RATE</text>
-    <text x="${SAFE_ZONE.left + (miniWidth + 24) * 2 + 22}" y="1190" fill="${theme.ink}" font-size="76" font-family="${DISPLAY_FONT}">${escapeXml(config.stats.redemptionRate)}</text>
-    ${card(SAFE_ZONE.left, 1262, 560, 120, theme.primary, theme, 1.4)}
-    <text x="${SAFE_ZONE.left + 30}" y="1340" fill="${theme.ink}" font-size="72" font-family="${DISPLAY_FONT}" letter-spacing="1.3">JOIN SLUGSWAP</text>
-    <text x="${SAFE_ZONE.left}" y="1442" fill="${theme.muted}" font-size="36" font-family="${MONO_FONT}" textLength="${SAFE_WIDTH}" lengthAdjust="spacingAndGlyphs">students helping students • no awkward asks</text>
+    ${heroLine(`${stats.daysLeftInQuarter} DAYS LEFT`, SAFE_ZONE.left, 280, 44, theme.highlight, theme)}
+    ${card(636, 322, 248, 96, theme.quaternary, theme, -8)}
+    <text x="664" y="388" fill="${theme.ink}" font-size="50" font-family="${DISPLAY_FONT}">FINAL DROP</text>
+    ${heroLine("EVERYTHING", SAFE_ZONE.left, 430, 106, theme.paper, theme, SAFE_WIDTH - 16)}
+    ${heroLine("MUST GO.", SAFE_ZONE.left, 545, 108, theme.secondary, theme, SAFE_WIDTH - 16)}
+    ${heroLine("EXTRA POINTS TOO.", SAFE_ZONE.left, 656, 82, theme.tertiary, theme, SAFE_WIDTH - 16)}
+    ${card(SAFE_ZONE.left, 760, 620, 100, theme.quaternary, theme, 3.2)}
+    <text x="${SAFE_ZONE.left + 28}" y="826" fill="${theme.ink}" font-size="56" font-family="${DISPLAY_FONT}" letter-spacing="0.9">${stats.uniqueDonors} DONORS ALREADY IN</text>
+    ${card(SAFE_ZONE.left, 854, SAFE_WIDTH, 256, theme.paper, theme, -3)}
+    <text x="${SAFE_ZONE.left + 36}" y="858" fill="${theme.ink}" font-size="52" font-family="${DISPLAY_FONT}" letter-spacing="0.9">${stats.totalUsers} STUDENTS</text>
+    <text x="${SAFE_ZONE.left + 36}" y="920" fill="${theme.ink}" font-size="52" font-family="${DISPLAY_FONT}" letter-spacing="0.9">ARE ON SLUGSWAP.</text>
+    <text x="${SAFE_ZONE.left + 36}" y="982" fill="${theme.ink}" font-size="52" font-family="${DISPLAY_FONT}" letter-spacing="0.9">${stats.uniqueDonors} HAVE</text>
+    <text x="${SAFE_ZONE.left + 36}" y="1044" fill="${theme.ink}" font-size="52" font-family="${DISPLAY_FONT}" letter-spacing="0.9">ALREADY DONATED.</text>
+    ${card(SAFE_ZONE.left, 1140, miniWidth, 156, theme.primary, theme, -2.4)}
+    ${card(SAFE_ZONE.left + miniWidth + 24, 1146, miniWidth, 156, theme.secondary, theme, 1.4)}
+    ${card(SAFE_ZONE.left + (miniWidth + 24) * 2, 1138, miniWidth, 156, theme.highlight, theme, -1.1)}
+    <text x="${SAFE_ZONE.left + 22}" y="1196" fill="${theme.ink}" font-size="26" font-family="${SANS_FONT}" font-weight="800">DAYS LEFT</text>
+    <text x="${SAFE_ZONE.left + 22}" y="1270" fill="${theme.ink}" font-size="86" font-family="${DISPLAY_FONT}">${stats.daysLeftInQuarter}</text>
+    <text x="${SAFE_ZONE.left + miniWidth + 46}" y="1202" fill="${theme.ink}" font-size="26" font-family="${SANS_FONT}" font-weight="800">USERS</text>
+    <text x="${SAFE_ZONE.left + miniWidth + 46}" y="1276" fill="${theme.ink}" font-size="86" font-family="${DISPLAY_FONT}">${stats.totalUsers}</text>
+    <text x="${SAFE_ZONE.left + (miniWidth + 24) * 2 + 22}" y="1194" fill="${theme.ink}" font-size="26" font-family="${SANS_FONT}" font-weight="800">DONORS</text>
+    <text x="${SAFE_ZONE.left + (miniWidth + 24) * 2 + 22}" y="1268" fill="${theme.ink}" font-size="76" font-family="${DISPLAY_FONT}">${stats.uniqueDonors}</text>
+    ${card(SAFE_ZONE.left, 1348, 728, 120, theme.quaternary, theme, 2.6)}
+    <text x="${SAFE_ZONE.left + 30}" y="1426" fill="${theme.ink}" font-size="64" font-family="${DISPLAY_FONT}" letter-spacing="1.1">DM ME WITH QUESTIONS</text>
+    <text x="${SAFE_ZONE.left}" y="1442" fill="${theme.muted}" font-size="34" font-family="${MONO_FONT}" textLength="${SAFE_WIDTH}" lengthAdjust="spacingAndGlyphs">friday is the last day of the quarter</text>
     <rect width="${WIDTH}" height="${HEIGHT}" fill="#000" filter="url(#grain)" opacity="0.15" />
     ${safeZoneGuides(theme)}
   `;
 }
 
 function slideTwo(config: StoryCampaignConfig, theme: Theme): string {
-  const stats = [
-    { label: "ACTIVE DONORS", value: String(config.stats.activeDonors) },
-    { label: "CLAIMS / WEEK", value: String(config.stats.claimsThisWeek) },
-    { label: "REDEEM RATE", value: config.stats.redemptionRate },
-    { label: "TOTAL USERS", value: String(config.stats.totalUsers) },
-    { label: "GET LINKED", value: String(config.stats.getAccountsLinked) },
-    { label: "ALL-TIME", value: String(config.stats.allTimeClaims) },
-    { label: "POINTS DIST.", value: String(config.stats.pointsDistributed) },
-    { label: "AVG DON / WK", value: String(config.stats.avgDonationPerWeek) },
-    { label: "AVG PTS/REQ", value: String(config.stats.avgPointsPerRequester) },
-  ];
-
-  const gap = 20;
-  const tileWidth = (WIDTH - SAFE_ZONE.left - SAFE_ZONE.right - gap * 2) / 3;
-  const tileHeight = 178;
-  const startY = 540;
-  const tileColors = [theme.tertiary, theme.secondary, theme.highlight, theme.quaternary, theme.primary];
-
-  const tiles = stats
-    .map((stat, index) => {
-      const row = Math.floor(index / 3);
-      const col = index % 3;
-      const x = SAFE_ZONE.left + col * (tileWidth + gap);
-      const y = startY + row * (tileHeight + gap);
-      const color = tileColors[index % tileColors.length];
-      const tilt = ((index % 2 === 0 ? -0.9 : 0.9) * ((index % 3) + 0.2)).toFixed(2);
-      const valueSize = stat.value.length > 5 ? 62 : 78;
-
-      return `
-        <g transform="rotate(${tilt} ${x + tileWidth / 2} ${y + tileHeight / 2})" filter="url(#hard-shadow)">
-          <rect x="${x}" y="${y}" rx="16" ry="16" width="${tileWidth}" height="${tileHeight}" fill="${color}" stroke="${theme.stroke}" stroke-width="8" />
-          <text x="${x + 18}" y="${y + 52}" fill="${theme.ink}" font-size="24" font-family="${SANS_FONT}" font-weight="800" letter-spacing="0.8">${escapeXml(stat.label)}</text>
-          <text x="${x + 20}" y="${y + 148}" fill="${theme.ink}" font-size="${valueSize}" font-family="${DISPLAY_FONT}">${escapeXml(stat.value)}</text>
-        </g>
-      `;
-    })
-    .join("\n");
-
+  const { stats, display, liveLabel } = config.storyData;
   return `
     ${baseLayer(theme, 202)}
-    ${heroLine("WEEK OF MAR 1 — MAR 8, 2026", SAFE_ZONE.left, 270, 44, theme.primary, theme)}
-    ${heroLine("THE NEED IS REAL.", SAFE_ZONE.left, 382, 74, theme.paper, theme, SAFE_WIDTH - 14)}
-    ${heroLine("THE IMPACT IS REAL.", SAFE_ZONE.left, 464, 74, theme.paper, theme, SAFE_WIDTH - 14)}
-    ${tiles}
-    ${card(SAFE_ZONE.left, 1144, SAFE_WIDTH, 220, theme.tertiary, theme, -1.4)}
-    <text x="${SAFE_ZONE.left + 30}" y="1212" fill="${theme.ink}" font-size="50" font-family="${DISPLAY_FONT}" letter-spacing="0.8">STUDENTS ARE REDEEMING</text>
-    <text x="${SAFE_ZONE.left + 30}" y="1272" fill="${theme.ink}" font-size="50" font-family="${DISPLAY_FONT}" letter-spacing="0.8">SUCCESSFULLY.</text>
-    <text x="${SAFE_ZONE.left + 30}" y="1332" fill="${theme.ink}" font-size="50" font-family="${DISPLAY_FONT}" letter-spacing="0.8">WE NEED MORE DONORS.</text>
-    <text x="${SAFE_ZONE.left}" y="1438" fill="${theme.muted}" font-size="36" font-family="${MONO_FONT}" textLength="${SAFE_WIDTH}" lengthAdjust="spacingAndGlyphs">users ${config.stats.totalUsers} • all-time claims ${config.stats.allTimeClaims}</text>
+    ${heroLine("CLAIMANT VIEW", SAFE_ZONE.left, 270, 44, theme.primary, theme)}
+    ${card(644, 314, 232, 96, theme.quaternary, theme, -10)}
+    <text x="674" y="382" fill="${theme.ink}" font-size="48" font-family="${DISPLAY_FONT}">CLAIM FAST</text>
+    ${heroLine(`${stats.totalUsers} USERS`, SAFE_ZONE.left, 382, 112, theme.paper, theme, SAFE_WIDTH - 14)}
+    ${heroLine("IN SLUGSWAP.", SAFE_ZONE.left, 500, 100, theme.highlight, theme, SAFE_WIDTH - 14)}
+    ${card(SAFE_ZONE.left, 650, 620, 96, theme.paper, theme, 3)}
+    <text x="${SAFE_ZONE.left + 28}" y="716" fill="${theme.ink}" font-size="50" font-family="${DISPLAY_FONT}">${stats.totalUsers} READY TO CLAIM</text>
+    ${card(SAFE_ZONE.left, 758, SAFE_WIDTH, 310, theme.highlight, theme, -2.2)}
+    <text x="${SAFE_ZONE.left + 34}" y="760" fill="${theme.ink}" font-size="28" font-family="${SANS_FONT}" font-weight="800" letter-spacing="1.1">POINTS AVAILABLE THIS WEEK</text>
+    <text x="${SAFE_ZONE.left + 34}" y="950" fill="${theme.ink}" font-size="170" font-family="${DISPLAY_FONT}">${display.availablePointsThisWeek}</text>
+    ${card(SAFE_ZONE.left + 18, 1110, SAFE_WIDTH - 36, 190, theme.tertiary, theme, 3.2)}
+    <text x="${SAFE_ZONE.left + 30}" y="1188" fill="${theme.ink}" font-size="58" font-family="${DISPLAY_FONT}" letter-spacing="0.8">CLAIM WHILE POINTS</text>
+    <text x="${SAFE_ZONE.left + 30}" y="1254" fill="${theme.ink}" font-size="58" font-family="${DISPLAY_FONT}" letter-spacing="0.8">ARE STILL LIVE.</text>
+    <text x="${SAFE_ZONE.left}" y="1382" fill="${theme.muted}" font-size="35" font-family="${MONO_FONT}" textLength="${SAFE_WIDTH}" lengthAdjust="spacingAndGlyphs">${liveLabel.toLowerCase()}</text>
     <rect width="${WIDTH}" height="${HEIGHT}" fill="#000" filter="url(#grain)" opacity="0.16" />
     ${safeZoneGuides(theme)}
   `;
@@ -354,14 +367,16 @@ function slideThree(config: StoryCampaignConfig, theme: Theme): string {
   const pillWidth = (SAFE_WIDTH - 40) / 3;
   return `
     ${baseLayer(theme, 303)}
-    ${heroLine("END-OF-QUARTER PUSH • MARCH 2026", SAFE_ZONE.left, 276, 44, theme.primary, theme)}
-    ${heroLine("DONATE NOW.", SAFE_ZONE.left, 410, 98, theme.paper, theme, SAFE_WIDTH - 8)}
-    ${heroLine("NOW ON iOS +", SAFE_ZONE.left, 516, 92, theme.highlight, theme, SAFE_WIDTH - 8)}
-    ${heroLine("ANDROID + WEB", SAFE_ZONE.left, 614, 90, theme.secondary, theme, SAFE_WIDTH - 8)}
+    ${heroLine("LAST CHANCE TO SHARE", SAFE_ZONE.left, 276, 44, theme.primary, theme)}
+    ${heroLine("DONATE THE", SAFE_ZONE.left, 410, 98, theme.paper, theme, SAFE_WIDTH - 8)}
+    ${heroLine("LEFTOVERS.", SAFE_ZONE.left, 516, 96, theme.highlight, theme, SAFE_WIDTH - 8)}
+    ${heroLine("BEFORE BREAK.", SAFE_ZONE.left, 614, 82, theme.secondary, theme, SAFE_WIDTH - 8)}
     ${card(SAFE_ZONE.left, 760, SAFE_WIDTH, 218, theme.tertiary, theme, 1.6)}
-    <text x="${SAFE_ZONE.left + 32}" y="838" fill="${theme.ink}" font-size="48" font-family="${DISPLAY_FONT}" letter-spacing="0.8">GOT EXTRA POINTS BEFORE</text>
-    <text x="${SAFE_ZONE.left + 32}" y="896" fill="${theme.ink}" font-size="48" font-family="${DISPLAY_FONT}" letter-spacing="0.8">QUARTER ENDS?</text>
-    <text x="${SAFE_ZONE.left + 32}" y="954" fill="${theme.ink}" font-size="56" font-family="${DISPLAY_FONT}" letter-spacing="0.8">PUT THEM TO WORK TODAY.</text>
+    <text x="${SAFE_ZONE.left + 32}" y="830" fill="${theme.ink}" font-size="46" font-family="${DISPLAY_FONT}" letter-spacing="0.8">NO AWKWARD ASK.</text>
+    <text x="${SAFE_ZONE.left + 32}" y="886" fill="${theme.ink}" font-size="46" font-family="${DISPLAY_FONT}" letter-spacing="0.8">NO EXTRA STEPS.</text>
+    <text x="${SAFE_ZONE.left + 32}" y="942" fill="${theme.ink}" font-size="46" font-family="${DISPLAY_FONT}" letter-spacing="0.8">JUST MOVE UNUSED POINTS</text>
+    <text x="${SAFE_ZONE.left + 32}" y="998" fill="${theme.ink}" font-size="46" font-family="${DISPLAY_FONT}" letter-spacing="0.8">TO STUDENTS WHO CAN</text>
+    <text x="${SAFE_ZONE.left + 32}" y="1054" fill="${theme.ink}" font-size="46" font-family="${DISPLAY_FONT}" letter-spacing="0.8">USE THEM THIS WEEK.</text>
     ${card(SAFE_ZONE.left, 1020, pillWidth, 104, theme.paper, theme, -1.2)}
     ${card(SAFE_ZONE.left + pillWidth + 20, 1020, pillWidth, 104, theme.paper, theme, 1.2)}
     ${card(SAFE_ZONE.left + (pillWidth + 20) * 2, 1020, pillWidth, 104, theme.paper, theme, -1.2)}
@@ -370,9 +385,9 @@ function slideThree(config: StoryCampaignConfig, theme: Theme): string {
     <text x="${SAFE_ZONE.left + (pillWidth + 20) * 2 + 86}" y="1084" fill="${theme.ink}" font-size="48" font-family="${DISPLAY_FONT}">WEB</text>
     ${card(SAFE_ZONE.left, 1158, SAFE_WIDTH, 142, theme.primary, theme, -1)}
     <text x="${SAFE_ZONE.left + 28}" y="1248" fill="${theme.ink}" font-size="74" font-family="${DISPLAY_FONT}" textLength="${SAFE_WIDTH - 56}" lengthAdjust="spacingAndGlyphs">${ctaUrl}</text>
-    ${card(SAFE_ZONE.left, 1328, 560, 116, theme.secondary, theme, 1.2)}
-    <text x="${SAFE_ZONE.left + 26}" y="1403" fill="${theme.ink}" font-size="66" font-family="${DISPLAY_FONT}">JOIN + DONATE</text>
-    <text x="${SAFE_ZONE.left}" y="1518" fill="${theme.muted}" font-size="35" font-family="${MONO_FONT}">new: iOS + Android + Web</text>
+    ${card(SAFE_ZONE.left, 1328, 720, 116, theme.secondary, theme, 1.2)}
+    <text x="${SAFE_ZONE.left + 26}" y="1403" fill="${theme.ink}" font-size="62" font-family="${DISPLAY_FONT}">JOIN + DONATE TODAY</text>
+    <text x="${SAFE_ZONE.left}" y="1518" fill="${theme.muted}" font-size="35" font-family="${MONO_FONT}">web + iOS + Android</text>
     <rect width="${WIDTH}" height="${HEIGHT}" fill="#000" filter="url(#grain)" opacity="0.16" />
     ${safeZoneGuides(theme)}
   `;
@@ -404,15 +419,25 @@ async function renderSlide(config: StoryCampaignConfig): Promise<void> {
   console.log(`Generated ${fileName} (${theme.name})`);
 }
 
+async function loadStoryData(): Promise<StoryDataFile> {
+  try {
+    const raw = await fs.readFile(STORY_DATA_PATH, "utf8");
+    return JSON.parse(raw) as StoryDataFile;
+  } catch {
+    return FALLBACK_STORY_DATA;
+  }
+}
+
 async function main(): Promise<void> {
   await fs.mkdir(OUTPUT_DIR, { recursive: true });
+  const storyData = await loadStoryData();
 
   const configs: StoryCampaignConfig[] = (["option-a", "option-b"] as const).flatMap(
     (variant) =>
       ([1, 2, 3] as const).map((slideIndex) => ({
         variant,
         slideIndex,
-        stats: STATS,
+        storyData,
         ctaUrl: CTA_URL,
         messagingMode: "end_of_quarter_donor_drive",
       })),

@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { Anton, Sora, Space_Grotesk } from "next/font/google";
 import { notFound } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
@@ -21,6 +23,38 @@ type Palette = {
   magenta: string;
   gold: string;
   violet: string;
+};
+
+type StoryStats = {
+  activeDonors: number;
+  uniqueDonors: number;
+  claimsThisWeek: number;
+  claimsThisWeekAmount: number;
+  redeemedClaimsThisWeek: number;
+  redeemedAmountThisWeek: number;
+  redemptionRate: string;
+  totalUsers: number;
+  getAccountsLinked: number;
+  allTimeClaims: number;
+  pointsDistributed: number;
+  weeklyInflow: number;
+  availablePointsThisWeek: number;
+  daysLeftInQuarter: number;
+};
+
+type StoryDataFile = {
+  generatedAt: string;
+  liveLabel: string;
+  weekStart: string;
+  weekEnd: string;
+  stats: StoryStats;
+  display: {
+    pointsDistributed: string;
+    weeklyInflow: string;
+    claimsThisWeekAmount: string;
+    redeemedAmountThisWeek: string;
+    availablePointsThisWeek: string;
+  };
 };
 
 const palettes: Record<Variant, Palette> = {
@@ -64,17 +98,103 @@ const edgeShapes = [
   { top: "92%", left: "70%", w: 146, h: 98, rot: -25 },
 ];
 
-const statsTiles = [
-  { label: "ACTIVE DONORS", value: "1" },
-  { label: "CLAIMS / WEEK", value: "12" },
-  { label: "REDEEM RATE", value: "100%" },
-  { label: "TOTAL USERS", value: "21" },
-  { label: "GET LINKED", value: "9" },
-  { label: "ALL-TIME", value: "28" },
-  { label: "POINTS DIST.", value: "497.8" },
-  { label: "AVG DON / WK", value: "30" },
-  { label: "AVG PTS/REQ", value: "19.3" },
-];
+const STORY_DATA_PATH = path.join(
+  process.cwd(),
+  "public/instagram-stories/end-of-quarter-mar-2026/story-data.json",
+);
+
+const FALLBACK_STORY_DATA: StoryDataFile = {
+  generatedAt: "2026-03-16T16:34:07.377Z",
+  liveLabel: "LIVE DATA MAR 16",
+  weekStart: "2026-03-16T00:00:00.000Z",
+  weekEnd: "2026-03-23T00:00:00.000Z",
+  stats: {
+    activeDonors: 8,
+    uniqueDonors: 8,
+    claimsThisWeek: 3,
+    claimsThisWeekAmount: 33,
+    redeemedClaimsThisWeek: 3,
+    redeemedAmountThisWeek: 33,
+    redemptionRate: "100%",
+    totalUsers: 163,
+    getAccountsLinked: 48,
+    allTimeClaims: 76,
+    pointsDistributed: 1413.5,
+    weeklyInflow: 1900,
+    availablePointsThisWeek: 1867.1,
+    daysLeftInQuarter: 4,
+  },
+  display: {
+    pointsDistributed: "1,413.5",
+    weeklyInflow: "1,900",
+    claimsThisWeekAmount: "33.0",
+    redeemedAmountThisWeek: "33.0",
+    availablePointsThisWeek: "1,867.1",
+  },
+};
+
+async function loadStoryData(): Promise<StoryDataFile> {
+  try {
+    const raw = await fs.readFile(STORY_DATA_PATH, "utf8");
+    return JSON.parse(raw) as StoryDataFile;
+  } catch {
+    return FALLBACK_STORY_DATA;
+  }
+}
+
+function BurstTag({
+  children,
+  bg,
+  color = "#05060B",
+  className,
+  style,
+}: {
+  children: ReactNode;
+  bg: string;
+  color?: string;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <div
+      className={`inline-flex items-center justify-center border-[5px] border-black/90 px-7 py-4 shadow-[0_8px_0_#08090f] ${className ?? ""}`}
+      style={{
+        background: bg,
+        color,
+        clipPath:
+          "polygon(12% 0%, 22% 11%, 38% 0%, 49% 12%, 66% 0%, 76% 13%, 89% 4%, 100% 19%, 91% 36%, 100% 49%, 89% 63%, 100% 80%, 85% 93%, 68% 86%, 56% 100%, 42% 87%, 25% 100%, 16% 84%, 0% 79%, 10% 58%, 0% 43%, 12% 27%, 0% 11%)",
+        ...style,
+      }}
+    >
+      <span className={`${anton.className} text-[54px] leading-none tracking-tight`}>{children}</span>
+    </div>
+  );
+}
+
+function TapeStrip({
+  children,
+  bg,
+  color = "#05060B",
+  className,
+  style,
+}: {
+  children: ReactNode;
+  bg: string;
+  color?: string;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <div
+      className={`inline-flex border-[5px] border-black/90 px-6 py-3 shadow-[0_8px_0_#08090f] ${className ?? ""}`}
+      style={{ background: bg, color, ...style }}
+    >
+      <span className={`${space.className} text-[34px] font-extrabold tracking-[0.18em] uppercase`}>
+        {children}
+      </span>
+    </div>
+  );
+}
 
 function StackCard({
   className,
@@ -118,10 +238,13 @@ function Headline({
 function StoryCanvas({
   palette,
   slide,
+  storyData,
 }: {
   palette: Palette;
   slide: Slide;
+  storyData: StoryDataFile;
 }) {
+  const { stats, display, liveLabel } = storyData;
   const shapeColors = [
     palette.gold,
     palette.cyan,
@@ -172,49 +295,76 @@ function StoryCanvas({
 
       <div className="absolute left-[72px] right-[72px] top-[220px] bottom-[260px]">
         {slide === "1" && (
-          <section className="space-y-8">
-            <p
-              className={`${space.className} text-[52px] font-bold tracking-tight`}
-              style={{ color: palette.lime }}
-            >
-              ONLY 1 MONTH LEFT IN THE QUARTER
-            </p>
+          <section className="relative space-y-7">
+            <div className="flex items-start justify-between gap-4">
+              <TapeStrip
+                bg={palette.lime}
+                className="rotate-[-1.8deg]"
+                style={{ maxWidth: "72%" }}
+              >
+                {stats.daysLeftInQuarter} DAYS LEFT
+              </TapeStrip>
+              <BurstTag bg={palette.orange} className="translate-y-2 rotate-[7deg]">
+                FRIDAY
+              </BurstTag>
+            </div>
+            <div className="absolute right-[126px] top-[110px] rotate-[-9deg]">
+              <BurstTag bg={palette.magenta}>FINAL DROP</BurstTag>
+            </div>
 
-            <div className="space-y-2">
-              <Headline color={palette.paper} className="text-[128px]">
-                ON TRACK TO USE
+            <div className="space-y-1">
+              <Headline color={palette.paper} className="text-[138px] -rotate-[1deg]">
+                EVERYTHING
               </Headline>
-              <Headline color={palette.cyan} className="text-[120px]">
-                ALL YOUR
+              <Headline color={palette.lime} className="text-[132px] rotate-[1deg] -mt-2">
+                MUST GO.
               </Headline>
-              <Headline color={palette.orange} className="text-[118px]">
-                SLUGPOINTS?
+              <Headline color={palette.orange} className="text-[108px] -rotate-[1.5deg] -mt-1">
+                EXTRA POINTS TOO.
               </Headline>
             </div>
 
             <StackCard
-              className="px-9 py-7"
-              style={{ background: palette.orange, transform: "rotate(-1.8deg)" }}
+              className="inline-block px-7 py-4"
+              style={{ background: palette.magenta, transform: "rotate(3.2deg)" }}
             >
-              <p
-                className={`${anton.className} text-[66px] leading-[0.93] tracking-tight`}
-                style={{ color: palette.ink }}
-              >
-                DONATE EXTRA POINTS
-                <br />
-                TO OTHER STUDENTS
-                <br />
-                THROUGH SLUGSWAP.
+              <p className={`${anton.className} text-[56px] leading-none text-black`}>
+                {stats.uniqueDonors} DONORS ALREADY IN
               </p>
             </StackCard>
 
-            <div className="grid grid-cols-3 gap-5">
+            <StackCard
+              className="px-9 py-7"
+              style={{ background: palette.paper, transform: "rotate(-3deg)" }}
+            >
+              <p
+                className={`${anton.className} text-[64px] leading-[0.92] tracking-tight`}
+                style={{ color: palette.ink }}
+              >
+                {stats.totalUsers} STUDENTS
+                <br />
+                ARE ON SLUGSWAP.
+                <br />
+                {stats.uniqueDonors} HAVE
+                <br />
+                ALREADY DONATED.
+              </p>
+            </StackCard>
+
+            <div className="grid grid-cols-3 gap-5 pt-1">
               {[
-                { label: "ACTIVE DONORS", value: "1", bg: palette.gold },
-                { label: "CLAIMS / WEEK", value: "12", bg: palette.cyan },
-                { label: "REDEEM RATE", value: "100%", bg: palette.lime },
-              ].map((item) => (
-                <StackCard key={item.label} className="px-4 py-3" style={{ background: item.bg }}>
+                { label: "DAYS LEFT", value: String(stats.daysLeftInQuarter), bg: palette.gold },
+                { label: "USERS", value: String(stats.totalUsers), bg: palette.cyan },
+                { label: "DONORS", value: String(stats.uniqueDonors), bg: palette.lime },
+              ].map((item, index) => (
+                <StackCard
+                  key={item.label}
+                  className="px-4 py-3"
+                  style={{
+                    background: item.bg,
+                    transform: `rotate(${index === 0 ? "-2.4deg" : index === 1 ? "1.4deg" : "-1.1deg"}) translateY(${index === 1 ? "8px" : "0"})`,
+                  }}
+                >
                   <p className={`${sora.className} text-[22px] font-extrabold leading-none text-black`}>
                     {item.label}
                   </p>
@@ -225,103 +375,93 @@ function StoryCanvas({
 
             <StackCard
               className="inline-block px-8 py-4"
-              style={{ background: palette.gold, transform: "rotate(-1deg)" }}
+              style={{ background: palette.magenta, transform: "rotate(2.6deg)" }}
             >
-              <p className={`${anton.className} text-[76px] text-black`}>DONATE ON SLUGSWAP</p>
+              <p className={`${anton.className} text-[68px] text-black`}>DM ME WITH QUESTIONS</p>
             </StackCard>
 
             <p className={`${space.className} text-[40px] font-semibold`} style={{ color: `${palette.paper}B3` }}>
-              now on Web + Android + iOS
+              friday is the last day of the quarter
             </p>
           </section>
         )}
 
         {slide === "2" && (
-          <section className="space-y-6">
-            <p
-              className={`${space.className} text-[52px] font-bold tracking-tight`}
-              style={{ color: palette.gold }}
-            >
-              WEEK OF MAR 1 — MAR 8, 2026
-            </p>
-
-            <div className="space-y-1">
-              <Headline color={palette.paper} className="text-[106px]">
-                THE NEED IS REAL.
-              </Headline>
-              <Headline color={palette.paper} className="text-[106px]">
-                THE IMPACT IS REAL.
-              </Headline>
+          <section className="relative space-y-6">
+            <div className="flex items-start justify-between gap-4">
+              <TapeStrip bg={palette.gold} className="rotate-[-1.3deg]">
+                CLAIMANT VIEW
+              </TapeStrip>
+              <BurstTag bg={palette.cyan} className="rotate-[8deg]">
+                AVAILABLE NOW
+              </BurstTag>
+            </div>
+            <div className="absolute right-[120px] top-[118px] rotate-[-11deg]">
+              <BurstTag bg={palette.magenta}>CLAIM FAST</BurstTag>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 pt-2">
-              {statsTiles.map((tile, idx) => {
-                const tilePalette = [
-                  palette.orange,
-                  palette.cyan,
-                  palette.lime,
-                  palette.magenta,
-                  palette.gold,
-                  palette.orange,
-                  palette.cyan,
-                  palette.lime,
-                  palette.magenta,
-                ];
-                return (
-                  <StackCard
-                    key={`${tile.label}-${tile.value}`}
-                    className="px-4 py-3"
-                    style={{
-                      background: tilePalette[idx],
-                      transform: `rotate(${idx % 2 === 0 ? "-0.8deg" : "0.8deg"})`,
-                    }}
-                  >
-                    <p className={`${sora.className} text-[21px] font-extrabold leading-none text-black`}>
-                      {tile.label}
-                    </p>
-                    <p className={`${anton.className} text-[70px] leading-none text-black`}>{tile.value}</p>
-                  </StackCard>
-                );
-              })}
+            <div className="space-y-1">
+              <Headline color={palette.paper} className="text-[130px] -rotate-[1deg]">
+                {stats.totalUsers} USERS
+              </Headline>
+              <Headline color={palette.lime} className="text-[118px] rotate-[1deg] -mt-2">
+                IN SLUGSWAP.
+              </Headline>
             </div>
 
             <StackCard
-              className="px-7 py-5"
-              style={{ background: palette.orange, transform: "rotate(-1deg)" }}
+              className="inline-block px-6 py-3"
+              style={{ background: palette.paper, transform: "rotate(2.8deg)" }}
             >
-              <p className={`${anton.className} text-[62px] leading-[0.92] text-black`}>
-                STUDENTS ARE REDEEMING
+              <p className={`${anton.className} text-[48px] leading-none text-black`}>{stats.totalUsers} READY TO CLAIM</p>
+            </StackCard>
+
+            <StackCard className="px-8 py-8" style={{ background: palette.lime, transform: "rotate(-2.2deg)" }}>
+              <p className={`${sora.className} text-[28px] font-extrabold tracking-[0.16em] text-black`}>
+                POINTS AVAILABLE THIS WEEK
+              </p>
+              <p className={`${anton.className} mt-2 text-[160px] leading-none text-black`}>
+                {display.availablePointsThisWeek}
+              </p>
+            </StackCard>
+
+            <StackCard
+              className="px-7 py-6"
+              style={{ background: palette.orange, transform: "rotate(3.2deg)" }}
+            >
+              <p className={`${anton.className} text-[60px] leading-[0.92] text-black`}>
+                CLAIM WHILE POINTS
                 <br />
-                SUCCESSFULLY.
-                <br />
-                WE NEED MORE DONORS.
+                ARE STILL LIVE.
               </p>
             </StackCard>
 
             <p className={`${space.className} text-[36px] font-semibold`} style={{ color: `${palette.paper}A8` }}>
-              users 21 • all-time claims 28
+              {liveLabel.toLowerCase()}
             </p>
           </section>
         )}
 
         {slide === "3" && (
           <section className="space-y-6">
-            <p
-              className={`${space.className} text-[50px] font-bold tracking-tight`}
-              style={{ color: palette.gold }}
-            >
-              ONLY 1 MONTH LEFT • MARCH 2026
-            </p>
+            <div className="flex items-start justify-between gap-4">
+              <TapeStrip bg={palette.gold} className="rotate-[-1.3deg]">
+                LAST CHANCE TO SHARE
+              </TapeStrip>
+              <BurstTag bg={palette.magenta} className="rotate-[8deg]">
+                THIS WEEK
+              </BurstTag>
+            </div>
 
             <div className="space-y-1">
               <Headline color={palette.paper} className="text-[126px]">
-                DONATE NOW.
+                DONATE THE
               </Headline>
-              <Headline color={palette.lime} className="text-[116px]">
-                NOW ON WEB +
+              <Headline color={palette.lime} className="text-[118px]">
+                LEFTOVERS.
               </Headline>
-              <Headline color={palette.cyan} className="text-[116px]">
-                ANDROID
+              <Headline color={palette.cyan} className="text-[98px]">
+                BEFORE BREAK.
               </Headline>
             </div>
 
@@ -329,12 +469,16 @@ function StoryCanvas({
               className="px-8 py-6"
               style={{ background: palette.orange, transform: "rotate(1.5deg)" }}
             >
-              <p className={`${anton.className} text-[62px] leading-[0.92] text-black`}>
-                GOT EXTRA POINTS BEFORE
+              <p className={`${anton.className} text-[58px] leading-[0.92] text-black`}>
+                NO AWKWARD ASK.
                 <br />
-                QUARTER ENDS?
+                NO EXTRA STEPS.
                 <br />
-                PUT THEM TO WORK TODAY.
+                JUST MOVE UNUSED
+                <br />
+                POINTS TO STUDENTS
+                <br />
+                WHO CAN USE THEM.
               </p>
             </StackCard>
 
@@ -351,11 +495,11 @@ function StoryCanvas({
             </StackCard>
 
             <StackCard className="inline-block px-8 py-3" style={{ background: palette.cyan }}>
-              <p className={`${anton.className} text-[74px] text-black`}>JOIN + DONATE</p>
+              <p className={`${anton.className} text-[70px] text-black`}>JOIN + DONATE TODAY</p>
             </StackCard>
 
             <p className={`${space.className} text-[34px] font-semibold`} style={{ color: `${palette.paper}A8` }}>
-              also available on iOS
+              web + iOS + Android
             </p>
           </section>
         )}
@@ -370,6 +514,7 @@ export default async function IGStoryPage({
   params: Promise<{ variant: string; slide: string }>;
 }) {
   const resolved = await params;
+  const storyData = await loadStoryData();
   const variant = resolved.variant as Variant;
   const slide = resolved.slide as Slide;
 
@@ -380,6 +525,7 @@ export default async function IGStoryPage({
     <StoryCanvas
       palette={palettes[variant]}
       slide={slide}
+      storyData={storyData}
     />
   );
 }

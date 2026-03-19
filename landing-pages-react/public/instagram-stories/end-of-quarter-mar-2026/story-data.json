@@ -1,0 +1,29 @@
+{
+  "generatedAt": "2026-03-16T16:53:25.946Z",
+  "liveLabel": "LIVE DATA MAR 16",
+  "weekStart": "2026-03-16T00:00:00.000Z",
+  "weekEnd": "2026-03-23T00:00:00.000Z",
+  "stats": {
+    "activeDonors": 8,
+    "uniqueDonors": 12,
+    "claimsThisWeek": 3,
+    "claimsThisWeekAmount": 32.95,
+    "redeemedClaimsThisWeek": 3,
+    "redeemedAmountThisWeek": 32.95,
+    "redemptionRate": "100%",
+    "totalUsers": 163,
+    "getAccountsLinked": 48,
+    "allTimeClaims": 76,
+    "pointsDistributed": 1413.53,
+    "weeklyInflow": 1900,
+    "availablePointsThisWeek": 1867.05,
+    "daysLeftInQuarter": 4
+  },
+  "display": {
+    "pointsDistributed": "1,413.5",
+    "weeklyInflow": "1,900",
+    "claimsThisWeekAmount": "33.0",
+    "redeemedAmountThisWeek": "33.0",
+    "availablePointsThisWeek": "1,867.1"
+  }
+}

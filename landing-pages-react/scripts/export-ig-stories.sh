@@ -20,6 +20,9 @@ trap cleanup EXIT
 
 cd "$ROOT_DIR"
 
+# Pull fresh production stats from Neon and persist them for the story render.
+npx dotenv-cli -e ../.env -- npx tsx scripts/write-instagram-story-data.ts
+
 # Build and serve in production mode to avoid Next.js dev indicator badges in exports.
 npm run build >"$BUILD_LOG" 2>&1
 
