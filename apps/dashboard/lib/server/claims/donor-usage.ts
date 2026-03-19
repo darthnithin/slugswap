@@ -1,6 +1,6 @@
 import { and, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/server/db";
-import { claimCodes } from "@/lib/server/schema";
+import { claimCodes, donations, getCredentials } from "@/lib/server/schema";
 import { getPacificWeekWindow, type WeekWindow } from "@/lib/server/timezone";
 
 export type DonorCapInput = {
@@ -165,4 +165,35 @@ export async function getDonorWeeklyUsageMap(
     usageMap,
     weekWindow: window,
   };
+}
+
+export async function getActiveDonorRemainingTotal(now = new Date()): Promise<number> {
+  const donorRows = await db
+    .select({
+      donorUserId: donations.userId,
+      weeklyAmount: donations.amount,
+    })
+    .from(donations)
+    .innerJoin(getCredentials, eq(getCredentials.userId, donations.userId))
+    .where(eq(donations.status, "active"));
+
+  if (donorRows.length === 0) {
+    return 0;
+  }
+
+  const donorCaps = donorRows.map((row) => ({
+    donorUserId: row.donorUserId,
+    capAmount: toNumeric(row.weeklyAmount),
+  }));
+
+  const { usageMap } = await getDonorWeeklyUsageMap(donorCaps, now);
+
+  let totalRemaining = 0;
+  for (const donor of donorCaps) {
+    const usage = usageMap.get(donor.donorUserId);
+    if (!usage) continue;
+    totalRemaining += Math.max(0, usage.remainingThisWeek);
+  }
+
+  return totalRemaining;
 }

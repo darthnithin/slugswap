@@ -104,6 +104,11 @@ async function fetchWithFallback(url: string, init?: RequestInit): Promise<Respo
 
 if (__DEV__) {
   console.log('Resolved API_BASE_URL:', API_BASE_URL);
+  if (/^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(API_BASE_URL)) {
+    console.log('Using local API backend:', API_BASE_URL);
+  } else {
+    console.log('Using remote API backend:', API_BASE_URL);
+  }
 }
 
 export type DonorImpact = {

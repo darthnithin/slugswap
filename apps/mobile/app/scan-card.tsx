@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PDF417Barcode } from '../components/PDF417Barcode';
@@ -9,7 +9,6 @@ import { supabase } from '../../../lib/supabase';
 import {
   checkRedemption,
   generateClaimCode,
-  getRequesterAllowance,
   refreshClaimCode,
   type CheckoutRail,
   type ClaimGenerationFailureReason,
@@ -79,9 +78,15 @@ function formatDisplayName(email: string | null, fullName?: string | null) {
 
 export default function ScanCardScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ userId?: string; displayName?: string }>();
   const insets = useSafeAreaInsets();
-  const [displayName, setDisplayName] = useState('Loading...');
-  const [userId, setUserId] = useState<string | null>(null);
+  const initialDisplayName =
+    typeof params.displayName === 'string' && params.displayName.trim()
+      ? params.displayName
+      : 'Loading...';
+  const initialUserId = typeof params.userId === 'string' && params.userId.trim() ? params.userId : null;
+  const [displayName, setDisplayName] = useState(initialDisplayName);
+  const [userId, setUserId] = useState<string | null>(initialUserId);
   const [currentCode, setCurrentCode] = useState<ClaimCode | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
@@ -182,30 +187,37 @@ export default function ScanCardScreen() {
     setRedemptionMessage(null);
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      let resolvedUserId = initialUserId;
 
-      if (!user) {
+      if (!resolvedUserId) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          Alert.alert('Error', 'Please sign in first');
+          return;
+        }
+
+        resolvedUserId = user.id;
+        setDisplayName(
+          formatDisplayName(
+            user.email ?? null,
+            typeof user.user_metadata?.full_name === 'string'
+              ? user.user_metadata.full_name
+              : null
+          )
+        );
+      }
+
+      if (!resolvedUserId) {
         Alert.alert('Error', 'Please sign in first');
         return;
       }
 
-      setUserId(user.id);
-      setDisplayName(
-        formatDisplayName(
-          user.email ?? null,
-          typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : null
-        )
-      );
+      setUserId(resolvedUserId);
 
-      const allowance = await getRequesterAllowance(user.id);
-      if (allowance.remainingAmount < DEFAULT_CLAIM_AMOUNT) {
-        setMessage(`You need at least ${DEFAULT_CLAIM_AMOUNT} points remaining to generate a code.`);
-        return;
-      }
-
-      const result = await generateClaimCode(user.id, DEFAULT_CLAIM_AMOUNT);
+      const result = await generateClaimCode(resolvedUserId, DEFAULT_CLAIM_AMOUNT);
       setCurrentCode({
         ...result.claimCode,
         recommendedRail: result.claimCode.recommendedRail ?? 'points-or-bucks',

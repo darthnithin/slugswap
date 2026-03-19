@@ -4,9 +4,14 @@ import { getCredentials } from "@/lib/server/schema";
 import { decryptSecret } from "./credentials";
 import { authenticatePin, verifyPin } from "./tools";
 
+function durationMs(startedAt: number): number {
+  return Date.now() - startedAt;
+}
+
 export async function getActiveGetSession(
   userId: string
 ): Promise<{ sessionId: string; deviceId: string }> {
+  const startedAt = Date.now();
   const credential = await db.query.getCredentials.findFirst({
     where: eq(getCredentials.userId, userId),
   });
@@ -16,8 +21,17 @@ export async function getActiveGetSession(
   }
 
   const pin = decryptSecret(credential.encryptedPin);
+  const authStartedAt = Date.now();
   const sessionId = await authenticatePin(pin, credential.deviceId);
+  const verifyStartedAt = Date.now();
   await verifyPin(sessionId, credential.deviceId, pin);
+
+  console.info("[get.session.timing]", {
+    userId,
+    authMs: durationMs(authStartedAt),
+    verifyMs: durationMs(verifyStartedAt),
+    totalMs: durationMs(startedAt),
+  });
 
   return { sessionId, deviceId: credential.deviceId };
 }

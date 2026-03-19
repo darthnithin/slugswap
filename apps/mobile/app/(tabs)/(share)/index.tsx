@@ -530,7 +530,13 @@ export default function DonorScreen() {
   const donorName = userDisplayName;
   const handleHeroAction = () => {
     if (isGetLinked) {
-      router.push('/scan-card');
+      router.push({
+        pathname: '/scan-card',
+        params: {
+          userId: userId ?? undefined,
+          displayName: donorName,
+        },
+      });
       return;
     }
 
