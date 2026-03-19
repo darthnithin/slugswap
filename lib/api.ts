@@ -266,11 +266,12 @@ export async function getRequesterAllowance(userId: string) {
   return response.json();
 }
 
-export async function generateClaimCode(userId: string, amount: number) {
+export async function generateClaimCode(amount: number) {
+  const headers = await getAuthHeaders();
   const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, amount }),
+    headers,
+    body: JSON.stringify({ amount }),
   });
 
   if (!response.ok) {
@@ -283,8 +284,11 @@ export async function generateClaimCode(userId: string, amount: number) {
   return response.json() as Promise<{ success: boolean; claimCode: ClaimCodePayload }>;
 }
 
-export async function getClaimHistory(userId: string) {
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/history?userId=${userId}`);
+export async function getClaimHistory() {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/history`, {
+    headers,
+  });
 
   if (!response.ok) {
     const errorMessage = await readApiError(response, 'Failed to fetch claim history');
@@ -294,11 +298,12 @@ export async function getClaimHistory(userId: string) {
   return response.json();
 }
 
-export async function refreshClaimCode(userId: string, claimCodeId: string) {
+export async function refreshClaimCode(claimCodeId: string) {
+  const headers = await getAuthHeaders();
   const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/refresh`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, claimCodeId }),
+    headers,
+    body: JSON.stringify({ claimCodeId }),
   });
 
   if (!response.ok) {
@@ -312,11 +317,12 @@ export async function refreshClaimCode(userId: string, claimCodeId: string) {
   }>;
 }
 
-export async function checkRedemption(userId: string, claimCodeId: string) {
+export async function checkRedemption(claimCodeId: string) {
+  const headers = await getAuthHeaders();
   const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/check-redemption`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, claimCodeId }),
+    headers,
+    body: JSON.stringify({ claimCodeId }),
   });
 
   if (!response.ok) {
@@ -331,11 +337,12 @@ export async function checkRedemption(userId: string, claimCodeId: string) {
   }>;
 }
 
-export async function deleteClaimCode(userId: string, claimCodeId: string) {
+export async function deleteClaimCode(claimCodeId: string) {
+  const headers = await getAuthHeaders();
   const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/delete`, {
     method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, claimCodeId }),
+    headers,
+    body: JSON.stringify({ claimCodeId }),
   });
 
   if (!response.ok) {

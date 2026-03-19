@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient, type User } from "@supabase/supabase-js";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
@@ -166,6 +167,67 @@ function getCurrentWeek() {
   return { weekStart, weekEnd };
 }
 
+function getSupabaseClient() {
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase environment variables not configured");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
+
+function unauthorizedResponse(message = "Unauthorized") {
+  return NextResponse.json({ error: message }, { status: 401 });
+}
+
+async function authenticateAppUser(
+  req: NextRequest
+): Promise<{ user: User } | { response: NextResponse }> {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader) {
+    return { response: unauthorizedResponse() };
+  }
+
+  const token = authHeader.replace("Bearer ", "").trim();
+  if (!token) {
+    return { response: unauthorizedResponse("Invalid token") };
+  }
+
+  const supabase = getSupabaseClient();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser(token);
+
+  if (error || !user?.id) {
+    return { response: unauthorizedResponse("Invalid token") };
+  }
+
+  return { user };
+}
+
+async function syncAuthenticatedUser(user: User) {
+  await db
+    .insert(schema.users)
+    .values({
+      id: user.id,
+      email: user.email || `${user.id}@unknown.local`,
+      name: user.user_metadata?.name || null,
+      avatarUrl: user.user_metadata?.avatar_url || null,
+    })
+    .onConflictDoUpdate({
+      target: schema.users.id,
+      set: {
+        email: user.email || `${user.id}@unknown.local`,
+        name: user.user_metadata?.name || null,
+        avatarUrl: user.user_metadata?.avatar_url || null,
+        updatedAt: new Date(),
+      },
+    });
+}
+
 async function handleGenerate(req: NextRequest) {
   if (req.method !== "POST") {
     return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
@@ -174,13 +236,19 @@ async function handleGenerate(req: NextRequest) {
   const requestStartedAt = Date.now();
 
   try {
-    const { userId, amount } = (await req.json()) as {
-      userId?: string;
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
+    }
+    await syncAuthenticatedUser(auth.user);
+
+    const { amount } = (await req.json()) as {
       amount?: number | string;
     };
+    const userId = auth.user.id;
 
-    if (!userId || !amount) {
-      return NextResponse.json({ error: "Missing userId or amount" }, { status: 400 });
+    if (!amount) {
+      return NextResponse.json({ error: "Missing amount" }, { status: 400 });
     }
 
     const claimAmount = parseFloat(String(amount));
@@ -207,8 +275,22 @@ async function handleGenerate(req: NextRequest) {
           allocatedAmount: "0",
           remainingAmount: "0",
         })
+        .onConflictDoNothing({ target: schema.weeklyPools.weekStart })
         .returning();
-      weeklyPool = [newPool];
+
+      if (newPool) {
+        weeklyPool = [newPool];
+      } else {
+        weeklyPool = await db
+          .select()
+          .from(schema.weeklyPools)
+          .where(eq(schema.weeklyPools.weekStart, weekStart))
+          .limit(1);
+      }
+
+      if (weeklyPool.length === 0) {
+        throw new Error("Failed to load weekly pool");
+      }
     }
 
     let userAllowance = await db
@@ -435,10 +517,11 @@ async function handleHistory(req: NextRequest) {
   }
 
   try {
-    const userId = new URL(req.url).searchParams.get("userId");
-    if (!userId) {
-      return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
     }
+    const userId = auth.user.id;
 
     const claimCodes = await db
       .select()
@@ -474,13 +557,19 @@ async function handleRefresh(req: NextRequest) {
   }
 
   try {
-    const { userId, claimCodeId } = (await req.json()) as {
-      userId?: string;
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
+    }
+
+    const { claimCodeId } = (await req.json()) as {
       claimCodeId?: string;
     };
-    if (!userId || !claimCodeId) {
+    const userId = auth.user.id;
+
+    if (!claimCodeId) {
       return NextResponse.json(
-        { error: "Missing userId or claimCodeId" },
+        { error: "Missing claimCodeId" },
         { status: 400 }
       );
     }
@@ -554,14 +643,19 @@ async function handleDelete(req: NextRequest) {
   }
 
   try {
-    const { userId, claimCodeId } = (await req.json()) as {
-      userId?: string;
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
+    }
+
+    const { claimCodeId } = (await req.json()) as {
       claimCodeId?: string;
     };
+    const userId = auth.user.id;
 
-    if (!userId || !claimCodeId) {
+    if (!claimCodeId) {
       return NextResponse.json(
-        { error: "Missing userId or claimCodeId" },
+        { error: "Missing claimCodeId" },
         { status: 400 }
       );
     }
@@ -690,13 +784,19 @@ async function handleCheckRedemption(req: NextRequest) {
   }
 
   try {
-    const { userId, claimCodeId } = (await req.json()) as {
-      userId?: string;
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
+    }
+
+    const { claimCodeId } = (await req.json()) as {
       claimCodeId?: string;
     };
-    if (!userId || !claimCodeId) {
+    const userId = auth.user.id;
+
+    if (!claimCodeId) {
       return NextResponse.json(
-        { error: "Missing userId or claimCodeId" },
+        { error: "Missing claimCodeId" },
         { status: 400 }
       );
     }

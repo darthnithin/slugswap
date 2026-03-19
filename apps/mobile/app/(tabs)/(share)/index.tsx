@@ -527,16 +527,9 @@ export default function DonorScreen() {
     );
   }
 
-  const donorName = userDisplayName;
   const handleHeroAction = () => {
     if (isGetLinked) {
-      router.push({
-        pathname: '/scan-card',
-        params: {
-          userId: userId ?? undefined,
-          displayName: donorName,
-        },
-      });
+      router.push('/scan-card');
       return;
     }
 
@@ -570,7 +563,7 @@ export default function DonorScreen() {
             </View>
           </View>
           <View style={styles.passContent}>
-            <Text style={styles.passName}>{donorName}</Text>
+            <Text style={styles.passName}>{userDisplayName}</Text>
 
             <Pressable
               onPress={handleHeroAction}

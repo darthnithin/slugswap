@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PDF417Barcode } from '../components/PDF417Barcode';
@@ -78,15 +78,9 @@ function formatDisplayName(email: string | null, fullName?: string | null) {
 
 export default function ScanCardScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ userId?: string; displayName?: string }>();
   const insets = useSafeAreaInsets();
-  const initialDisplayName =
-    typeof params.displayName === 'string' && params.displayName.trim()
-      ? params.displayName
-      : 'Loading...';
-  const initialUserId = typeof params.userId === 'string' && params.userId.trim() ? params.userId : null;
-  const [displayName, setDisplayName] = useState(initialDisplayName);
-  const [userId, setUserId] = useState<string | null>(initialUserId);
+  const [displayName, setDisplayName] = useState('Loading...');
+  const [userId, setUserId] = useState<string | null>(null);
   const [currentCode, setCurrentCode] = useState<ClaimCode | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
@@ -110,7 +104,7 @@ export default function ScanCardScreen() {
       if (diff <= 0) {
         if (userId) {
           try {
-            const result = await checkRedemption(userId, currentCode.id);
+            const result = await checkRedemption(currentCode.id);
             if (result.redeemed) {
               setCurrentCode(null);
               setTimeRemaining('');
@@ -146,7 +140,7 @@ export default function ScanCardScreen() {
       setRefreshingCode(true);
 
       try {
-        const result = await refreshClaimCode(userId, currentCode.id);
+        const result = await refreshClaimCode(currentCode.id);
         if (result.claimCode.status === 'redeemed') {
           setCurrentCode(null);
           setTimeRemaining('');
@@ -187,37 +181,26 @@ export default function ScanCardScreen() {
     setRedemptionMessage(null);
 
     try {
-      let resolvedUserId = initialUserId;
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      if (!resolvedUserId) {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-
-        if (!user) {
-          Alert.alert('Error', 'Please sign in first');
-          return;
-        }
-
-        resolvedUserId = user.id;
-        setDisplayName(
-          formatDisplayName(
-            user.email ?? null,
-            typeof user.user_metadata?.full_name === 'string'
-              ? user.user_metadata.full_name
-              : null
-          )
-        );
-      }
-
-      if (!resolvedUserId) {
+      if (!user) {
         Alert.alert('Error', 'Please sign in first');
         return;
       }
 
-      setUserId(resolvedUserId);
+      setUserId(user.id);
+      setDisplayName(
+        formatDisplayName(
+          user.email ?? null,
+          typeof user.user_metadata?.full_name === 'string'
+            ? user.user_metadata.full_name
+            : null
+        )
+      );
 
-      const result = await generateClaimCode(resolvedUserId, DEFAULT_CLAIM_AMOUNT);
+      const result = await generateClaimCode(DEFAULT_CLAIM_AMOUNT);
       setCurrentCode({
         ...result.claimCode,
         recommendedRail: result.claimCode.recommendedRail ?? 'points-or-bucks',

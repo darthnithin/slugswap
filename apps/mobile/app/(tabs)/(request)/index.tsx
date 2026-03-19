@@ -225,7 +225,7 @@ export default function RequesterScreen() {
       if (diff <= 0) {
         if (userId) {
           try {
-            const result = await checkRedemption(userId, currentCode.id);
+            const result = await checkRedemption(currentCode.id);
             if (result.redeemed) {
               setCurrentCode(null);
               setTimeRemaining('');
@@ -265,7 +265,7 @@ export default function RequesterScreen() {
       setRefreshingCode(true);
 
       try {
-        const result = await refreshClaimCode(userId, currentCode.id);
+        const result = await refreshClaimCode(currentCode.id);
         if (result.claimCode.status === 'redeemed') {
           setCurrentCode(null);
           setTimeRemaining('');
@@ -322,7 +322,7 @@ export default function RequesterScreen() {
         setPoolExhaustedMessage(null);
       }
 
-      const historyData = await getClaimHistory(user.id);
+      const historyData = await getClaimHistory();
       setClaimHistory(historyData.claims);
     } catch (error) {
       console.error('Error loading allowance:', error);
@@ -350,7 +350,7 @@ export default function RequesterScreen() {
 
     setGenerating(true);
     try {
-      const result = await generateClaimCode(userId, DEFAULT_CLAIM_AMOUNT);
+      const result = await generateClaimCode(DEFAULT_CLAIM_AMOUNT);
       setPoolExhaustedMessage(null);
       setCurrentCode({
         ...result.claimCode,
