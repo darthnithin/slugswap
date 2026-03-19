@@ -2,17 +2,13 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import { donations, getCredentials } from "@/lib/server/schema";
 import {
+  applyLiveTrackedBalance,
   getDonorWeeklyUsageMap,
   type DonorWeeklyUsage,
 } from "@/lib/server/claims/donor-usage";
-import { getActiveGetSession } from "@/lib/server/get/session";
-import { retrieveAccounts } from "@/lib/server/get/tools";
-import {
-  getTrackedBalanceTotal,
-  syncDonorPauseStateFromAccounts,
-} from "@/lib/server/get/tracked-balance";
 import { getAdminConfig, type DonorSelectionPolicy } from "@/lib/server/config";
 import { type WeekWindow } from "@/lib/server/timezone";
+import { fetchLiveTrackedBalance } from "@/lib/server/get/tracked-balance";
 
 export type RankedDonorCandidate = {
   donorUserId: string;
@@ -30,18 +26,6 @@ export type RankedDonorSelection = {
 function parsePoints(value: string | number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-async function fetchLiveTrackedBalance(donorUserId: string): Promise<number | null> {
-  try {
-    const { sessionId } = await getActiveGetSession(donorUserId);
-    const accounts = await retrieveAccounts(sessionId);
-    const { trackedBalance } = await syncDonorPauseStateFromAccounts(donorUserId, accounts);
-    return trackedBalance ?? getTrackedBalanceTotal(accounts);
-  } catch (error) {
-    console.warn(`Failed to retrieve live balance for donor ${donorUserId}:`, error);
-    return null;
-  }
 }
 
 function roundRobinSort(a: RankedDonorCandidate, b: RankedDonorCandidate): number {
@@ -101,7 +85,7 @@ export async function rankDonorCandidatesForClaim(
 
   const { usageMap, weekWindow } = await getDonorWeeklyUsageMap(donorCaps, now);
 
-  let candidates: RankedDonorCandidate[] = donorRows
+  const candidatesWithUsage: RankedDonorCandidate[] = donorRows
     .map((row) => {
       const weeklyAmount = parsePoints(row.weeklyAmount);
       const usage = usageMap.get(row.donorUserId);
@@ -114,13 +98,14 @@ export async function rankDonorCandidatesForClaim(
       } as RankedDonorCandidate;
     })
     .filter((candidate): candidate is RankedDonorCandidate => !!candidate)
-    .filter((candidate) => candidate.usage.remainingThisWeek >= claimAmount);
+    .filter((candidate) => candidate.usage.capRemainingThisWeek >= claimAmount);
 
-  if (candidates.length === 0) {
+  if (candidatesWithUsage.length === 0) {
     throw new Error("No eligible donors available under weekly cap limits.");
   }
 
   const policy = config.donorSelectionPolicy;
+  let candidates = candidatesWithUsage;
 
   if (policy === "round_robin") {
     candidates.sort(roundRobinSort);
@@ -130,24 +115,35 @@ export async function rankDonorCandidatesForClaim(
     candidates.sort(leastUtilizedSort);
   } else {
     const withBalances = await Promise.all(
-      candidates.map(async (candidate) => ({
-        ...candidate,
-        liveTrackedBalance: await fetchLiveTrackedBalance(candidate.donorUserId),
-      }))
-    );
-
-    const hasLiveBalance = withBalances.some(
-      (candidate) => typeof candidate.liveTrackedBalance === "number"
+      candidatesWithUsage.map(async (candidate) => {
+        try {
+          const liveTrackedBalance = await fetchLiveTrackedBalance(candidate.donorUserId);
+          return {
+            ...candidate,
+            liveTrackedBalance,
+            usage: applyLiveTrackedBalance(candidate.usage, liveTrackedBalance),
+          };
+        } catch (error) {
+          console.warn(
+            `Failed to retrieve live balance for donor ${candidate.donorUserId}:`,
+            error
+          );
+          return candidate;
+        }
+      })
     );
 
     candidates = withBalances.filter(
-      (candidate) =>
-        candidate.liveTrackedBalance == null || candidate.liveTrackedBalance > 0
+      (candidate) => candidate.usage.remainingThisWeek >= claimAmount
     );
 
     if (candidates.length === 0) {
       throw new Error("No eligible donors available under weekly cap limits.");
     }
+
+    const hasLiveBalance = candidates.some(
+      (candidate) => typeof candidate.liveTrackedBalance === "number"
+    );
 
     if (hasLiveBalance) {
       candidates.sort(highestBalanceSort);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, gte, lt, sql as sqlOp } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
+import { fetchLiveTrackedBalance } from "@/lib/server/get/tracked-balance";
 import { getPacificWeekWindow } from "@/lib/server/timezone";
 
 export const runtime = "nodejs";
@@ -179,7 +180,19 @@ async function handleImpact(req: NextRequest) {
 
     const redeemedWeekAmount = parseFloat(redeemedThisWeek[0]?.total || "0");
     const reservedWeekAmount = parseFloat(reservedThisWeek[0]?.total || "0");
-    const remainingThisWeek = weeklyAmount - (redeemedWeekAmount + reservedWeekAmount);
+    const capRemainingThisWeek = weeklyAmount - (redeemedWeekAmount + reservedWeekAmount);
+
+    let remainingThisWeek = capRemainingThisWeek;
+
+    try {
+      const liveTrackedBalance = await fetchLiveTrackedBalance(userId);
+      if (typeof liveTrackedBalance === "number" && !Number.isNaN(liveTrackedBalance)) {
+        remainingThisWeek = Math.min(capRemainingThisWeek, Math.max(0, liveTrackedBalance));
+      }
+    } catch (error) {
+      console.warn(`Failed to fetch live GET balance for donor ${userId}:`, error);
+    }
+    const capReached = remainingThisWeek <= 0;
 
     return NextResponse.json(
       {
@@ -192,7 +205,7 @@ async function handleImpact(req: NextRequest) {
         redeemedThisWeek: redeemedWeekAmount,
         reservedThisWeek: reservedWeekAmount,
         remainingThisWeek,
-        capReached: remainingThisWeek <= 0,
+        capReached,
         weekStart: weekWindow.weekStart.toISOString(),
         weekEnd: weekWindow.weekEnd.toISOString(),
         timezone: weekWindow.timezone,

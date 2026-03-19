@@ -158,7 +158,7 @@ type AdminUserBalanceResponse = {
     accountsFetchError: string | null;
   };
   getBalance: Array<{ id: string; accountDisplayName: string; balance: number | null }> | null;
-  trackedGetBalanceTotal: number;
+  trackedGetBalanceTotal: number | null;
   weeklyAllowance: {
     weeklyLimit: number;
     usedAmount: number;
@@ -1870,7 +1870,9 @@ export default function DashboardHomePage() {
                           <div className="config-item">
                             <div className="config-label">GET Tracked Balance</div>
                             <div style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                              {formatNum(selectedUserDetails.trackedGetBalanceTotal)} pts
+                              {selectedUserDetails.trackedGetBalanceTotal === null
+                                ? "Unavailable"
+                                : `${formatNum(selectedUserDetails.trackedGetBalanceTotal)} pts`}
                             </div>
                             <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
                               Flexi + Banana + Slug
