@@ -1,6 +1,6 @@
 import { and, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/server/db";
-import { claimCodes, donations } from "@/lib/server/schema";
+import { claimCodes, donations, getCredentials } from "@/lib/server/schema";
 import { getPacificWeekWindow, type WeekWindow } from "@/lib/server/timezone";
 
 export type DonorCapInput = {
@@ -197,6 +197,7 @@ export async function getActiveDonorRemainingTotal(now = new Date()): Promise<nu
       capAmount: donations.amount,
     })
     .from(donations)
+    .innerJoin(getCredentials, eq(getCredentials.userId, donations.userId))
     .where(eq(donations.status, "active"));
 
   if (donorRows.length === 0) {

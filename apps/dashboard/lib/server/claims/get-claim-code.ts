@@ -3,6 +3,15 @@ import { getActiveGetSession } from "@/lib/server/get/session";
 
 const CLAIM_CODE_TTL_MS = 60_000;
 
+function durationMs(startedAt: number): number {
+  return Date.now() - startedAt;
+}
+
+function logBarcodeFetchTiming(payload: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") return;
+  console.info("[claims.barcode-fetch.timing]", payload);
+}
+
 function extractBarcodePayload(raw: unknown): string | null {
   if (typeof raw === "string" && raw.trim()) return raw.trim();
   if (raw && typeof raw === "object") {
@@ -17,9 +26,11 @@ export async function fetchLiveClaimCodeFromGet(
   userId: string,
   existingSessionId?: string
 ): Promise<{ code: string; expiresAt: Date; sessionId: string }> {
+  const startedAt = Date.now();
   const { sessionId } = existingSessionId
     ? { sessionId: existingSessionId }
     : await getActiveGetSession(userId);
+  const fetchStartedAt = Date.now();
   const payload = await callGetApi<{ sessionId: string }, unknown>(
     "authentication",
     "retrievePatronBarcodePayload",
@@ -32,5 +43,11 @@ export async function fetchLiveClaimCodeFromGet(
   }
 
   const expiresAt = new Date(Date.now() + CLAIM_CODE_TTL_MS);
+  logBarcodeFetchTiming({
+    userId,
+    usedExistingSession: !!existingSessionId,
+    getBarcodeMs: durationMs(fetchStartedAt),
+    totalMs: durationMs(startedAt),
+  });
   return { code, expiresAt, sessionId };
 }

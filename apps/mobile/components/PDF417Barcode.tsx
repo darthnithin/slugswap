@@ -1,5 +1,6 @@
 import { View, StyleSheet } from 'react-native';
 import RNPDF417 from 'expo-barcode-pdf417';
+import { cardShadow, stealthTheme } from '../lib/stealth-theme';
 
 interface PDF417BarcodeProps {
   value: string;
@@ -24,8 +25,13 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'white',
-    borderRadius: 8,
+    backgroundColor: stealthTheme.colors.barcode,
+    borderRadius: stealthTheme.radii.sm,
+    borderWidth: 1,
+    borderColor: stealthTheme.colors.borderStrong,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     overflow: 'hidden',
+    ...cardShadow(),
   },
 });

@@ -1,21 +1,50 @@
-import { View, Text, TextInput, Pressable, ActivityIndicator, Alert, ScrollView, RefreshControl, Platform } from 'react-native';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
-import { BlurView } from 'expo-blur';
-import { SymbolView } from 'expo-symbols';
-import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../../../../../lib/auth-context';
-import { supabase } from '../../../../../lib/supabase';
-import { setDonation, getDonorImpact, pauseDonation, getGetAccounts, getGetLinkStatus, getGetLoginUrl, linkGetAccount, unlinkGetAccount, type DonorImpact } from '../../../../../lib/api';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
+import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import * as WebBrowser from 'expo-web-browser';
-import { useTabCache, type GetAccountBalance, type ShareTabSnapshot } from '../../../../../lib/tab-cache-context';
 import { useFocusEffect } from 'expo-router';
-import { uiColor } from '../../../lib/ui-color';
 
-const UCSC_TRACKED_BALANCE_ACCOUNTS = new Set([
-  'flexi dollars',
-  'banana bucks',
-  'slug points',
-]);
+import { useAuth } from '../../../../../lib/auth-context';
+import {
+  getDonorImpact,
+  getGetAccounts,
+  getGetLinkStatus,
+  getGetLoginUrl,
+  linkGetAccount,
+  pauseDonation,
+  setDonation,
+  unlinkGetAccount,
+  type DonorImpact,
+} from '../../../../../lib/api';
+import { supabase } from '../../../../../lib/supabase';
+import {
+  useTabCache,
+  type GetAccountBalance,
+  type ShareTabSnapshot,
+} from '../../../../../lib/tab-cache-context';
+import {
+  buttonOpacity,
+  cardShadow,
+  stealthTheme,
+  typeScale,
+} from '../../../lib/stealth-theme';
+import { useRouter } from 'expo-router';
+import { GetMobileTabBar } from '../../../components/GetMobileTabBar';
+
+const UCSC_TRACKED_BALANCE_ACCOUNTS = new Set(['flexi dollars', 'banana bucks', 'slug points']);
 
 const EMPTY_IMPACT: DonorImpact = {
   isActive: false,
@@ -57,33 +86,145 @@ function normalizeDonorImpact(raw: Partial<DonorImpact> | null | undefined): Don
   };
 }
 
-function Card({ children, style }: { children: React.ReactNode; style?: any }) {
-  if (isLiquidGlassAvailable()) {
-    return (
-      <GlassView style={[{ borderRadius: 16, padding: 20 }, style]}>
-        {children}
-      </GlassView>
-    );
-  }
+function formatNameFromEmail(email: string | null): string {
+  if (!email) return 'SlugSwap Donor';
+
+  return email
+    .split('@')[0]
+    .split(/[._-]/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+}
+
+function SectionCard({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return <View style={[styles.sectionCard, style]}>{children}</View>;
+}
+
+function SectionHeader({
+  icon,
+  title,
+  detail,
+}: {
+  icon: SymbolViewProps['name'];
+  title: string;
+  detail?: string;
+}) {
   return (
-    <BlurView
-      tint="systemMaterial"
-      intensity={80}
-      style={[{
-        borderRadius: 16,
-        padding: 20,
-        overflow: 'hidden',
-      }, style]}
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionHeaderLeft}>
+        <View style={styles.sectionIcon}>
+          <SymbolView name={icon} tintColor={colors.textSoft} size={18} />
+        </View>
+        <View style={styles.sectionHeaderText}>
+          <Text style={styles.sectionTitle}>{title}</Text>
+          {detail ? <Text style={styles.sectionDetail}>{detail}</Text> : null}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function MetricTile({
+  label,
+  value,
+  emphasized = false,
+  style,
+}: {
+  label: string;
+  value: string;
+  emphasized?: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View style={[styles.metricTile, emphasized ? styles.metricTileAccent : null, style]}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={[styles.metricValue, emphasized ? styles.metricValueAccent : null]}>{value}</Text>
+    </View>
+  );
+}
+
+function SecondaryButton({
+  label,
+  onPress,
+  icon,
+  destructive = false,
+  disabled = false,
+  loading = false,
+}: {
+  label: string;
+  onPress: () => void;
+  icon?: SymbolViewProps['name'];
+  destructive?: boolean;
+  disabled?: boolean;
+  loading?: boolean;
+}) {
+  const tintColor = destructive ? colors.danger : colors.brand;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled || loading}
+      style={({ pressed }) => [
+        styles.secondaryButton,
+        { opacity: buttonOpacity(pressed, disabled || loading) },
+      ]}
     >
-      {children}
-    </BlurView>
+      {loading ? (
+        <ActivityIndicator size="small" color={tintColor} />
+      ) : (
+        <>
+          {icon ? <SymbolView name={icon} tintColor={tintColor} size={14} /> : null}
+          <Text style={[styles.secondaryButtonLabel, destructive ? styles.destructiveLabel : null]}>
+            {label}
+          </Text>
+        </>
+      )}
+    </Pressable>
+  );
+}
+
+function PrimaryButton({
+  label,
+  onPress,
+  disabled = false,
+  loading = false,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled || loading}
+      style={({ pressed }) => [
+        styles.primaryButton,
+        { opacity: buttonOpacity(pressed, disabled || loading) },
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator color="#fff" />
+      ) : (
+        <Text style={styles.primaryButtonLabel}>{label}</Text>
+      )}
+    </Pressable>
   );
 }
 
 export default function DonorScreen() {
   const { signOut } = useAuth();
+  const router = useRouter();
   const { hasLoadedShare, markShareLoaded, shareSnapshot, setShareSnapshot } = useTabCache();
   const hasShareSnapshot = !!shareSnapshot;
+
   const [weeklyAmount, setWeeklyAmount] = useState(shareSnapshot?.weeklyAmount ?? '');
   const [isActive, setIsActive] = useState(shareSnapshot?.isActive ?? false);
   const [loading, setLoading] = useState(!shareSnapshot);
@@ -91,6 +232,9 @@ export default function DonorScreen() {
   const [impact, setImpact] = useState<DonorImpact>(shareSnapshot?.impact ?? EMPTY_IMPACT);
   const [userId, setUserId] = useState<string | null>(shareSnapshot?.userId ?? null);
   const [userEmail, setUserEmail] = useState<string | null>(shareSnapshot?.userEmail ?? null);
+  const [userDisplayName, setUserDisplayName] = useState(
+    formatNameFromEmail(shareSnapshot?.userEmail ?? null)
+  );
   const [isGetLinked, setIsGetLinked] = useState(shareSnapshot?.isGetLinked ?? false);
   const [getLinkedAt, setGetLinkedAt] = useState<string | null>(shareSnapshot?.getLinkedAt ?? null);
   const [getLoginUrlInput, setGetLoginUrlInput] = useState('');
@@ -103,12 +247,13 @@ export default function DonorScreen() {
 
   const loadUserAndImpact = useCallback(async (options?: { showBlockingLoader?: boolean }) => {
     const showBlockingLoader = options?.showBlockingLoader ?? false;
-    if (showBlockingLoader) {
-      setLoading(true);
-    }
+    if (showBlockingLoader) setLoading(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
       if (!user) {
         Alert.alert('Error', 'Please sign in first');
         return;
@@ -116,6 +261,7 @@ export default function DonorScreen() {
 
       const linkState = await getGetLinkStatus(user.id);
       let nextGetAccounts: GetAccountBalance[] = [];
+
       if (linkState.linked) {
         try {
           const accounts = await getGetAccounts(user.id);
@@ -143,6 +289,11 @@ export default function DonorScreen() {
 
       setUserId(nextSnapshot.userId);
       setUserEmail(nextSnapshot.userEmail);
+      setUserDisplayName(
+        typeof user.user_metadata?.full_name === 'string'
+          ? user.user_metadata.full_name
+          : formatNameFromEmail(user.email ?? null)
+      );
       setWeeklyAmount(nextSnapshot.weeklyAmount);
       setIsActive(nextSnapshot.isActive);
       setImpact(nextSnapshot.impact);
@@ -155,9 +306,7 @@ export default function DonorScreen() {
       console.error('Error loading impact:', error);
       Alert.alert('Error', 'Failed to load your donation data');
     } finally {
-      if (showBlockingLoader) {
-        setLoading(false);
-      }
+      if (showBlockingLoader) setLoading(false);
     }
   }, [markShareLoaded, setShareSnapshot]);
 
@@ -179,7 +328,17 @@ export default function DonorScreen() {
       getAccounts,
       ...overrides,
     });
-  }, [getAccounts, getLinkedAt, impact, isActive, isGetLinked, setShareSnapshot, userEmail, userId, weeklyAmount]);
+  }, [
+    getAccounts,
+    getLinkedAt,
+    impact,
+    isActive,
+    isGetLinked,
+    setShareSnapshot,
+    userEmail,
+    userId,
+    weeklyAmount,
+  ]);
 
   const ucscTrackedAccounts = getAccounts.filter((account) =>
     UCSC_TRACKED_BALANCE_ACCOUNTS.has(account.accountDisplayName.trim().toLowerCase())
@@ -189,13 +348,11 @@ export default function DonorScreen() {
     return sum + account.balance;
   }, 0);
 
-  // Load on first mount if we don't already have cached share data.
   useEffect(() => {
     if (hasShareSnapshot) return;
     void loadUserAndImpact({ showBlockingLoader: true });
   }, [hasShareSnapshot, loadUserAndImpact]);
 
-  // Refresh in the background when tab regains focus.
   useFocusEffect(
     useCallback(() => {
       if (!hasLoadedShare || !hasShareSnapshot) return;
@@ -207,7 +364,7 @@ export default function DonorScreen() {
     if (!userId) return;
 
     const amount = parseFloat(weeklyAmount);
-    if (isNaN(amount) || amount <= 0) {
+    if (Number.isNaN(amount) || amount <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid amount');
       return;
     }
@@ -248,11 +405,13 @@ export default function DonorScreen() {
 
   const completeGetLink = async (validatedUrl: string) => {
     if (!userId) return;
+
     await linkGetAccount({
       userId,
       userEmail,
       validatedUrl: validatedUrl.trim(),
     });
+
     setGetLoginUrlInput('');
     Alert.alert('Success', 'Your GET account is now linked for sharing.');
     await loadUserAndImpact({ showBlockingLoader: false });
@@ -260,6 +419,7 @@ export default function DonorScreen() {
 
   const handleOpenGetLogin = async () => {
     if (!userId) return;
+
     try {
       const { loginUrl } = await getGetLoginUrl();
       await WebBrowser.openBrowserAsync(loginUrl);
@@ -334,6 +494,7 @@ export default function DonorScreen() {
 
   const handleRefreshBalance = async () => {
     if (!userId || !isGetLinked) return;
+
     setRefreshingBalance(true);
     try {
       const accounts = await getGetAccounts(userId);
@@ -349,6 +510,7 @@ export default function DonorScreen() {
 
   const handleSignOut = async () => {
     if (isSigningOut) return;
+
     setIsSigningOut(true);
     try {
       await signOut();
@@ -359,342 +521,559 @@ export default function DonorScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={uiColor('systemBlue')} />
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color={colors.brand} />
       </View>
     );
   }
 
-  return (
-    <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 32 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {/* Show Contribution/Impact first if GET is already linked */}
-        {isGetLinked && !isActive && (
-          <Card>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: uiColor('label'), marginBottom: 4 }}>
-              Set Weekly Contribution
-            </Text>
-            <Text style={{ fontSize: 14, color: uiColor('secondaryLabel'), marginBottom: 20 }}>
-              Your contribution goes to a weekly pool that helps fellow students
-            </Text>
+  const handleHeroAction = () => {
+    if (isGetLinked) {
+      router.push('/scan-card');
+      return;
+    }
 
-            <View style={{ gap: 8, marginBottom: 20 }}>
-              <Text style={{ fontSize: 14, fontWeight: '500', color: uiColor('label') }}>Weekly Amount (points)</Text>
-              <TextInput
-                style={{
-                  borderWidth: 0.5,
-                  borderColor: uiColor('separator'),
-                  borderRadius: 10,
-                  borderCurve: 'continuous',
-                  padding: 12,
-                  fontSize: 16,
-                  color: uiColor('label'),
-                  backgroundColor: uiColor('secondarySystemGroupedBackground'),
-                }}
-                value={weeklyAmount}
-                onChangeText={setWeeklyAmount}
-                keyboardType="numeric"
-                placeholder="e.g., 100"
-                placeholderTextColor={uiColor('placeholderText')}
+    void handleOpenGetLogin();
+  };
+
+  return (
+    <View style={styles.screen}>
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.brand}
+            colors={[colors.brand]}
+          />
+        }
+      >
+        <View style={styles.passCard}>
+          <View style={styles.passNotch} />
+          <Text style={styles.passTitle}>UCSC Dining Services</Text>
+          <View style={styles.passBand}>
+            <View style={styles.passAvatarShell}>
+              <SymbolView
+                name="person.crop.circle.badge.checkmark"
+                tintColor="rgba(255,255,255,0.88)"
+                size={112}
               />
             </View>
+          </View>
+          <View style={styles.passContent}>
+            <Text style={styles.passName}>{userDisplayName}</Text>
 
             <Pressable
-              onPress={handleSetContribution}
-              disabled={saving}
-              style={({ pressed }) => ({
-                alignItems: 'center',
-                paddingVertical: 14,
-                borderRadius: 10,
-                borderCurve: 'continuous',
-                backgroundColor: uiColor('systemBlue'),
-                opacity: pressed ? 0.7 : saving ? 0.5 : 1,
-              })}
+              onPress={handleHeroAction}
+              style={({ pressed }) => [
+                styles.passActionPill,
+                { opacity: buttonOpacity(pressed, false) },
+              ]}
             >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Start Sharing</Text>
-              )}
+              <SymbolView
+                name={isGetLinked ? 'barcode.viewfinder' : 'link'}
+                tintColor="#ffffff"
+                size={22}
+              />
+              <Text style={styles.passActionText}>{isGetLinked ? 'Scan Card' : 'Link GET'}</Text>
             </Pressable>
-          </Card>
-        )}
+          </View>
+        </View>
 
-        {isGetLinked && isActive && (
-          <Card>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: uiColor('label'), marginBottom: 16 }}>
-              Your Impact
-            </Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20 }}>
-              <View style={{ alignItems: 'center' }}>
-                <Text selectable style={{ fontSize: 32, fontWeight: 'bold', color: uiColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
-                  {impact.peopleHelped}
-                </Text>
-                <Text style={{ fontSize: 13, color: uiColor('secondaryLabel'), marginTop: 4 }}>People Helped</Text>
-              </View>
-              <View style={{ alignItems: 'center' }}>
-                <Text selectable style={{ fontSize: 32, fontWeight: 'bold', color: uiColor('systemBlue'), fontVariant: ['tabular-nums'] }}>
-                  {weeklyAmount}
-                </Text>
-                <Text style={{ fontSize: 13, color: uiColor('secondaryLabel'), marginTop: 4 }}>Points/Week</Text>
-              </View>
-            </View>
-
-            <Pressable
-              onPress={handlePause}
-              disabled={saving}
-              style={({ pressed }) => ({
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                paddingVertical: 14,
-                borderRadius: 10,
-                borderCurve: 'continuous',
-                backgroundColor: uiColor('tertiarySystemFill'),
-                opacity: pressed ? 0.7 : saving ? 0.5 : 1,
-              })}
-            >
-              {saving ? (
-                <ActivityIndicator size="small" color={uiColor('systemBlue')} />
-              ) : (
-                <>
-                  <SymbolView
-                    name={isActive ? 'pause.fill' : 'play.fill'}
-                    tintColor={uiColor('systemBlue')}
-                    size={14}
-                  />
-                  <Text style={{ color: uiColor('systemBlue'), fontSize: 16, fontWeight: '600' }}>
-                    {isActive ? 'Pause' : 'Resume'} Sharing
-                  </Text>
-                </>
-              )}
-            </Pressable>
-          </Card>
-        )}
-
-        {isGetLinked && isActive && (
-          <Card>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: uiColor('label'), marginBottom: 16 }}>
-              Weekly Cap
-            </Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
-              <Text style={{ fontSize: 13, color: uiColor('secondaryLabel') }}>Cap</Text>
-              <Text selectable style={{ fontSize: 13, color: uiColor('label'), fontVariant: ['tabular-nums'] }}>
-                {impact.capAmount.toFixed(2)} pts
-              </Text>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ fontSize: 13, color: uiColor('secondaryLabel') }}>Redeemed</Text>
-              <Text selectable style={{ fontSize: 13, color: uiColor('label'), fontVariant: ['tabular-nums'] }}>
-                {impact.redeemedThisWeek.toFixed(2)} pts
-              </Text>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ fontSize: 13, color: uiColor('secondaryLabel') }}>Reserved</Text>
-              <Text selectable style={{ fontSize: 13, color: uiColor('label'), fontVariant: ['tabular-nums'] }}>
-                {impact.reservedThisWeek.toFixed(2)} pts
-              </Text>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ fontSize: 13, color: uiColor('secondaryLabel') }}>Remaining</Text>
-              <Text selectable style={{ fontSize: 13, color: impact.capReached ? uiColor('systemRed') : uiColor('systemGreen'), fontVariant: ['tabular-nums'] }}>
-                {impact.remainingThisWeek.toFixed(2)} pts
-              </Text>
-            </View>
-            <Text style={{ fontSize: 12, color: uiColor('tertiaryLabel'), marginTop: 8 }}>
-              Tracking week in {impact.timezone}
-            </Text>
-          </Card>
-        )}
-
-        {/* GET Account Balance Card */}
-        <Card>
-          <Text style={{ fontSize: 17, fontWeight: '600', color: uiColor('label'), marginBottom: 12 }}>
-            Available GET Balance
-          </Text>
+        <SectionCard>
+          <SectionHeader
+            icon="dollarsign.circle"
+            title="Accounts"
+            detail={isGetLinked ? 'Your live GET balances' : 'Connect GET to sync campus balances'}
+          />
 
           {isGetLinked ? (
-            <View style={{ gap: 12 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <SymbolView name="checkmark.circle.fill" tintColor={uiColor('systemGreen')} size={16} />
-                <Text style={{ fontSize: 14, color: uiColor('systemGreen') }}>
-                  Linked{getLinkedAt ? ` on ${new Date(getLinkedAt).toLocaleDateString()}` : ''}
+            <>
+              <View style={styles.balanceHero}>
+                <Text style={styles.balanceHeroLabel}>Total available</Text>
+                <Text style={styles.balanceHeroValue}>{totalAvailableBalance.toFixed(2)} pts</Text>
+                <Text style={styles.balanceHeroMeta}>
+                  {getLinkedAt ? `Linked ${new Date(getLinkedAt).toLocaleDateString()}` : 'Linked'}
                 </Text>
               </View>
 
-              <View style={{
-                backgroundColor: uiColor('tertiarySystemFill'),
-                borderRadius: 12,
-                padding: 14,
-                borderCurve: 'continuous',
-              }}>
-                <Text style={{ fontSize: 12, color: uiColor('secondaryLabel'), marginBottom: 4 }}>
-                  Total Available (Flexi + Banana + Slug)
-                </Text>
-                <Text style={{ fontSize: 28, color: uiColor('systemBlue'), fontWeight: '700', fontVariant: ['tabular-nums'] }}>
-                  {totalAvailableBalance.toFixed(2)} pts
-                </Text>
-              </View>
-
-              <Text style={{ fontSize: 13, color: uiColor('secondaryLabel') }}>Tracked accounts</Text>
               {ucscTrackedAccounts.length > 0 ? (
-                <View style={{ gap: 0 }}>
+                <View style={styles.metricGrid}>
                   {ucscTrackedAccounts.map((account) => (
-                    <View key={account.id} style={{
-                      flexDirection: 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      paddingVertical: 8,
-                      borderBottomWidth: 0.5,
-                      borderBottomColor: uiColor('separator'),
-                    }}>
-                      <Text style={{ fontSize: 15, color: uiColor('label'), flex: 1, marginRight: 8 }}>
-                        {account.accountDisplayName}
-                      </Text>
-                      <Text selectable style={{ fontSize: 15, color: uiColor('systemBlue'), fontWeight: '600', fontVariant: ['tabular-nums'] }}>
-                        {account.balance ?? 'n/a'} pts
-                      </Text>
-                    </View>
+                    <MetricTile
+                      key={account.id}
+                      label={account.accountDisplayName}
+                      value={`${typeof account.balance === 'number' ? account.balance.toFixed(2) : 'n/a'} pts`}
+                    />
                   ))}
                 </View>
               ) : (
-                <Text style={{ fontSize: 13, color: uiColor('tertiaryLabel') }}>
-                  Linked, but no tracked UCSC balance accounts were returned.
-                </Text>
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyCopy}>
+                    Linked successfully, but GET did not return the tracked UCSC account balances yet.
+                  </Text>
+                </View>
               )}
 
-              <Pressable
-                onPress={handleRefreshBalance}
-                disabled={refreshingBalance}
-                style={({ pressed }) => ({
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  paddingVertical: 12,
-                  borderRadius: 10,
-                  borderCurve: 'continuous',
-                  backgroundColor: uiColor('tertiarySystemFill'),
-                  opacity: pressed ? 0.7 : refreshingBalance ? 0.5 : 1,
-                })}
-              >
-                {refreshingBalance ? (
-                  <ActivityIndicator size="small" color={uiColor('systemBlue')} />
-                ) : (
-                  <>
-                    <SymbolView name="arrow.clockwise" tintColor={uiColor('systemBlue')} size={14} />
-                    <Text style={{ color: uiColor('systemBlue'), fontWeight: '600', fontSize: 15 }}>Refresh Balance</Text>
-                  </>
-                )}
-              </Pressable>
-
-              <Pressable
-                onPress={handleUnlinkGet}
-                disabled={unlinkingGet}
-                style={({ pressed }) => ({
-                  alignItems: 'center',
-                  paddingVertical: 12,
-                  borderRadius: 10,
-                  borderCurve: 'continuous',
-                  backgroundColor: uiColor('tertiarySystemFill'),
-                  opacity: pressed ? 0.7 : unlinkingGet ? 0.5 : 1,
-                })}
-              >
-                <Text style={{ color: uiColor('systemRed'), fontWeight: '600', fontSize: 15 }}>
-                  {unlinkingGet ? 'Unlinking...' : 'Unlink GET'}
-                </Text>
-              </Pressable>
-            </View>
+              <View style={styles.buttonRow}>
+                <SecondaryButton
+                  label="Refresh Balance"
+                  onPress={() => {
+                    void handleRefreshBalance();
+                  }}
+                  icon="arrow.clockwise"
+                  loading={refreshingBalance}
+                />
+                <SecondaryButton
+                  label="Unlink GET"
+                  onPress={handleUnlinkGet}
+                  destructive
+                  loading={unlinkingGet}
+                />
+              </View>
+            </>
           ) : (
-            <View style={{ gap: 12 }}>
-              <Text style={{ fontSize: 14, color: uiColor('secondaryLabel'), lineHeight: 20 }}>
-                Continue to GET and sign in. Once it says 'validated', tap the share icon then copy, and paste the URL below to finish linking.
+            <View style={styles.connectBlock}>
+              <Text style={styles.connectCopy}>
+                Continue to GET, sign in, then paste the validated URL back here to finish linking your donor pass.
               </Text>
 
-              <Pressable
-                onPress={handleOpenGetLogin}
-                disabled={linkingGet}
-                style={({ pressed }) => ({
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  paddingVertical: 12,
-                  borderRadius: 10,
-                  borderCurve: 'continuous',
-                  backgroundColor: uiColor('tertiarySystemFill'),
-                  opacity: pressed ? 0.7 : linkingGet ? 0.5 : 1,
-                })}
-              >
-                {linkingGet ? (
-                  <ActivityIndicator size="small" color={uiColor('systemBlue')} />
-                ) : (
-                  <>
-                    <SymbolView name="arrow.up.right" tintColor={uiColor('systemBlue')} size={14} />
-                    <Text style={{ color: uiColor('systemBlue'), fontWeight: '600', fontSize: 15 }}>Open GET Login</Text>
-                  </>
-                )}
-              </Pressable>
+              <View style={styles.buttonRow}>
+                <SecondaryButton
+                  label="Open GET Login"
+                  onPress={() => {
+                    void handleOpenGetLogin();
+                  }}
+                  icon="arrow.up.right"
+                />
+              </View>
 
               <TextInput
-                style={{
-                  borderWidth: 0.5,
-                  borderColor: uiColor('separator'),
-                  borderRadius: 10,
-                  borderCurve: 'continuous',
-                  padding: 12,
-                  fontSize: 15,
-                  color: uiColor('label'),
-                  backgroundColor: uiColor('secondarySystemGroupedBackground'),
-                }}
+                style={styles.input}
                 value={getLoginUrlInput}
                 onChangeText={setGetLoginUrlInput}
                 placeholder="Paste validated GET URL here"
-                placeholderTextColor={uiColor('placeholderText')}
+                placeholderTextColor={colors.textSoft}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
 
-              <Pressable
-                onPress={handleLinkGet}
-                disabled={linkingGet}
-                style={({ pressed }) => ({
-                  alignItems: 'center',
-                  paddingVertical: 14,
-                  borderRadius: 10,
-                  borderCurve: 'continuous',
-                  backgroundColor: uiColor('systemBlue'),
-                  opacity: pressed ? 0.7 : linkingGet ? 0.5 : 1,
-                })}
-              >
-                {linkingGet ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Link from Pasted URL</Text>
-                )}
-              </Pressable>
+              <PrimaryButton
+                label="Link from Pasted URL"
+                onPress={() => {
+                  void handleLinkGet();
+                }}
+                loading={linkingGet}
+              />
             </View>
           )}
-        </Card>
+        </SectionCard>
 
-        {/* Log Out */}
+        {isGetLinked ? (
+          <SectionCard>
+            <SectionHeader
+              icon="heart.text.square"
+              title={isActive ? 'Sharing Settings' : 'Start Sharing'}
+              detail={
+                isActive
+                  ? 'Control your weekly contribution and donor status'
+                  : 'Set the weekly amount you want to contribute'
+              }
+            />
+
+            {!isActive ? (
+              <>
+                <Text style={styles.formLabel}>Weekly amount (points)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={weeklyAmount}
+                  onChangeText={setWeeklyAmount}
+                  keyboardType="numeric"
+                  placeholder="e.g. 100"
+                  placeholderTextColor={colors.textSoft}
+                />
+                <PrimaryButton
+                  label="Start Sharing"
+                  onPress={() => {
+                    void handleSetContribution();
+                  }}
+                  loading={saving}
+                />
+              </>
+            ) : (
+              <>
+                <View style={styles.metricGrid}>
+                  <MetricTile label="People helped" value={String(impact.peopleHelped)} emphasized />
+                  <MetricTile label="Points / week" value={`${weeklyAmount || '0'} pts`} />
+                  <MetricTile label="Redeemed" value={`${impact.redeemedThisWeek.toFixed(2)} pts`} />
+                  <MetricTile label="Reserved" value={`${impact.reservedThisWeek.toFixed(2)} pts`} />
+                </View>
+
+                <View style={styles.capCard}>
+                  <View style={styles.capRow}>
+                    <Text style={styles.capLabel}>Weekly cap</Text>
+                    <Text style={styles.capValue}>{impact.capAmount.toFixed(2)} pts</Text>
+                  </View>
+                  <View style={styles.capRow}>
+                    <Text style={styles.capLabel}>Remaining</Text>
+                    <Text style={[styles.capValue, impact.capReached ? styles.negativeValue : styles.positiveValue]}>
+                      {impact.remainingThisWeek.toFixed(2)} pts
+                    </Text>
+                  </View>
+                  <Text style={styles.capFootnote}>Tracking week in {impact.timezone}</Text>
+                </View>
+
+                <View style={styles.buttonRow}>
+                  <SecondaryButton
+                    label={isActive ? 'Pause Sharing' : 'Resume Sharing'}
+                    onPress={() => {
+                      void handlePause();
+                    }}
+                    icon={isActive ? 'pause.fill' : 'play.fill'}
+                    loading={saving}
+                  />
+                </View>
+              </>
+            )}
+          </SectionCard>
+        ) : null}
+
         <Pressable
-          onPress={handleSignOut}
+          onPress={() => {
+            void handleSignOut();
+          }}
           disabled={isSigningOut}
-          style={({ pressed }) => ({
-            alignItems: 'center',
-            paddingVertical: 10,
-            opacity: pressed ? 0.5 : isSigningOut ? 0.5 : 1,
-          })}
+          style={({ pressed }) => [{ opacity: buttonOpacity(pressed, isSigningOut) }]}
         >
-          <Text style={{ color: uiColor('systemRed'), fontSize: 15 }}>
-            {isSigningOut ? 'Signing out...' : 'Log out'}
-          </Text>
+          <Text style={styles.logoutText}>{isSigningOut ? 'Signing out...' : 'Log out'}</Text>
         </Pressable>
       </ScrollView>
+
+      <GetMobileTabBar active="home" />
+    </View>
   );
 }
+
+const colors = stealthTheme.colors;
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.canvas,
+  },
+  content: {
+    padding: 18,
+    gap: 18,
+    paddingBottom: 116,
+  },
+  loadingScreen: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.canvas,
+  },
+  passCard: {
+    borderRadius: 26,
+    overflow: 'hidden',
+    backgroundColor: colors.brand,
+    borderWidth: 1,
+    borderColor: colors.brandDark,
+    ...cardShadow('hero'),
+  },
+  passNotch: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 92,
+    height: 92,
+    backgroundColor: colors.brandDark,
+  },
+  passTitle: {
+    paddingTop: 26,
+    paddingHorizontal: 20,
+    paddingBottom: 18,
+    textAlign: 'center',
+    color: '#ffffff',
+    fontSize: 19,
+    lineHeight: 24,
+    fontWeight: '500',
+  },
+  passBand: {
+    height: 136,
+    backgroundColor: colors.brandDark,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.brandDeeper,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  passAvatarShell: {
+    width: 156,
+    height: 156,
+    borderRadius: 78,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.94)',
+    marginTop: 48,
+  },
+  passContent: {
+    paddingHorizontal: 20,
+    paddingTop: 94,
+    paddingBottom: 20,
+    gap: 12,
+  },
+  passName: {
+    color: '#ffffff',
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '500',
+  },
+  passActionPill: {
+    marginTop: 2,
+    minHeight: 62,
+    borderRadius: 18,
+    backgroundColor: colors.brandDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 16,
+  },
+  passActionText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  sectionCard: {
+    borderRadius: 24,
+    paddingTop: 14,
+    paddingBottom: 18,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...cardShadow(),
+  },
+  sectionHeader: {
+    paddingHorizontal: 18,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surfaceStrong,
+  },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sectionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sectionHeaderText: {
+    flex: 1,
+    gap: 2,
+  },
+  sectionTitle: {
+    fontSize: 19,
+    lineHeight: 24,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  sectionDetail: {
+    ...typeScale.caption,
+    color: colors.textMuted,
+  },
+  balanceHero: {
+    marginHorizontal: 18,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  balanceHeroLabel: {
+    ...typeScale.caption,
+    color: colors.textMuted,
+  },
+  balanceHeroValue: {
+    marginTop: 4,
+    color: colors.brand,
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: '700',
+  },
+  balanceHeroMeta: {
+    marginTop: 4,
+    ...typeScale.caption,
+    color: colors.textSoft,
+  },
+  metricGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+  },
+  metricTile: {
+    minWidth: '47%',
+    flexGrow: 1,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 8,
+  },
+  metricTileAccent: {
+    backgroundColor: colors.accentMuted,
+    borderColor: '#c5d6ff',
+  },
+  metricLabel: {
+    ...typeScale.caption,
+    color: colors.textMuted,
+    textTransform: 'none',
+    letterSpacing: 0,
+  },
+  metricValue: {
+    color: colors.text,
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '700',
+  },
+  metricValueAccent: {
+    color: colors.brand,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+  },
+  secondaryButton: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexGrow: 1,
+  },
+  secondaryButtonLabel: {
+    color: colors.brand,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  destructiveLabel: {
+    color: colors.danger,
+  },
+  primaryButton: {
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: colors.brand,
+    marginHorizontal: 18,
+    marginTop: 16,
+  },
+  primaryButtonLabel: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  connectBlock: {
+    paddingTop: 16,
+    gap: 12,
+  },
+  connectCopy: {
+    paddingHorizontal: 18,
+    ...typeScale.body,
+    color: colors.textMuted,
+  },
+  input: {
+    marginHorizontal: 18,
+    minHeight: 50,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    color: colors.text,
+    fontSize: 15,
+  },
+  formLabel: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    ...typeScale.caption,
+    color: colors.textMuted,
+  },
+  emptyState: {
+    marginHorizontal: 18,
+    marginTop: 16,
+    borderRadius: 18,
+    padding: 16,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  emptyCopy: {
+    ...typeScale.body,
+    color: colors.textMuted,
+  },
+  capCard: {
+    marginHorizontal: 18,
+    marginTop: 16,
+    borderRadius: 18,
+    padding: 16,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 10,
+  },
+  capRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  capLabel: {
+    ...typeScale.caption,
+    color: colors.textMuted,
+  },
+  capValue: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  positiveValue: {
+    color: colors.success,
+  },
+  negativeValue: {
+    color: colors.danger,
+  },
+  capFootnote: {
+    ...typeScale.caption,
+    color: colors.textSoft,
+  },
+  logoutText: {
+    textAlign: 'center',
+    color: colors.danger,
+    fontSize: 15,
+    fontWeight: '600',
+    paddingVertical: 6,
+  },
+});

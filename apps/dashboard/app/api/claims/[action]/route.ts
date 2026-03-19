@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient, type User } from "@supabase/supabase-js";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
@@ -9,6 +10,7 @@ import {
   getDonorUsageForDonor,
   rankDonorCandidatesForClaim,
 } from "@/lib/server/claims/donor-selection";
+import { getAdminConfig } from "@/lib/server/config";
 import { retrieveAccounts, type GetAccount } from "@/lib/server/get/tools";
 import { getActiveGetSession } from "@/lib/server/get/session";
 import { syncDonorPauseStateFromAccounts } from "@/lib/server/get/tracked-balance";
@@ -29,6 +31,20 @@ const POOL_EXHAUSTED_MESSAGE =
   "Your personal allowance is still there, but the shared pool is empty. Check back later.";
 const POOL_UNAVAILABLE_MESSAGE =
   "Points are temporarily unavailable right now. Please try again in a moment.";
+
+function durationMs(startedAt: number): number {
+  return Date.now() - startedAt;
+}
+
+function logClaimGenerationTiming(payload: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") return;
+  console.info("[claims.generate.timing]", payload);
+}
+
+function logClaimCandidateFailure(payload: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") return;
+  console.warn("[claims.generate.candidate-failure]", payload);
+}
 
 function claimGenerationErrorResponse(
   error: string,
@@ -161,19 +177,88 @@ function getCurrentWeek() {
   return { weekStart, weekEnd };
 }
 
+function getSupabaseClient() {
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase environment variables not configured");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
+
+function unauthorizedResponse(message = "Unauthorized") {
+  return NextResponse.json({ error: message }, { status: 401 });
+}
+
+async function authenticateAppUser(
+  req: NextRequest
+): Promise<{ user: User } | { response: NextResponse }> {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader) {
+    return { response: unauthorizedResponse() };
+  }
+
+  const token = authHeader.replace("Bearer ", "").trim();
+  if (!token) {
+    return { response: unauthorizedResponse("Invalid token") };
+  }
+
+  const supabase = getSupabaseClient();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser(token);
+
+  if (error || !user?.id) {
+    return { response: unauthorizedResponse("Invalid token") };
+  }
+
+  return { user };
+}
+
+async function syncAuthenticatedUser(user: User) {
+  await db
+    .insert(schema.users)
+    .values({
+      id: user.id,
+      email: user.email || `${user.id}@unknown.local`,
+      name: user.user_metadata?.name || null,
+      avatarUrl: user.user_metadata?.avatar_url || null,
+    })
+    .onConflictDoUpdate({
+      target: schema.users.id,
+      set: {
+        email: user.email || `${user.id}@unknown.local`,
+        name: user.user_metadata?.name || null,
+        avatarUrl: user.user_metadata?.avatar_url || null,
+        updatedAt: new Date(),
+      },
+    });
+}
+
 async function handleGenerate(req: NextRequest) {
   if (req.method !== "POST") {
     return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
   }
 
+  const requestStartedAt = Date.now();
+
   try {
-    const { userId, amount } = (await req.json()) as {
-      userId?: string;
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
+    }
+    await syncAuthenticatedUser(auth.user);
+
+    const { amount } = (await req.json()) as {
       amount?: number | string;
     };
+    const userId = auth.user.id;
 
-    if (!userId || !amount) {
-      return NextResponse.json({ error: "Missing userId or amount" }, { status: 400 });
+    if (!amount) {
+      return NextResponse.json({ error: "Missing amount" }, { status: 400 });
     }
 
     const claimAmount = parseFloat(String(amount));
@@ -181,18 +266,44 @@ async function handleGenerate(req: NextRequest) {
       return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
     }
 
+    const requesterStateStartedAt = Date.now();
     const { weekStart } = getCurrentWeek();
-    const weeklyPool = await db
+    let weeklyPool = await db
       .select()
       .from(schema.weeklyPools)
       .where(eq(schema.weeklyPools.weekStart, weekStart))
       .limit(1);
 
     if (weeklyPool.length === 0) {
-      return NextResponse.json({ error: "No active weekly pool" }, { status: 400 });
+      const { weekEnd } = getCurrentWeek();
+      const [newPool] = await db
+        .insert(schema.weeklyPools)
+        .values({
+          weekStart,
+          weekEnd,
+          totalAmount: "0",
+          allocatedAmount: "0",
+          remainingAmount: "0",
+        })
+        .onConflictDoNothing({ target: schema.weeklyPools.weekStart })
+        .returning();
+
+      if (newPool) {
+        weeklyPool = [newPool];
+      } else {
+        weeklyPool = await db
+          .select()
+          .from(schema.weeklyPools)
+          .where(eq(schema.weeklyPools.weekStart, weekStart))
+          .limit(1);
+      }
+
+      if (weeklyPool.length === 0) {
+        throw new Error("Failed to load weekly pool");
+      }
     }
 
-    const userAllowance = await db
+    let userAllowance = await db
       .select()
       .from(schema.userAllowances)
       .where(
@@ -204,10 +315,19 @@ async function handleGenerate(req: NextRequest) {
       .limit(1);
 
     if (userAllowance.length === 0) {
-      return NextResponse.json(
-        { error: "No allowance found for this week" },
-        { status: 400 }
-      );
+      const { config } = await getAdminConfig();
+      const defaultWeeklyLimit = config.defaultWeeklyAllowance;
+      const [newAllowance] = await db
+        .insert(schema.userAllowances)
+        .values({
+          userId,
+          weeklyPoolId: weeklyPool[0].id,
+          weeklyLimit: defaultWeeklyLimit.toString(),
+          usedAmount: "0",
+          remainingAmount: defaultWeeklyLimit.toString(),
+        })
+        .returning();
+      userAllowance = [newAllowance];
     }
 
     const allowance = userAllowance[0];
@@ -221,34 +341,53 @@ async function handleGenerate(req: NextRequest) {
       );
     }
 
+    const requesterStateMs = durationMs(requesterStateStartedAt);
+    const rankingStartedAt = Date.now();
     const ranked = await rankDonorCandidatesForClaim(claimAmount);
+    const rankingMs = durationMs(rankingStartedAt);
     let hadCapReject = false;
     let hadDepletedBalanceReject = false;
     const fetchFailures: string[] = [];
 
-    for (const candidate of ranked.candidates) {
+    for (const [candidateIndex, candidate] of ranked.candidates.entries()) {
+      const candidateStartedAt = Date.now();
       // Re-check usage before reserving this donor to reduce race oversubscription.
+      const usageStartedAt = Date.now();
       const usage = await getDonorUsageForDonor(
         candidate.donorUserId,
         candidate.weeklyAmount,
         new Date(),
         ranked.weekWindow
       );
+      const usageCheckMs = durationMs(usageStartedAt);
 
       if (usage.remainingThisWeek < claimAmount) {
         hadCapReject = true;
         continue;
       }
 
+      let sessionMs: number | null = null;
+      let retrieveAccountsMs: number | null = null;
+      let pauseSyncMs: number | null = null;
+      let barcodeFetchMs: number | null = null;
+      let claimInsertMs: number | null = null;
+      let donorProfileMs: number | null = null;
+
       try {
+        const sessionStartedAt = Date.now();
         const { sessionId: donorSessionId } = await getActiveGetSession(
           candidate.donorUserId
         );
+        sessionMs = durationMs(sessionStartedAt);
+        const accountsStartedAt = Date.now();
         const accounts = await retrieveAccounts(donorSessionId);
+        retrieveAccountsMs = durationMs(accountsStartedAt);
+        const pauseSyncStartedAt = Date.now();
         const { trackedBalance } = await syncDonorPauseStateFromAccounts(
           candidate.donorUserId,
           accounts
         );
+        pauseSyncMs = durationMs(pauseSyncStartedAt);
 
         const availableTrackedBalance = getAvailableTrackedBalance(trackedBalance);
 
@@ -260,11 +399,14 @@ async function handleGenerate(req: NextRequest) {
         const snapshot = toTrackedBalanceSnapshot(accounts);
         const balanceSnapshot = JSON.stringify(snapshot);
         const recommendedRail = chooseCheckoutRail(snapshot, claimAmount);
+        const barcodeStartedAt = Date.now();
         const { code, expiresAt } = await fetchLiveClaimCodeFromGet(
           candidate.donorUserId,
           donorSessionId
         );
+        barcodeFetchMs = durationMs(barcodeStartedAt);
 
+        const claimInsertStartedAt = Date.now();
         const [claimCode] = await db
           .insert(schema.claimCodes)
           .values({
@@ -278,16 +420,38 @@ async function handleGenerate(req: NextRequest) {
             balanceSnapshot,
           })
           .returning();
+        claimInsertMs = durationMs(claimInsertStartedAt);
 
+        const donorProfileStartedAt = Date.now();
         const donorProfile = await db
           .select({ name: schema.users.name })
           .from(schema.users)
           .where(eq(schema.users.id, candidate.donorUserId))
           .limit(1);
+        donorProfileMs = durationMs(donorProfileStartedAt);
         const donorDisplayName = formatDonorDisplayName(donorProfile[0]?.name ?? null);
 
         // Allowance is NOT deducted here — it's only deducted when redemption
         // is confirmed via balance drop (the actual amount spent may differ).
+
+        logClaimGenerationTiming({
+          requesterUserId: userId,
+          donorUserId: candidate.donorUserId,
+          donorSelectionPolicy: ranked.policy,
+          candidateIndex: candidateIndex + 1,
+          candidateCount: ranked.candidates.length,
+          requesterStateMs,
+          rankingMs,
+          usageCheckMs,
+          sessionMs,
+          retrieveAccountsMs,
+          pauseSyncMs,
+          barcodeFetchMs,
+          claimInsertMs,
+          donorProfileMs,
+          candidateTotalMs: durationMs(candidateStartedAt),
+          requestTotalMs: durationMs(requestStartedAt),
+        });
 
         return NextResponse.json(
           {
@@ -305,6 +469,24 @@ async function handleGenerate(req: NextRequest) {
           { status: 200 }
         );
       } catch (error: any) {
+        logClaimCandidateFailure({
+          requesterUserId: userId,
+          donorUserId: candidate.donorUserId,
+          donorSelectionPolicy: ranked.policy,
+          candidateIndex: candidateIndex + 1,
+          candidateCount: ranked.candidates.length,
+          requesterStateMs,
+          rankingMs,
+          usageCheckMs,
+          sessionMs,
+          retrieveAccountsMs,
+          pauseSyncMs,
+          barcodeFetchMs,
+          claimInsertMs,
+          donorProfileMs,
+          candidateTotalMs: durationMs(candidateStartedAt),
+          message: error?.message || "Unknown donor barcode fetch error",
+        });
         fetchFailures.push(error?.message || "Unknown donor barcode fetch error");
       }
     }
@@ -327,6 +509,10 @@ async function handleGenerate(req: NextRequest) {
     );
   } catch (error: any) {
     console.error("Error generating claim code:", error);
+    logClaimGenerationTiming({
+      requestTotalMs: durationMs(requestStartedAt),
+      failed: true,
+    });
     const message = error?.message || "Internal server error";
     const classified = classifyClaimGenerationError(message);
     return claimGenerationErrorResponse(
@@ -343,10 +529,11 @@ async function handleHistory(req: NextRequest) {
   }
 
   try {
-    const userId = new URL(req.url).searchParams.get("userId");
-    if (!userId) {
-      return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
     }
+    const userId = auth.user.id;
 
     const claimCodes = await db
       .select()
@@ -382,13 +569,19 @@ async function handleRefresh(req: NextRequest) {
   }
 
   try {
-    const { userId, claimCodeId } = (await req.json()) as {
-      userId?: string;
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
+    }
+
+    const { claimCodeId } = (await req.json()) as {
       claimCodeId?: string;
     };
-    if (!userId || !claimCodeId) {
+    const userId = auth.user.id;
+
+    if (!claimCodeId) {
       return NextResponse.json(
-        { error: "Missing userId or claimCodeId" },
+        { error: "Missing claimCodeId" },
         { status: 400 }
       );
     }
@@ -462,14 +655,19 @@ async function handleDelete(req: NextRequest) {
   }
 
   try {
-    const { userId, claimCodeId } = (await req.json()) as {
-      userId?: string;
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
+    }
+
+    const { claimCodeId } = (await req.json()) as {
       claimCodeId?: string;
     };
+    const userId = auth.user.id;
 
-    if (!userId || !claimCodeId) {
+    if (!claimCodeId) {
       return NextResponse.json(
-        { error: "Missing userId or claimCodeId" },
+        { error: "Missing claimCodeId" },
         { status: 400 }
       );
     }
@@ -598,13 +796,19 @@ async function handleCheckRedemption(req: NextRequest) {
   }
 
   try {
-    const { userId, claimCodeId } = (await req.json()) as {
-      userId?: string;
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
+    }
+
+    const { claimCodeId } = (await req.json()) as {
       claimCodeId?: string;
     };
-    if (!userId || !claimCodeId) {
+    const userId = auth.user.id;
+
+    if (!claimCodeId) {
       return NextResponse.json(
-        { error: "Missing userId or claimCodeId" },
+        { error: "Missing claimCodeId" },
         { status: 400 }
       );
     }
