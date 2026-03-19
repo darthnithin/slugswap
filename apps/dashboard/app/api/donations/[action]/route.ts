@@ -187,10 +187,7 @@ async function handleImpact(req: NextRequest) {
     try {
       const liveTrackedBalance = await fetchLiveTrackedBalance(userId);
       if (typeof liveTrackedBalance === "number" && !Number.isNaN(liveTrackedBalance)) {
-        remainingThisWeek = Math.min(
-          capRemainingThisWeek,
-          Math.max(0, liveTrackedBalance - reservedWeekAmount)
-        );
+        remainingThisWeek = Math.min(capRemainingThisWeek, Math.max(0, liveTrackedBalance));
       }
     } catch (error) {
       console.warn(`Failed to fetch live GET balance for donor ${userId}:`, error);

@@ -684,10 +684,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             const capRemainingThisWeek = usage?.capRemainingThisWeek ?? fallbackCap;
             const remainingThisWeek =
               typeof d.trackedGetBalanceTotal === "number"
-                ? Math.min(
-                    capRemainingThisWeek,
-                    Math.max(0, d.trackedGetBalanceTotal - reservedThisWeek)
-                  )
+                ? Math.min(capRemainingThisWeek, Math.max(0, d.trackedGetBalanceTotal))
                 : usage?.remainingThisWeek ?? fallbackCap;
             return {
               userId: d.userId,
@@ -957,10 +954,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         const capRemainingThisWeek = weeklyAmount - (redeemedThisWeek + reservedThisWeek);
         const remainingThisWeek =
           typeof trackedGetBalanceTotal === "number"
-            ? Math.min(
-                capRemainingThisWeek,
-                Math.max(0, trackedGetBalanceTotal - reservedThisWeek)
-              )
+            ? Math.min(capRemainingThisWeek, Math.max(0, trackedGetBalanceTotal))
             : capRemainingThisWeek;
         donorUsage = {
           status: donation.status,
