@@ -256,6 +256,8 @@ async function handleGenerate(req: NextRequest) {
       amount?: number | string;
     };
     const userId = auth.user.id;
+    const { config } = await getAdminConfig();
+    const claimCodeTtlMs = config.codeExpiryMinutes * 60_000;
 
     if (!amount) {
       return NextResponse.json({ error: "Missing amount" }, { status: 400 });
@@ -402,6 +404,7 @@ async function handleGenerate(req: NextRequest) {
         const barcodeStartedAt = Date.now();
         const { code, expiresAt } = await fetchLiveClaimCodeFromGet(
           candidate.donorUserId,
+          claimCodeTtlMs,
           donorSessionId
         );
         barcodeFetchMs = durationMs(barcodeStartedAt);
@@ -620,9 +623,14 @@ async function handleRefresh(req: NextRequest) {
         );
       }
     }
-    const { code } = await fetchLiveClaimCodeFromGet(effectiveDonorUserId);
+    const { config } = await getAdminConfig();
+    const claimCodeTtlMs = config.codeExpiryMinutes * 60_000;
+    const { code } = await fetchLiveClaimCodeFromGet(
+      effectiveDonorUserId,
+      claimCodeTtlMs
+    );
 
-    // Do NOT update expiresAt — the original 60-second window is the hard deadline.
+    // Do NOT update expiresAt — the original configured expiry window is the hard deadline.
     // We only fetch a fresh barcode payload (the GET barcode itself is short-lived),
     // but the claim's expiry stays fixed from generation time.
 

@@ -53,7 +53,7 @@ const API_ENDPOINTS: ApiEndpoint[] = [
       {
         defaultWeeklyAllowance: 50,
         defaultClaimAmount: 10,
-        codeExpiryMinutes: 5,
+        codeExpiryMinutes: 4,
         maxClaimsPerDay: 5,
         minDonationAmount: 10,
         maxDonationAmount: 500,

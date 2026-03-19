@@ -1,0 +1,29 @@
+{
+  "short_name": "SlugSwap",
+  "name": "SlugSwap",
+  "description": "Share campus dining points with students who need them most.",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#111217",
+  "background_color": "#ffffff",
+  "icons": [
+    {
+      "src": "./icon-192-v2.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./icon-512-v2.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "./icon-512-maskable-v2.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

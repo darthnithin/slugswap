@@ -527,15 +527,6 @@ export default function DonorScreen() {
     );
   }
 
-  const handleHeroAction = () => {
-    if (isGetLinked) {
-      router.push('/scan-card');
-      return;
-    }
-
-    void handleOpenGetLogin();
-  };
-
   return (
     <View style={styles.screen}>
       <ScrollView
@@ -566,18 +557,18 @@ export default function DonorScreen() {
             <Text style={styles.passName}>{userDisplayName}</Text>
 
             <Pressable
-              onPress={handleHeroAction}
+              onPress={() => router.push('/scan-card')}
               style={({ pressed }) => [
                 styles.passActionPill,
                 { opacity: buttonOpacity(pressed, false) },
               ]}
             >
               <SymbolView
-                name={isGetLinked ? 'barcode.viewfinder' : 'link'}
+                name="barcode.viewfinder"
                 tintColor="#ffffff"
                 size={22}
               />
-              <Text style={styles.passActionText}>{isGetLinked ? 'Scan Card' : 'Link GET'}</Text>
+              <Text style={styles.passActionText}>Scan Card</Text>
             </Pressable>
           </View>
         </View>

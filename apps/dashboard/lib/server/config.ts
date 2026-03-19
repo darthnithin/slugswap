@@ -27,7 +27,7 @@ export type AdminConfig = {
 export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
   defaultWeeklyAllowance: 50,
   defaultClaimAmount: 10,
-  codeExpiryMinutes: 5,
+  codeExpiryMinutes: 4,
   poolCalculationMethod: "equal",
   maxClaimsPerDay: 5,
   minDonationAmount: 10,

@@ -9,6 +9,10 @@ export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
 
+function isUnlinkedGetAccountError(error: unknown): boolean {
+  return error instanceof Error && error.message === "GET account is not linked";
+}
+
 async function handleSet(req: NextRequest) {
   if (req.method !== "POST") {
     return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
@@ -190,7 +194,9 @@ async function handleImpact(req: NextRequest) {
         remainingThisWeek = Math.min(capRemainingThisWeek, Math.max(0, liveTrackedBalance));
       }
     } catch (error) {
-      console.warn(`Failed to fetch live GET balance for donor ${userId}:`, error);
+      if (!isUnlinkedGetAccountError(error)) {
+        console.warn(`Failed to fetch live GET balance for donor ${userId}:`, error);
+      }
     }
     const capReached = remainingThisWeek <= 0;
 

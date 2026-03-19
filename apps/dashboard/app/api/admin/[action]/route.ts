@@ -49,6 +49,10 @@ function getWeekBounds() {
   return { weekStart, weekEnd };
 }
 
+function isUnlinkedGetAccountError(error: unknown): boolean {
+  return error instanceof Error && error.message === "GET account is not linked";
+}
+
 async function fetchTrackedGetBalanceTotal(userId: string): Promise<number | null> {
   try {
     const { sessionId } = await getActiveGetSession(userId);
@@ -56,7 +60,9 @@ async function fetchTrackedGetBalanceTotal(userId: string): Promise<number | nul
     const { trackedBalance } = await syncDonorPauseStateFromAccounts(userId, accounts);
     return trackedBalance ?? getTrackedBalanceTotal(accounts);
   } catch (error) {
-    console.warn(`Failed to fetch live GET balance for donor ${userId}:`, error);
+    if (!isUnlinkedGetAccountError(error)) {
+      console.warn(`Failed to fetch live GET balance for donor ${userId}:`, error);
+    }
     return null;
   }
 }

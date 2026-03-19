@@ -1,8 +1,6 @@
 import { callGetApi, GetApiError } from "@/lib/server/get/tools";
 import { getActiveGetSession } from "@/lib/server/get/session";
 
-const CLAIM_CODE_TTL_MS = 60_000;
-
 function durationMs(startedAt: number): number {
   return Date.now() - startedAt;
 }
@@ -24,6 +22,7 @@ function extractBarcodePayload(raw: unknown): string | null {
 
 export async function fetchLiveClaimCodeFromGet(
   userId: string,
+  claimCodeTtlMs: number,
   existingSessionId?: string
 ): Promise<{ code: string; expiresAt: Date; sessionId: string }> {
   const startedAt = Date.now();
@@ -42,7 +41,7 @@ export async function fetchLiveClaimCodeFromGet(
     throw new GetApiError("GET provider returned an empty barcode payload");
   }
 
-  const expiresAt = new Date(Date.now() + CLAIM_CODE_TTL_MS);
+  const expiresAt = new Date(Date.now() + claimCodeTtlMs);
   logBarcodeFetchTiming({
     userId,
     usedExistingSession: !!existingSessionId,
