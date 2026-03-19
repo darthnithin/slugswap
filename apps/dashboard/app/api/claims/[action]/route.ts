@@ -101,6 +101,16 @@ function toSafeBalance(value: number | null): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function getAvailableTrackedBalance(
+  trackedBalance: number | null
+): number | null {
+  if (typeof trackedBalance !== "number" || Number.isNaN(trackedBalance)) {
+    return null;
+  }
+
+  return Math.max(0, trackedBalance);
+}
+
 function chooseCheckoutRail(
   snapshot: BalanceSnapshotEntry[],
   claimAmount: number
@@ -379,7 +389,9 @@ async function handleGenerate(req: NextRequest) {
         );
         pauseSyncMs = durationMs(pauseSyncStartedAt);
 
-        if (trackedBalance != null && trackedBalance <= 0) {
+        const availableTrackedBalance = getAvailableTrackedBalance(trackedBalance);
+
+        if (availableTrackedBalance != null && availableTrackedBalance < claimAmount) {
           hadDepletedBalanceReject = true;
           continue;
         }

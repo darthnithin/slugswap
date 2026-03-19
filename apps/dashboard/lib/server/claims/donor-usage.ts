@@ -15,10 +15,12 @@ export type DonorWeeklyUsage = {
   reservedThisWeek: number;
   claimsSelectedThisWeek: number;
   committedThisWeek: number;
+  capRemainingThisWeek: number;
   remainingThisWeek: number;
   capReached: boolean;
   lastSelectedAt: Date | null;
   utilizationRatio: number;
+  liveTrackedBalance: number | null;
 };
 
 function toNumeric(value: string | number | null | undefined): number {
@@ -37,7 +39,7 @@ export function computeUsageFromValues(input: {
 }): DonorWeeklyUsage {
   const capAmount = Math.max(0, input.capAmount);
   const committedThisWeek = input.redeemedThisWeek + input.reservedThisWeek;
-  const remainingThisWeek = capAmount - committedThisWeek;
+  const capRemainingThisWeek = capAmount - committedThisWeek;
   return {
     donorUserId: input.donorUserId,
     capAmount,
@@ -45,10 +47,31 @@ export function computeUsageFromValues(input: {
     reservedThisWeek: input.reservedThisWeek,
     claimsSelectedThisWeek: input.claimsSelectedThisWeek,
     committedThisWeek,
-    remainingThisWeek,
-    capReached: remainingThisWeek <= 0,
+    capRemainingThisWeek,
+    remainingThisWeek: capRemainingThisWeek,
+    capReached: capRemainingThisWeek <= 0,
     lastSelectedAt: input.lastSelectedAt,
     utilizationRatio: capAmount > 0 ? committedThisWeek / capAmount : Number.POSITIVE_INFINITY,
+    liveTrackedBalance: null,
+  };
+}
+
+export function applyLiveTrackedBalance(
+  usage: DonorWeeklyUsage,
+  liveTrackedBalance: number | null | undefined
+): DonorWeeklyUsage {
+  if (typeof liveTrackedBalance !== "number" || Number.isNaN(liveTrackedBalance)) {
+    return usage;
+  }
+
+  const constrainedBalance = Math.max(0, liveTrackedBalance);
+  const remainingThisWeek = Math.min(usage.capRemainingThisWeek, constrainedBalance);
+
+  return {
+    ...usage,
+    liveTrackedBalance: constrainedBalance,
+    remainingThisWeek,
+    capReached: remainingThisWeek <= 0,
   };
 }
 
@@ -171,7 +194,7 @@ export async function getActiveDonorRemainingTotal(now = new Date()): Promise<nu
   const donorRows = await db
     .select({
       donorUserId: donations.userId,
-      weeklyAmount: donations.amount,
+      capAmount: donations.amount,
     })
     .from(donations)
     .innerJoin(getCredentials, eq(getCredentials.userId, donations.userId))
@@ -183,17 +206,13 @@ export async function getActiveDonorRemainingTotal(now = new Date()): Promise<nu
 
   const donorCaps = donorRows.map((row) => ({
     donorUserId: row.donorUserId,
-    capAmount: toNumeric(row.weeklyAmount),
+    capAmount: toNumeric(row.capAmount),
   }));
 
   const { usageMap } = await getDonorWeeklyUsageMap(donorCaps, now);
 
-  let totalRemaining = 0;
-  for (const donor of donorCaps) {
-    const usage = usageMap.get(donor.donorUserId);
-    if (!usage) continue;
-    totalRemaining += Math.max(0, usage.remainingThisWeek);
-  }
-
-  return totalRemaining;
+  return donorCaps.reduce((sum, donor) => {
+    const remaining = usageMap.get(donor.donorUserId)?.remainingThisWeek ?? 0;
+    return sum + Math.max(0, remaining);
+  }, 0);
 }
