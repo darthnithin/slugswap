@@ -7,6 +7,11 @@ function durationMs(startedAt: number): number {
   return Date.now() - startedAt;
 }
 
+function logBarcodeFetchTiming(payload: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") return;
+  console.info("[claims.barcode-fetch.timing]", payload);
+}
+
 function extractBarcodePayload(raw: unknown): string | null {
   if (typeof raw === "string" && raw.trim()) return raw.trim();
   if (raw && typeof raw === "object") {
@@ -38,7 +43,7 @@ export async function fetchLiveClaimCodeFromGet(
   }
 
   const expiresAt = new Date(Date.now() + CLAIM_CODE_TTL_MS);
-  console.info("[claims.barcode-fetch.timing]", {
+  logBarcodeFetchTiming({
     userId,
     usedExistingSession: !!existingSessionId,
     getBarcodeMs: durationMs(fetchStartedAt),

@@ -35,6 +35,16 @@ function durationMs(startedAt: number): number {
   return Date.now() - startedAt;
 }
 
+function logClaimGenerationTiming(payload: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") return;
+  console.info("[claims.generate.timing]", payload);
+}
+
+function logClaimCandidateFailure(payload: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") return;
+  console.warn("[claims.generate.candidate-failure]", payload);
+}
+
 function claimGenerationErrorResponse(
   error: string,
   status: number,
@@ -330,7 +340,7 @@ async function handleGenerate(req: NextRequest) {
         // Allowance is NOT deducted here — it's only deducted when redemption
         // is confirmed via balance drop (the actual amount spent may differ).
 
-        console.info("[claims.generate.timing]", {
+        logClaimGenerationTiming({
           requesterUserId: userId,
           donorUserId: candidate.donorUserId,
           donorSelectionPolicy: ranked.policy,
@@ -365,7 +375,7 @@ async function handleGenerate(req: NextRequest) {
           { status: 200 }
         );
       } catch (error: any) {
-        console.warn("[claims.generate.candidate-failure]", {
+        logClaimCandidateFailure({
           requesterUserId: userId,
           donorUserId: candidate.donorUserId,
           donorSelectionPolicy: ranked.policy,
@@ -405,7 +415,7 @@ async function handleGenerate(req: NextRequest) {
     );
   } catch (error: any) {
     console.error("Error generating claim code:", error);
-    console.info("[claims.generate.timing]", {
+    logClaimGenerationTiming({
       requestTotalMs: durationMs(requestStartedAt),
       failed: true,
     });
