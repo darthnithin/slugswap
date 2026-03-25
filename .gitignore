@@ -101,3 +101,6 @@ apps/dashboard/public/app/
 .agents/skills/neon-postgres/
 .claude/skills/neon-postgres
 .cursor/skills/neon-postgres
+
+# local investigation artifacts
+tmp/
