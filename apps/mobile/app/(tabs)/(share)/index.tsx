@@ -259,19 +259,19 @@ export default function DonorScreen() {
         return;
       }
 
-      const linkState = await getGetLinkStatus(user.id);
+      const linkState = await getGetLinkStatus();
       let nextGetAccounts: GetAccountBalance[] = [];
 
       if (linkState.linked) {
         try {
-          const accounts = await getGetAccounts(user.id);
+          const accounts = await getGetAccounts();
           nextGetAccounts = accounts.accounts || [];
         } catch {
           nextGetAccounts = [];
         }
       }
 
-      const impactData = await getDonorImpact(user.id);
+      const impactData = await getDonorImpact();
       const normalizedImpact = normalizeDonorImpact(impactData);
       const normalizedWeeklyAmount =
         impactData.weeklyAmount > 0 ? impactData.weeklyAmount.toString() : '';
@@ -371,7 +371,7 @@ export default function DonorScreen() {
 
     setSaving(true);
     try {
-      await setDonation(userId, amount, userEmail);
+      await setDonation(amount);
       setIsActive(true);
       Alert.alert('Success', 'Your contribution has been set!');
       await loadUserAndImpact({ showBlockingLoader: false });
@@ -391,7 +391,7 @@ export default function DonorScreen() {
 
     setSaving(true);
     try {
-      await pauseDonation(userId, shouldPause);
+      await pauseDonation(shouldPause);
       setIsActive(nextIsActive);
       cacheShareSnapshot({ isActive: nextIsActive });
       Alert.alert('Success', isActive ? 'Donation paused' : 'Donation resumed');
@@ -406,11 +406,7 @@ export default function DonorScreen() {
   const completeGetLink = async (validatedUrl: string) => {
     if (!userId) return;
 
-    await linkGetAccount({
-      userId,
-      userEmail,
-      validatedUrl: validatedUrl.trim(),
-    });
+    await linkGetAccount(validatedUrl.trim());
 
     setGetLoginUrlInput('');
     Alert.alert('Success', 'Your GET account is now linked for sharing.');
@@ -450,7 +446,7 @@ export default function DonorScreen() {
     const runUnlink = async () => {
       setUnlinkingGet(true);
       try {
-        await unlinkGetAccount(userId);
+        await unlinkGetAccount();
         setIsGetLinked(false);
         setGetLinkedAt(null);
         setGetAccounts([]);
@@ -497,7 +493,7 @@ export default function DonorScreen() {
 
     setRefreshingBalance(true);
     try {
-      const accounts = await getGetAccounts(userId);
+      const accounts = await getGetAccounts();
       const nextAccounts = accounts.accounts || [];
       setGetAccounts(nextAccounts);
       cacheShareSnapshot({ getAccounts: nextAccounts });

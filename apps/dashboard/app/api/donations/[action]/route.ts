@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, gte, lt, sql as sqlOp } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
+import {
+  authenticateAppUser,
+  syncAuthenticatedUser,
+} from "@/lib/server/app-user-auth";
+import { getAdminConfig } from "@/lib/server/config";
 import { fetchLiveTrackedBalance } from "@/lib/server/get/tracked-balance";
 import { getPacificWeekWindow } from "@/lib/server/timezone";
 
@@ -19,14 +24,19 @@ async function handleSet(req: NextRequest) {
   }
 
   try {
-    const { userId, amount, userEmail } = (await req.json()) as {
-      userId?: string;
-      amount?: number | string;
-      userEmail?: string | null;
-    };
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
+    }
+    await syncAuthenticatedUser(auth.user);
 
-    if (!userId || amount === undefined || amount === null) {
-      return NextResponse.json({ error: "Missing userId or amount" }, { status: 400 });
+    const { amount } = (await req.json()) as {
+      amount?: number | string;
+    };
+    const userId = auth.user.id;
+
+    if (amount === undefined || amount === null) {
+      return NextResponse.json({ error: "Missing amount" }, { status: 400 });
     }
 
     const weeklyAmount = parseFloat(String(amount));
@@ -34,23 +44,17 @@ async function handleSet(req: NextRequest) {
       return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
     }
 
-    const existingUsers = await db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.id, userId))
-      .limit(1);
-
-    if (existingUsers.length === 0) {
-      if (!userEmail || typeof userEmail !== "string") {
-        return NextResponse.json(
-          { error: "Missing user email for first-time donor setup" },
-          { status: 400 }
-        );
-      }
-      await db
-        .insert(schema.users)
-        .values({ id: userId, email: userEmail })
-        .onConflictDoNothing();
+    const { config } = await getAdminConfig();
+    if (
+      weeklyAmount < config.minDonationAmount ||
+      weeklyAmount > config.maxDonationAmount
+    ) {
+      return NextResponse.json(
+        {
+          error: `Donation amount must be between ${config.minDonationAmount} and ${config.maxDonationAmount}`,
+        },
+        { status: 400 }
+      );
     }
 
     const existingDonations = await db
@@ -99,10 +103,12 @@ async function handleImpact(req: NextRequest) {
     return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
   }
   try {
-    const userId = new URL(req.url).searchParams.get("userId");
-    if (!userId) {
-      return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
     }
+    await syncAuthenticatedUser(auth.user);
+    const userId = auth.user.id;
 
     const donations = await db
       .select()
@@ -232,13 +238,16 @@ async function handlePause(req: NextRequest) {
     return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
   }
   try {
-    const { userId, paused } = (await req.json()) as {
-      userId?: string;
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
+    }
+    await syncAuthenticatedUser(auth.user);
+
+    const { paused } = (await req.json()) as {
       paused?: boolean;
     };
-    if (!userId) {
-      return NextResponse.json({ error: "Missing userId" }, { status: 400 });
-    }
+    const userId = auth.user.id;
 
     const newStatus = paused ? "paused" : "active";
     const [updated] = await db

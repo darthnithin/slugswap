@@ -314,7 +314,7 @@ export default function RequesterScreen() {
 
       setUserId(user.id);
 
-      const allowanceData = await getRequesterAllowance(user.id);
+      const allowanceData = await getRequesterAllowance();
       setWeeklyAllowance(allowanceData.weeklyLimit);
       setRemainingAllowance(allowanceData.remainingAmount);
       setDaysUntilReset(allowanceData.daysUntilReset);

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
-import { createClient } from "@supabase/supabase-js";
+import {
+  authenticateAppUser,
+  syncAuthenticatedUser,
+} from "@/lib/server/app-user-auth";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 import { getAdminConfig } from "@/lib/server/config";
@@ -8,15 +11,6 @@ import { getAdminConfig } from "@/lib/server/config";
 export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
-
-function getSupabaseClient() {
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Supabase environment variables not configured");
-  }
-  return createClient(supabaseUrl, serviceRoleKey);
-}
 
 function getCurrentWeek() {
   const now = new Date();
@@ -43,40 +37,15 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
   }
 
   try {
-    // Verify auth token
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
     }
+    await syncAuthenticatedUser(auth.user);
 
-    const token = authHeader.replace("Bearer ", "");
-    const supabase = getSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
+    const user = auth.user;
 
     const { weekStart, weekEnd } = getCurrentWeek();
-
-    // Sync user from Supabase Auth to local database
-    await db
-      .insert(schema.users)
-      .values({
-        id: user.id,
-        email: user.email || `${user.id}@unknown.local`,
-        name: user.user_metadata?.name || null,
-        avatarUrl: user.user_metadata?.avatar_url || null,
-      })
-      .onConflictDoUpdate({
-        target: schema.users.id,
-        set: {
-          email: user.email || `${user.id}@unknown.local`,
-          name: user.user_metadata?.name || null,
-          avatarUrl: user.user_metadata?.avatar_url || null,
-          updatedAt: new Date(),
-        },
-      });
 
     let weeklyPool = await db
       .select()

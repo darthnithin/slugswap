@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, type User } from "@supabase/supabase-js";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
+import {
+  authenticateAppUser,
+  syncAuthenticatedUser,
+} from "@/lib/server/app-user-auth";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 import {
@@ -177,66 +180,6 @@ function getCurrentWeek() {
   return { weekStart, weekEnd };
 }
 
-function getSupabaseClient() {
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Supabase environment variables not configured");
-  }
-
-  return createClient(supabaseUrl, serviceRoleKey);
-}
-
-function unauthorizedResponse(message = "Unauthorized") {
-  return NextResponse.json({ error: message }, { status: 401 });
-}
-
-async function authenticateAppUser(
-  req: NextRequest
-): Promise<{ user: User } | { response: NextResponse }> {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader) {
-    return { response: unauthorizedResponse() };
-  }
-
-  const token = authHeader.replace("Bearer ", "").trim();
-  if (!token) {
-    return { response: unauthorizedResponse("Invalid token") };
-  }
-
-  const supabase = getSupabaseClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser(token);
-
-  if (error || !user?.id) {
-    return { response: unauthorizedResponse("Invalid token") };
-  }
-
-  return { user };
-}
-
-async function syncAuthenticatedUser(user: User) {
-  await db
-    .insert(schema.users)
-    .values({
-      id: user.id,
-      email: user.email || `${user.id}@unknown.local`,
-      name: user.user_metadata?.name || null,
-      avatarUrl: user.user_metadata?.avatar_url || null,
-    })
-    .onConflictDoUpdate({
-      target: schema.users.id,
-      set: {
-        email: user.email || `${user.id}@unknown.local`,
-        name: user.user_metadata?.name || null,
-        avatarUrl: user.user_metadata?.avatar_url || null,
-        updatedAt: new Date(),
-      },
-    });
-}
 
 async function handleGenerate(req: NextRequest) {
   if (req.method !== "POST") {
@@ -753,35 +696,57 @@ async function detectRedemption(
     if (delta > 0) {
       const now = new Date();
 
-      await db
-        .update(schema.claimCodes)
-        .set({ status: "redeemed", redeemedAt: now, amount: delta.toString() })
-        .where(eq(schema.claimCodes.id, claim.id));
-
-      await db.insert(schema.redemptions).values({
-        claimCodeId: claim.id,
-        userId: claim.userId,
-        amount: delta.toString(),
-        redeemedAt: now,
-        getToolsTransactionId: `balance_delta:${snap.id}`,
-      });
-
-      // Deduct the actual amount spent from the requester's allowance
-      const userAllowance = await db
-        .select()
-        .from(schema.userAllowances)
-        .where(
-          and(
-            eq(schema.userAllowances.userId, claim.userId),
-            eq(schema.userAllowances.weeklyPoolId, claim.weeklyPoolId)
+      await db.transaction(async (tx) => {
+        const updatedClaims = await tx
+          .update(schema.claimCodes)
+          .set({ status: "redeemed", redeemedAt: now, amount: delta.toString() })
+          .where(
+            and(
+              eq(schema.claimCodes.id, claim.id),
+              ne(schema.claimCodes.status, "redeemed")
+            )
           )
-        )
-        .limit(1);
+          .returning({ id: schema.claimCodes.id });
 
-      if (userAllowance.length > 0) {
+        if (updatedClaims.length === 0) {
+          return;
+        }
+
+        const insertedRedemptions = await tx
+          .insert(schema.redemptions)
+          .values({
+            claimCodeId: claim.id,
+            userId: claim.userId,
+            amount: delta.toString(),
+            redeemedAt: now,
+            getToolsTransactionId: `balance_delta:${snap.id}`,
+          })
+          .onConflictDoNothing({ target: schema.redemptions.claimCodeId })
+          .returning({ id: schema.redemptions.id });
+
+        if (insertedRedemptions.length === 0) {
+          return;
+        }
+
+        // Deduct the actual amount spent from the requester's allowance.
+        const userAllowance = await tx
+          .select()
+          .from(schema.userAllowances)
+          .where(
+            and(
+              eq(schema.userAllowances.userId, claim.userId),
+              eq(schema.userAllowances.weeklyPoolId, claim.weeklyPoolId)
+            )
+          )
+          .limit(1);
+
+        if (userAllowance.length === 0) {
+          return;
+        }
+
         const allowance = userAllowance[0];
         const remaining = parseFloat(allowance.remainingAmount);
-        await db
+        await tx
           .update(schema.userAllowances)
           .set({
             usedAmount: (parseFloat(allowance.usedAmount) + delta).toString(),
@@ -789,7 +754,7 @@ async function detectRedemption(
             updatedAt: new Date(),
           })
           .where(eq(schema.userAllowances.id, allowance.id));
-      }
+      });
 
       return { amount: delta, accountName: snap.name, redeemedAt: now };
     }

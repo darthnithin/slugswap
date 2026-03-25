@@ -1,4 +1,12 @@
-import { pgTable, uuid, text, timestamp, decimal, integer } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  uuid,
+  text,
+  timestamp,
+  decimal,
+  integer,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey(),
@@ -57,18 +65,24 @@ export const claimCodes = pgTable("claim_codes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const redemptions = pgTable("redemptions", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  claimCodeId: uuid("claim_code_id")
-    .references(() => claimCodes.id)
-    .notNull(),
-  userId: uuid("user_id")
-    .references(() => users.id)
-    .notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  redeemedAt: timestamp("redeemed_at").defaultNow().notNull(),
-  getToolsTransactionId: text("get_tools_transaction_id"),
-});
+export const redemptions = pgTable(
+  "redemptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimCodeId: uuid("claim_code_id")
+      .references(() => claimCodes.id)
+      .notNull(),
+    userId: uuid("user_id")
+      .references(() => users.id)
+      .notNull(),
+    amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+    redeemedAt: timestamp("redeemed_at").defaultNow().notNull(),
+    getToolsTransactionId: text("get_tools_transaction_id"),
+  },
+  (table) => ({
+    claimCodeUniqueIdx: uniqueIndex("redemptions_claim_code_id_unique").on(table.claimCodeId),
+  })
+);
 
 export const userAllowances = pgTable("user_allowances", {
   id: uuid("id").primaryKey().defaultRandom(),

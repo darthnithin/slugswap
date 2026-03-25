@@ -211,11 +211,12 @@ async function getAuthHeaders(): Promise<HeadersInit> {
   return headers;
 }
 
-export async function setDonation(userId: string, amount: number, userEmail?: string | null) {
+export async function setDonation(amount: number) {
+  const headers = await getAuthHeaders();
   const response = await fetchWithFallback(`${API_BASE_URL}/api/donations/set`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, amount, userEmail }),
+    headers,
+    body: JSON.stringify({ amount }),
   });
 
   if (!response.ok) {
@@ -226,8 +227,11 @@ export async function setDonation(userId: string, amount: number, userEmail?: st
   return response.json();
 }
 
-export async function getDonorImpact(userId: string) {
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/donations/impact?userId=${userId}`);
+export async function getDonorImpact() {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/donations/impact`, {
+    headers,
+  });
 
   if (!response.ok) {
     const errorMessage = await readApiError(response, 'Failed to fetch impact');
@@ -237,11 +241,12 @@ export async function getDonorImpact(userId: string) {
   return response.json() as Promise<DonorImpact>;
 }
 
-export async function pauseDonation(userId: string, paused: boolean) {
+export async function pauseDonation(paused: boolean) {
+  const headers = await getAuthHeaders();
   const response = await fetchWithFallback(`${API_BASE_URL}/api/donations/pause`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, paused }),
+    headers,
+    body: JSON.stringify({ paused }),
   });
 
   if (!response.ok) {
@@ -252,9 +257,9 @@ export async function pauseDonation(userId: string, paused: boolean) {
   return response.json();
 }
 
-export async function getRequesterAllowance(userId: string) {
+export async function getRequesterAllowance() {
   const headers = await getAuthHeaders();
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/requesters/allowance?userId=${userId}`, {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/requesters/allowance`, {
     headers,
   });
 
@@ -364,8 +369,11 @@ export async function getGetLoginUrl() {
   return response.json() as Promise<{ loginUrl: string }>;
 }
 
-export async function getGetLinkStatus(userId: string) {
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/get/link-status?userId=${userId}`);
+export async function getGetLinkStatus() {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/get/link-status`, {
+    headers,
+  });
 
   if (!response.ok) {
     const errorMessage = await readApiError(response, 'Failed to fetch GET link status');
@@ -375,15 +383,12 @@ export async function getGetLinkStatus(userId: string) {
   return response.json() as Promise<{ linked: boolean; linkedAt: string | null }>;
 }
 
-export async function linkGetAccount(params: {
-  userId: string;
-  validatedUrl: string;
-  userEmail?: string | null;
-}) {
+export async function linkGetAccount(validatedUrl: string) {
+  const headers = await getAuthHeaders();
   const response = await fetchWithFallback(`${API_BASE_URL}/api/get/link`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    headers,
+    body: JSON.stringify({ validatedUrl }),
   });
 
   if (!response.ok) {
@@ -394,9 +399,11 @@ export async function linkGetAccount(params: {
   return response.json() as Promise<{ success: boolean; linked: boolean }>;
 }
 
-export async function unlinkGetAccount(userId: string) {
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/get/link?userId=${userId}`, {
+export async function unlinkGetAccount() {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/get/link`, {
     method: 'DELETE',
+    headers,
   });
 
   if (!response.ok) {
@@ -407,8 +414,11 @@ export async function unlinkGetAccount(userId: string) {
   return response.json() as Promise<{ success: boolean; linked: boolean }>;
 }
 
-export async function getGetAccounts(userId: string) {
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/get/accounts?userId=${userId}`);
+export async function getGetAccounts() {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/get/accounts`, {
+    headers,
+  });
 
   if (!response.ok) {
     const errorMessage = await readApiError(response, 'Failed to fetch GET accounts');
