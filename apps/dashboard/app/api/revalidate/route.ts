@@ -2,10 +2,22 @@ import { revalidatePath } from "next/cache";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const secret = searchParams.get("secret");
-  const path = searchParams.get("path") ?? "/";
+function unauthorizedResponse() {
+  return Response.json({ error: "Invalid credentials" }, { status: 401 });
+}
+
+export async function POST(request: Request) {
+  const authHeader = request.headers.get("authorization");
+  const bearerSecret =
+    authHeader && authHeader.toLowerCase().startsWith("bearer ")
+      ? authHeader.slice("Bearer ".length).trim()
+      : null;
+  const body = (await request.json().catch(() => ({}))) as {
+    path?: string;
+    secret?: string;
+  };
+  const secret = bearerSecret || body.secret || null;
+  const path = body.path ?? "/";
 
   if (!process.env.REVALIDATE_SECRET) {
     return Response.json(
@@ -15,7 +27,7 @@ export async function GET(request: Request) {
   }
 
   if (!secret || secret !== process.env.REVALIDATE_SECRET) {
-    return Response.json({ error: "Invalid credentials" }, { status: 401 });
+    return unauthorizedResponse();
   }
 
   if (!path.startsWith("/")) {

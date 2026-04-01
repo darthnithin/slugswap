@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/server/db";
+import {
+  authenticateAppUser,
+  syncAuthenticatedUser,
+} from "@/lib/server/app-user-auth";
 import { getCredentials, users } from "@/lib/server/schema";
 import { decryptSecret, encryptSecret } from "@/lib/server/get/credentials";
 import {
@@ -112,13 +116,14 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
     }
     try {
-      const userId = new URL(req.url).searchParams.get("userId");
-      if (!userId) {
-        return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+      const auth = await authenticateAppUser(req);
+      if ("response" in auth) {
+        return auth.response;
       }
+      await syncAuthenticatedUser(auth.user);
 
       const credential = await db.query.getCredentials.findFirst({
-        where: eq(getCredentials.userId, userId),
+        where: eq(getCredentials.userId, auth.user.id),
       });
 
       return NextResponse.json(
@@ -142,14 +147,15 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
     }
     try {
-      const userId = new URL(req.url).searchParams.get("userId");
-      if (!userId) {
-        return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+      const auth = await authenticateAppUser(req);
+      if ("response" in auth) {
+        return auth.response;
       }
+      await syncAuthenticatedUser(auth.user);
 
-      const { sessionId } = await getActiveGetSession(userId);
+      const { sessionId } = await getActiveGetSession(auth.user.id);
       const accounts = await retrieveAccounts(sessionId);
-      await syncDonorPauseStateFromAccounts(userId, accounts);
+      await syncDonorPauseStateFromAccounts(auth.user.id, accounts);
 
       return NextResponse.json(
         { linked: true, accounts },
@@ -169,21 +175,26 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
 
     try {
       if (req.method === "POST") {
-        const { userId, userEmail, validatedUrl } = (await req.json()) as {
-          userId?: string;
-          userEmail?: string | null;
+        const auth = await authenticateAppUser(req);
+        if ("response" in auth) {
+          return auth.response;
+        }
+        await syncAuthenticatedUser(auth.user);
+
+        const { validatedUrl } = (await req.json()) as {
           validatedUrl?: string;
         };
+        const userId = auth.user.id;
 
-        if (!userId || !validatedUrl) {
+        if (!validatedUrl) {
           return NextResponse.json(
-            { error: "Missing or invalid userId or validatedUrl" },
+            { error: "Missing or invalid validatedUrl" },
             { status: 400 }
           );
         }
 
         const safePin = generatePin();
-        await ensureUserExists(userId, userEmail);
+        await ensureUserExists(userId, auth.user.email);
 
         const validatedSessionId = extractValidatedSessionId(validatedUrl);
         if (!validatedSessionId) {
@@ -217,10 +228,12 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         return NextResponse.json({ success: true, linked: true }, { status: 200 });
       }
 
-      const userId = new URL(req.url).searchParams.get("userId");
-      if (!userId) {
-        return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+      const auth = await authenticateAppUser(req);
+      if ("response" in auth) {
+        return auth.response;
       }
+      await syncAuthenticatedUser(auth.user);
+      const userId = auth.user.id;
 
       const credential = await db.query.getCredentials.findFirst({
         where: eq(getCredentials.userId, userId),

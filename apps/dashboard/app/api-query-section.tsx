@@ -80,12 +80,12 @@ const API_ENDPOINTS: ApiEndpoint[] = [
     method: "POST",
     description: "Generate claim code for user",
     requiresAuth: true,
-    bodyExample: JSON.stringify({ userId: "<user-id>", amount: 10 }, null, 2),
+    bodyExample: JSON.stringify({ amount: 10 }, null, 2),
   },
   {
     path: "/api/claims/history",
     method: "GET",
-    description: "Claim history for user (?userId=)",
+    description: "Claim history for authenticated user",
     requiresAuth: true,
   },
   {
@@ -93,7 +93,7 @@ const API_ENDPOINTS: ApiEndpoint[] = [
     method: "POST",
     description: "Refresh existing claim code",
     requiresAuth: true,
-    bodyExample: JSON.stringify({ userId: "<user-id>", claimCodeId: "<claim-id>" }, null, 2),
+    bodyExample: JSON.stringify({ claimCodeId: "<claim-id>" }, null, 2),
   },
   // Donations
   {
@@ -101,16 +101,12 @@ const API_ENDPOINTS: ApiEndpoint[] = [
     method: "POST",
     description: "Set or update donor weekly amount",
     requiresAuth: true,
-    bodyExample: JSON.stringify(
-      { userId: "<user-id>", amount: 25, userEmail: "donor@example.com" },
-      null,
-      2
-    ),
+    bodyExample: JSON.stringify({ amount: 25 }, null, 2),
   },
   {
     path: "/api/donations/impact",
     method: "GET",
-    description: "Donor impact stats (?userId=)",
+    description: "Donor impact stats for authenticated user",
     requiresAuth: true,
   },
   {
@@ -118,20 +114,20 @@ const API_ENDPOINTS: ApiEndpoint[] = [
     method: "PATCH",
     description: "Pause or resume donor",
     requiresAuth: true,
-    bodyExample: JSON.stringify({ userId: "<user-id>", paused: true }, null, 2),
+    bodyExample: JSON.stringify({ paused: true }, null, 2),
   },
   // GET (school point system)
   { path: "/api/get/login-url", method: "GET", description: "GET Tools login URL", requiresAuth: false },
   {
     path: "/api/get/link-status",
     method: "GET",
-    description: "GET link status (?userId=)",
+    description: "GET link status for authenticated user",
     requiresAuth: true,
   },
   {
     path: "/api/get/accounts",
     method: "GET",
-    description: "GET accounts for user (?userId=)",
+    description: "GET accounts for authenticated user",
     requiresAuth: true,
   },
   {
@@ -139,16 +135,12 @@ const API_ENDPOINTS: ApiEndpoint[] = [
     method: "POST",
     description: "Link GET account (validatedUrl from GET redirect)",
     requiresAuth: true,
-    bodyExample: JSON.stringify(
-      { userId: "<user-id>", userEmail: "user@example.com", validatedUrl: "https://..." },
-      null,
-      2
-    ),
+    bodyExample: JSON.stringify({ validatedUrl: "https://..." }, null, 2),
   },
   {
     path: "/api/get/link",
     method: "DELETE",
-    description: "Unlink GET account (?userId=)",
+    description: "Unlink GET account for authenticated user",
     requiresAuth: true,
   },
   // Requesters

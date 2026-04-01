@@ -1,21 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { eq } from "drizzle-orm";
+import {
+  authenticateAppUser,
+  syncAuthenticatedUser,
+} from "@/lib/server/app-user-auth";
 import { db } from "@/lib/server/db";
 import { users } from "@/lib/server/schema";
 
 export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
-
-function getSupabaseAdminClient() {
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Supabase server environment variables are not configured");
-  }
-  return createClient(supabaseUrl, serviceRoleKey);
-}
 
 async function dispatch(req: NextRequest, ctx: Ctx) {
   const { action } = await ctx.params;
@@ -25,13 +19,14 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
     }
     try {
-      const authHeader = req.headers.get("authorization");
-      if (!authHeader) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      const auth = await authenticateAppUser(req);
+      if ("response" in auth) {
+        return auth.response;
       }
+      await syncAuthenticatedUser(auth.user);
 
       const user = await db.query.users.findFirst({
-        where: eq(users.email, "example@example.com"),
+        where: eq(users.id, auth.user.id),
       });
 
       if (!user) {
@@ -48,37 +43,20 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
   }
 
   if (action === "profile") {
-    let supabase;
-    try {
-      supabase = getSupabaseAdminClient();
-    } catch (error: any) {
-      return NextResponse.json({ error: error?.message || "Server misconfigured" }, { status: 500 });
+    const auth = await authenticateAppUser(req);
+    if ("response" in auth) {
+      return auth.response;
     }
-
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader) {
-      return NextResponse.json({ error: "Missing authorization header" }, { status: 401 });
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
+    await syncAuthenticatedUser(auth.user);
+    const user = auth.user;
 
     if (req.method === "GET") {
-      const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", user.id)
-        .single();
+      const data = await db.query.users.findFirst({
+        where: eq(users.id, user.id),
+      });
 
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+      if (!data) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
       }
       return NextResponse.json(data, { status: 200 });
     }
@@ -88,15 +66,23 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         name?: string;
         avatar_url?: string;
       };
-      const { data, error } = await supabase
-        .from("users")
-        .update({ name, avatar_url })
-        .eq("id", user.id)
-        .select()
-        .single();
+      const updates: Partial<typeof users.$inferInsert> = {
+        updatedAt: new Date(),
+      };
+      if (name !== undefined) {
+        updates.name = typeof name === "string" ? name : null;
+      }
+      if (avatar_url !== undefined) {
+        updates.avatarUrl = typeof avatar_url === "string" ? avatar_url : null;
+      }
+      const [data] = await db
+        .update(users)
+        .set(updates)
+        .where(eq(users.id, user.id))
+        .returning();
 
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+      if (!data) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
       }
       return NextResponse.json(data, { status: 200 });
     }
