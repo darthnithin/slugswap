@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt, lte } from "drizzle-orm";
 import {
   authenticateAppUser,
   syncAuthenticatedUser,
@@ -12,20 +12,6 @@ export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
 
-function getCurrentWeek() {
-  const now = new Date();
-  const dayOfWeek = now.getDay();
-  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() + diffToMonday);
-  weekStart.setHours(0, 0, 0, 0);
-
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 7);
-
-  return { weekStart, weekEnd };
-}
 
 async function dispatch(req: NextRequest, ctx: Ctx) {
   const { action } = await ctx.params;
@@ -43,29 +29,48 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     }
     await syncAuthenticatedUser(auth.user);
 
+    // const user = auth.user;
+
+    // const { weekStart, weekEnd } = getCurrentWeek();
+
+    // let weeklyPool = await db
+    //   .select()
+    //   .from(schema.weeklyPools)
+    //   .where(eq(schema.weeklyPools.weekStart, weekStart))
+    //   .limit(1);
+
+    // if (weeklyPool.length === 0) {
+    //   const [newPool] = await db
+    //     .insert(schema.weeklyPools)
+    //     .values({
+    //       weekStart,
+    //       weekEnd,
+    //       totalAmount: "0",
+    //       allocatedAmount: "0",
+    //       remainingAmount: "0",
+    //     })
+    //     .returning();
+    //   weeklyPool = [newPool];
+    // }
+
     const user = auth.user;
-
-    const { weekStart, weekEnd } = getCurrentWeek();
-
-    let weeklyPool = await db
+    const now = new Date();
+    // Find the actual pool instead of creating one
+    const weeklyPool = await db
       .select()
       .from(schema.weeklyPools)
-      .where(eq(schema.weeklyPools.weekStart, weekStart))
+      .where(
+        and(
+          lte(schema.weeklyPools.weekStart, now),
+          gt(schema.weeklyPools.weekEnd, now)
+        )
+      )
       .limit(1);
 
     if (weeklyPool.length === 0) {
-      const [newPool] = await db
-        .insert(schema.weeklyPools)
-        .values({
-          weekStart,
-          weekEnd,
-          totalAmount: "0",
-          allocatedAmount: "0",
-          remainingAmount: "0",
-        })
-        .returning();
-      weeklyPool = [newPool];
+      return NextResponse.json({ weeklyLimit: 0, usedAmount: 0, remainingAmount: 0, weekStart: null, weekEnd: null, daysUntilReset: 0 }, { status: 200 });
     }
+    const pool = weeklyPool[0];
 
     let userAllowance = await db
       .select()
@@ -73,7 +78,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       .where(
         and(
           eq(schema.userAllowances.userId, user.id),
-          eq(schema.userAllowances.weeklyPoolId, weeklyPool[0].id)
+          eq(schema.userAllowances.weeklyPoolId, pool.id)
         )
       )
       .limit(1);
@@ -85,7 +90,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         .insert(schema.userAllowances)
         .values({
           userId: user.id,
-          weeklyPoolId: weeklyPool[0].id,
+          weeklyPoolId: pool.id,
           weeklyLimit: defaultWeeklyLimit.toString(),
           usedAmount: "0",
           remainingAmount: defaultWeeklyLimit.toString(),
@@ -95,8 +100,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     }
 
     const allowance = userAllowance[0];
-    const now = new Date();
-    const timeUntilReset = weekEnd.getTime() - now.getTime();
+    const timeUntilReset = pool.weekEnd.getTime() - now.getTime();
     const daysUntilReset = Math.ceil(timeUntilReset / (1000 * 60 * 60 * 24));
 
     return NextResponse.json(
@@ -104,8 +108,8 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         weeklyLimit: parseFloat(allowance.weeklyLimit),
         usedAmount: parseFloat(allowance.usedAmount),
         remainingAmount: parseFloat(allowance.remainingAmount),
-        weekStart: weekStart.toISOString(),
-        weekEnd: weekEnd.toISOString(),
+        weekStart: pool.weekStart.toISOString(),
+        weekEnd: pool.weekEnd.toISOString(),
         daysUntilReset,
       },
       { status: 200 }

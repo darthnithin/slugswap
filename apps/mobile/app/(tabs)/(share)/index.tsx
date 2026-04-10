@@ -23,6 +23,7 @@ import {
   getGetAccounts,
   getGetLinkStatus,
   getGetLoginUrl,
+  getRequesterAllowance,
   linkGetAccount,
   pauseDonation,
   setDonation,
@@ -244,6 +245,9 @@ export default function DonorScreen() {
   const [getAccounts, setGetAccounts] = useState<GetAccountBalance[]>(shareSnapshot?.getAccounts ?? []);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [requesterWeeklyLimit, setRequesterWeeklyLimit] = useState(shareSnapshot?.requesterWeeklyLimit ?? 0);
+  const [requesterWeekEnd, setRequesterWeekEnd] = useState<string | null>(shareSnapshot?.requesterWeekEnd ?? null);
+  const [requesterDaysUntilReset, setRequesterDaysUntilReset] = useState(shareSnapshot?.requesterDaysUntilReset ?? 0);
 
   const loadUserAndImpact = useCallback(async (options?: { showBlockingLoader?: boolean }) => {
     const showBlockingLoader = options?.showBlockingLoader ?? false;
@@ -275,6 +279,17 @@ export default function DonorScreen() {
       const normalizedImpact = normalizeDonorImpact(impactData);
       const normalizedWeeklyAmount =
         impactData.weeklyAmount > 0 ? impactData.weeklyAmount.toString() : '';
+      let nextRequesterWeeklyLimit = 0;
+      let nextRequesterWeekEnd: string | null = null;
+      let nextRequesterDaysUntilReset = 0;
+      try {
+        const allowance = await getRequesterAllowance();
+        nextRequesterWeeklyLimit = allowance.weeklyLimit;
+        nextRequesterWeekEnd = allowance.weekEnd;
+        nextRequesterDaysUntilReset = allowance.daysUntilReset;
+      } catch {
+        // don't matter
+      }
 
       const nextSnapshot: ShareTabSnapshot = {
         userId: user.id,
@@ -285,6 +300,9 @@ export default function DonorScreen() {
         isGetLinked: linkState.linked,
         getLinkedAt: linkState.linkedAt,
         getAccounts: nextGetAccounts,
+        requesterWeeklyLimit: nextRequesterWeeklyLimit,
+        requesterWeekEnd: nextRequesterWeekEnd,
+        requesterDaysUntilReset: nextRequesterDaysUntilReset,
       };
 
       setUserId(nextSnapshot.userId);
@@ -300,6 +318,9 @@ export default function DonorScreen() {
       setIsGetLinked(nextSnapshot.isGetLinked);
       setGetLinkedAt(nextSnapshot.getLinkedAt);
       setGetAccounts(nextSnapshot.getAccounts);
+      setRequesterWeeklyLimit(nextSnapshot.requesterWeeklyLimit);
+      setRequesterWeekEnd(nextSnapshot.requesterWeekEnd);
+      setRequesterDaysUntilReset(nextSnapshot.requesterDaysUntilReset);
       setShareSnapshot(nextSnapshot);
       markShareLoaded();
     } catch (error) {
@@ -326,6 +347,9 @@ export default function DonorScreen() {
       isGetLinked,
       getLinkedAt,
       getAccounts,
+      requesterWeeklyLimit,
+      requesterWeekEnd,
+      requesterDaysUntilReset,
       ...overrides,
     });
   }, [
@@ -334,6 +358,8 @@ export default function DonorScreen() {
     impact,
     isActive,
     isGetLinked,
+    requesterWeekEnd,
+    requesterWeeklyLimit,
     setShareSnapshot,
     userEmail,
     userId,
@@ -568,11 +594,31 @@ export default function DonorScreen() {
             </Pressable>
           </View>
         </View>
-
         <SectionCard>
           <SectionHeader
-            icon="dollarsign.circle"
-            title="Accounts"
+            icon="chart.pie"
+            title="Allowance"
+
+          />
+          <View style={styles.balanceHero}>
+            <Text style={styles.balanceHeroLabel}>Weekly allowance</Text>
+            <Text style={styles.balanceHeroValue}>{requesterWeeklyLimit} pts</Text>
+            <Text style={styles.balanceHeroMeta}>
+              Resets in {requesterDaysUntilReset} {requesterDaysUntilReset === 1 ? 'day' : 'days'} on{' '}
+              {requesterWeekEnd ? new Date(requesterWeekEnd).toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                timeZone: impact.timezone
+              }) : null}
+
+            </Text>
+          </View>
+        </SectionCard>
+        <SectionCard>
+          <SectionHeader
+            icon="wallet.pass"
+            title="GET Balances"
             detail={isGetLinked ? 'Your live GET balances' : 'Connect GET to sync campus balances'}
           />
 

@@ -1,5 +1,12 @@
-import { createContext, useCallback, useContext, useMemo, useState, ReactNode } from 'react';
-import type { DonorImpact } from './api';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  ReactNode,
+} from "react";
+import type { DonorImpact } from "./api";
 
 export interface GetAccountBalance {
   id: string;
@@ -16,6 +23,9 @@ export interface ShareTabSnapshot {
   isGetLinked: boolean;
   getLinkedAt: string | null;
   getAccounts: GetAccountBalance[];
+  requesterWeeklyLimit: number;
+  requesterWeekEnd: string | null;
+  requesterDaysUntilReset: number;
 }
 
 interface TabCacheState {
@@ -32,7 +42,8 @@ const TabCacheContext = createContext<TabCacheState | null>(null);
 export function TabCacheProvider({ children }: { children: ReactNode }) {
   const [hasLoadedShare, setHasLoadedShare] = useState(false);
   const [hasLoadedRequest, setHasLoadedRequest] = useState(false);
-  const [shareSnapshot, setShareSnapshotState] = useState<ShareTabSnapshot | null>(null);
+  const [shareSnapshot, setShareSnapshotState] =
+    useState<ShareTabSnapshot | null>(null);
 
   const markShareLoaded = useCallback(() => {
     setHasLoadedShare(true);
@@ -63,13 +74,11 @@ export function TabCacheProvider({ children }: { children: ReactNode }) {
       markShareLoaded,
       markRequestLoaded,
       setShareSnapshot,
-    ]
+    ],
   );
 
   return (
-    <TabCacheContext.Provider
-      value={value}
-    >
+    <TabCacheContext.Provider value={value}>
       {children}
     </TabCacheContext.Provider>
   );
@@ -78,7 +87,7 @@ export function TabCacheProvider({ children }: { children: ReactNode }) {
 export function useTabCache() {
   const context = useContext(TabCacheContext);
   if (!context) {
-    throw new Error('useTabCache must be used within TabCacheProvider');
+    throw new Error("useTabCache must be used within TabCacheProvider");
   }
   return context;
 }
