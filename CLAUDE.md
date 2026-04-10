@@ -1,6 +1,5 @@
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) (or other Agents!) when working with code in this repository.
+If you do not have a write tool available (that is to say you are in ask mode), that means I want you to explain the changes to me, so I can make the changes myself.
 
 ## Project Overview
 
