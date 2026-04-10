@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { stealthTheme } from '../lib/stealth-theme';
 
-type NavKey = 'home' | 'accounts' | 'order' | 'explore' | 'more';
+type NavKey = 'home' | 'menu' | 'order' | 'explore' | 'more';
 
 type NavItem = {
   key: NavKey;
@@ -14,7 +14,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { key: 'home', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
-  { key: 'accounts', label: 'Accounts', icon: 'wallet-outline', activeIcon: 'wallet' },
+  { key: 'menu', label: 'Menu', icon: 'wallet-outline', activeIcon: 'wallet' },
   { key: 'order', label: 'Order', icon: 'bag-outline', activeIcon: 'bag' },
   { key: 'explore', label: 'Explore', icon: 'map-outline', activeIcon: 'map' },
   { key: 'more', label: 'more', icon: 'menu-outline', activeIcon: 'menu' },
