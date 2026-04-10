@@ -82,9 +82,9 @@ slugswap/
 └── .github/workflows/      # CI/CD workflows
 ```
 
-### Landing Design Lab
+### Instagram Story Assets
 
-`landing-pages-react/` stays as a design/reference workspace and is not used for production routing.
+Instagram story generation now lives in `scripts/instagram-stories/` and the preview route is served from `apps/dashboard/app/ig-stories/`.
 
 ## Product Releases
 

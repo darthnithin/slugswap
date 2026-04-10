@@ -821,6 +821,12 @@ body {
   gap: 4px;
 }
 
+.admin-root .config-meta {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
 .admin-root .config-input-wrap {
   position: relative;
   display: flex;
