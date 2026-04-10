@@ -20,8 +20,14 @@ import {
 } from "@/lib/server/config";
 import { getDonorWeeklyUsageMap } from "@/lib/server/claims/donor-usage";
 import { getPacificWeekWindow } from "@/lib/server/timezone";
+import { decryptSecret } from "@/lib/server/get/credentials";
 import { getActiveGetSession } from "@/lib/server/get/session";
-import { retrieveAccounts, type GetAccount } from "@/lib/server/get/tools";
+import {
+  authenticatePin,
+  retrieveAccounts,
+  revokePin,
+  type GetAccount,
+} from "@/lib/server/get/tools";
 import {
   getTrackedBalanceTotal,
   syncDonorPauseStateFromAccounts,
@@ -80,6 +86,20 @@ async function getActiveWeeklyPool() {
     .limit(1);
 
   return pools[0] ?? null;
+}
+
+async function revokeAndDeleteGetCredential(credential: typeof schema.getCredentials.$inferSelect) {
+  try {
+    const pin = decryptSecret(credential.encryptedPin);
+    const sessionId = await authenticatePin(pin, credential.deviceId);
+    await revokePin(sessionId, credential.deviceId);
+  } catch (error) {
+    console.warn(`GET unlink revoke failed for user ${credential.userId}:`, error);
+  }
+
+  await db
+    .delete(schema.getCredentials)
+    .where(eq(schema.getCredentials.userId, credential.userId));
 }
 
 function unauthorizedResponse() {
@@ -464,8 +484,8 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         .from(schema.donations)
         .leftJoin(schema.users, eq(schema.donations.userId, schema.users.id))
         .leftJoin(schema.getCredentials, eq(schema.donations.userId, schema.getCredentials.userId))
+        .where(eq(schema.donations.status, "active"))
         .orderBy(desc(schema.donations.amount))
-        .limit(10);
 
       const donorUsageInputs = topDonors.map((donor) => ({
         donorUserId: donor.userId,
@@ -1010,6 +1030,151 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       );
     } catch (error: any) {
       console.error("Error fetching user balance:", error);
+      return NextResponse.json(
+        { error: error?.message || "Internal server error" },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (action === "unlink-get") {
+    if (req.method !== "POST") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    try {
+      const body = (await req.json()) as { userId?: string };
+      const userId = body.userId?.trim();
+
+      if (!userId) {
+        return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+      }
+
+      const user = await db.query.users.findFirst({
+        where: eq(schema.users.id, userId),
+      });
+
+      if (!user) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      const credential = await db.query.getCredentials.findFirst({
+        where: eq(schema.getCredentials.userId, userId),
+      });
+
+      if (!credential) {
+        return NextResponse.json(
+          {
+            success: true,
+            linked: false,
+            message: "User already has no linked GET account",
+          },
+          { status: 200 }
+        );
+      }
+
+      await revokeAndDeleteGetCredential(credential);
+
+      return NextResponse.json(
+        {
+          success: true,
+          linked: false,
+          message: "GET account unlinked successfully",
+        },
+        { status: 200 }
+      );
+    } catch (error: any) {
+      console.error("Error unlinking GET account:", error);
+      return NextResponse.json(
+        { error: error?.message || "Internal server error" },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (action === "update-donor-limit") {
+    if (req.method !== "POST") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    try {
+      const body = (await req.json()) as { userId?: string; weeklyAmount?: number };
+      const userId = body.userId?.trim();
+      const weeklyAmount = body.weeklyAmount;
+
+      if (!userId || typeof weeklyAmount !== "number" || Number.isNaN(weeklyAmount)) {
+        return NextResponse.json(
+          { error: "Invalid userId or weeklyAmount" },
+          { status: 400 }
+        );
+      }
+
+      const { config } = await getAdminConfig();
+      if (
+        weeklyAmount < config.minDonationAmount ||
+        weeklyAmount > config.maxDonationAmount
+      ) {
+        return NextResponse.json(
+          {
+            error: `Donation amount must be between ${config.minDonationAmount} and ${config.maxDonationAmount}`,
+          },
+          { status: 400 }
+        );
+      }
+
+      const user = await db.query.users.findFirst({
+        where: eq(schema.users.id, userId),
+      });
+
+      if (!user) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      const existingDonation = await db.query.donations.findFirst({
+        where: eq(schema.donations.userId, userId),
+      });
+
+      const now = new Date();
+      let donation;
+      if (existingDonation) {
+        const [updated] = await db
+          .update(schema.donations)
+          .set({
+            amount: weeklyAmount.toString(),
+            updatedAt: now,
+          })
+          .where(eq(schema.donations.id, existingDonation.id))
+          .returning();
+        donation = updated;
+      } else {
+        const [created] = await db
+          .insert(schema.donations)
+          .values({
+            userId,
+            amount: weeklyAmount.toString(),
+            startDate: now,
+            status: "active",
+          })
+          .returning();
+        donation = created;
+      }
+
+      return NextResponse.json(
+        {
+          success: true,
+          donor: {
+            userId: donation.userId,
+            weeklyAmount: parseFloat(donation.amount),
+            status: donation.status,
+          },
+          message: existingDonation
+            ? "Donor weekly limit updated"
+            : "Donor profile created with weekly limit",
+        },
+        { status: 200 }
+      );
+    } catch (error: any) {
+      console.error("Error updating donor limit:", error);
       return NextResponse.json(
         { error: error?.message || "Internal server error" },
         { status: 500 }

@@ -294,16 +294,20 @@ export default function DashboardHomePage() {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [users, setUsers] = useState<Array<{ id: string; email: string; name: string | null }>>([]);
+  const [userSearchQuery, setUserSearchQuery] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [newAllowance, setNewAllowance] = useState<string>("");
+  const [donorLimit, setDonorLimit] = useState<string>("");
   const [weeklyCapForAll, setWeeklyCapForAll] = useState<string>("");
   const [topUpForAll, setTopUpForAll] = useState<string>("");
   const [isUpdatingAllowance, setIsUpdatingAllowance] = useState(false);
+  const [isUpdatingDonorLimit, setIsUpdatingDonorLimit] = useState(false);
   const [isSettingWeeklyCapForAll, setIsSettingWeeklyCapForAll] = useState(false);
   const [isGrantingTopUpForAll, setIsGrantingTopUpForAll] = useState(false);
   const [selectedUserDetails, setSelectedUserDetails] = useState<AdminUserBalanceResponse | null>(null);
   const [isLoadingUserDetails, setIsLoadingUserDetails] = useState(false);
   const [userDetailsError, setUserDetailsError] = useState<string | null>(null);
+  const [isUnlinkingGetForUser, setIsUnlinkingGetForUser] = useState(false);
   const [deletingClaimId, setDeletingClaimId] = useState<string | null>(null);
   const [chartGranularity, setChartGranularity] = useState<ChartGranularity>("weekly");
 
@@ -360,20 +364,60 @@ export default function DashboardHomePage() {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/users?limit=100", { cache: "no-store" });
-      if (res.status === 401) {
-        router.replace("/admin/login");
-        return;
+      const allUsers: Array<{ id: string; email: string; name: string | null }> = [];
+      const limit = 500;
+      let offset = 0;
+      let total = Infinity;
+
+      while (offset < total) {
+        const res = await fetch(`/api/admin/users?limit=${limit}&offset=${offset}`, {
+          cache: "no-store",
+        });
+        if (res.status === 401) {
+          router.replace("/admin/login");
+          return;
+        }
+        if (!res.ok) {
+          throw new Error(await readApiError(res));
+        }
+
+        const data = (await res.json()) as {
+          users: Array<{ id: string; email: string; name: string | null }>;
+          total: number;
+          limit: number;
+          offset: number;
+        };
+        allUsers.push(...data.users);
+        total = data.total;
+        offset = data.offset + data.limit;
+
+        if (data.users.length === 0) {
+          break;
+        }
       }
-      if (!res.ok) {
-        throw new Error(await readApiError(res));
-      }
-      const data = (await res.json()) as { users: Array<{ id: string; email: string; name: string | null }> };
-      setUsers(data.users);
+
+      setUsers(
+        [...allUsers].sort((a, b) =>
+          (a.name || a.email || "")
+            .localeCompare(b.name || b.email || "", undefined, {
+              sensitivity: "base",
+            })
+        )
+      );
     } catch (err) {
       console.error("Error fetching users:", err);
     }
   }, [router]);
+
+  const filteredUsers = useMemo(() => {
+    const query = userSearchQuery.trim().toLowerCase();
+    if (!query) return users;
+
+    return users.filter((user) => {
+      const haystack = `${user.name || ""} ${user.email}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [userSearchQuery, users]);
 
   const fetchUserDetails = useCallback(
     async (userId: string) => {
@@ -430,10 +474,19 @@ export default function DashboardHomePage() {
     if (!selectedUserId) {
       setSelectedUserDetails(null);
       setUserDetailsError(null);
+      setDonorLimit("");
       return;
     }
     void fetchUserDetails(selectedUserId);
   }, [selectedUserId, fetchUserDetails]);
+
+  useEffect(() => {
+    setDonorLimit(
+      selectedUserDetails?.donorUsage
+        ? String(selectedUserDetails.donorUsage.weeklyAmount)
+        : ""
+    );
+  }, [selectedUserDetails]);
 
   const weekRange = useMemo(() => {
     if (!statsData) return "Loading week data...";
@@ -671,6 +724,59 @@ export default function DashboardHomePage() {
     }
   }, [weeklyCapForAll, router, fetchData, fetchUserDetails, selectedUserId]);
 
+  const handleUpdateDonorLimit = useCallback(async () => {
+    if (!selectedUserId || !donorLimit) {
+      setToast("Select a user and enter a donor weekly limit");
+      return;
+    }
+
+    const weeklyAmount = parseFloat(donorLimit);
+    if (Number.isNaN(weeklyAmount)) {
+      setToast("Invalid donor weekly limit");
+      return;
+    }
+
+    const minDonationAmount = configData?.config.minDonationAmount ?? 0;
+    const maxDonationAmount = configData?.config.maxDonationAmount ?? 1000;
+    if (weeklyAmount < minDonationAmount || weeklyAmount > maxDonationAmount) {
+      setToast(
+        `Donor weekly limit must be between ${minDonationAmount} and ${maxDonationAmount}`
+      );
+      return;
+    }
+
+    setIsUpdatingDonorLimit(true);
+    try {
+      const res = await fetch("/api/admin/update-donor-limit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: selectedUserId,
+          weeklyAmount,
+        }),
+      });
+
+      if (res.status === 401) {
+        router.replace("/admin/login");
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(await readApiError(res));
+      }
+
+      const data = (await res.json()) as { message?: string };
+      setToast(data.message ?? `Donor weekly limit updated to ${weeklyAmount}`);
+      void fetchData();
+      void fetchUserDetails(selectedUserId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Donor update failed";
+      setToast(`Failed to update donor weekly limit — ${message}`);
+    } finally {
+      setIsUpdatingDonorLimit(false);
+    }
+  }, [selectedUserId, donorLimit, configData, router, fetchData, fetchUserDetails]);
+
   const handleGrantTopUpForAll = useCallback(async () => {
     if (!topUpForAll) {
       setToast("Enter extra points to grant");
@@ -729,6 +835,53 @@ export default function DashboardHomePage() {
       setIsGrantingTopUpForAll(false);
     }
   }, [topUpForAll, router, fetchData, fetchUserDetails, selectedUserId]);
+
+  const handleAdminUnlinkGet = useCallback(async () => {
+    if (!selectedUserId || !selectedUserDetails) {
+      setToast("Select a user first");
+      return;
+    }
+
+    const label =
+      selectedUserDetails.user.name ||
+      selectedUserDetails.user.email ||
+      selectedUserDetails.user.id;
+
+    const confirmed = window.confirm(
+      `Unlink GET for ${label}? This will remove their stored GET connection immediately.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsUnlinkingGetForUser(true);
+    try {
+      const res = await fetch("/api/admin/unlink-get", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: selectedUserId }),
+      });
+
+      if (res.status === 401) {
+        router.replace("/admin/login");
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(await readApiError(res));
+      }
+
+      const data = (await res.json()) as { message?: string };
+      setToast(data.message ?? "GET account unlinked");
+      void fetchData();
+      void fetchUserDetails(selectedUserId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to unlink GET";
+      setToast(`Failed to unlink GET — ${message}`);
+    } finally {
+      setIsUnlinkingGetForUser(false);
+    }
+  }, [selectedUserId, selectedUserDetails, router, fetchData, fetchUserDetails]);
 
   const handleDeleteClaim = useCallback(async (claimId: string, userId: string) => {
     if (!window.confirm("Are you sure you want to delete this claim? If it hasn't been redeemed, the points will be refunded.")) {
@@ -1740,6 +1893,18 @@ export default function DashboardHomePage() {
                       <label className="config-label" htmlFor="user-select">
                         Select User
                       </label>
+                      <input
+                        id="user-search"
+                        className="config-input"
+                        type="search"
+                        value={userSearchQuery}
+                        onChange={(event) => setUserSearchQuery(event.target.value)}
+                        placeholder="Search by name or email"
+                        autoComplete="off"
+                      />
+                      <div className="config-meta">
+                        Showing {filteredUsers.length} of {users.length} users
+                      </div>
                       <select
                         id="user-select"
                         className="config-select"
@@ -1747,10 +1912,11 @@ export default function DashboardHomePage() {
                         onChange={(event) => {
                           setSelectedUserId(event.target.value);
                           setNewAllowance("");
+                          setDonorLimit("");
                         }}
                       >
                         <option value="">Choose a user...</option>
-                        {users.map((user) => (
+                        {filteredUsers.map((user) => (
                           <option key={user.id} value={user.id}>
                             {user.name || user.email}
                           </option>
@@ -1784,6 +1950,7 @@ export default function DashboardHomePage() {
                       onClick={() => {
                         setSelectedUserId("");
                         setNewAllowance("");
+                        setDonorLimit("");
                         setSelectedUserDetails(null);
                         setUserDetailsError(null);
                       }}
@@ -1830,6 +1997,48 @@ export default function DashboardHomePage() {
                           </div>
 
                           <div className="config-item">
+                            <div className="config-label">Donor Weekly Limit</div>
+                            <div className="config-input-wrap" style={{ marginTop: 6 }}>
+                              <input
+                                className="config-input"
+                                type="number"
+                                min={configData?.config.minDonationAmount ?? 0}
+                                max={configData?.config.maxDonationAmount ?? 1000}
+                                value={donorLimit}
+                                onChange={(event) => setDonorLimit(event.target.value)}
+                                placeholder={
+                                  selectedUserDetails.donorUsage
+                                    ? "Enter points"
+                                    : "Create donor profile"
+                                }
+                              />
+                              <span className="config-unit">pts</span>
+                            </div>
+                            <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                              {selectedUserDetails.donorUsage
+                                ? `Current status: ${selectedUserDetails.donorUsage.status}`
+                                : "No donor profile yet. Saving will create one as active."}
+                            </div>
+                            {configData ? (
+                              <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                                Allowed range: {configData.config.minDonationAmount} to {configData.config.maxDonationAmount} pts
+                              </div>
+                            ) : null}
+                            <div style={{ marginTop: 10 }}>
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={() => {
+                                  void handleUpdateDonorLimit();
+                                }}
+                                disabled={isUpdatingDonorLimit || !selectedUserId || !donorLimit}
+                              >
+                                {isUpdatingDonorLimit ? "Saving..." : "Save Donor Limit"}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="config-item">
                             <div className="config-label">GET Link Status</div>
                             <div
                               style={{
@@ -1844,6 +2053,21 @@ export default function DashboardHomePage() {
                             <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
                               Linked at: {formatDateTime(selectedUserDetails.getLinkStatus.linkedAt)}
                             </div>
+                            {selectedUserDetails.getLinkStatus.linked ? (
+                              <div style={{ marginTop: 10 }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost"
+                                  onClick={() => {
+                                    void handleAdminUnlinkGet();
+                                  }}
+                                  disabled={isUnlinkingGetForUser}
+                                  style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+                                >
+                                  {isUnlinkingGetForUser ? "Unlinking..." : "Unlink GET"}
+                                </button>
+                              </div>
+                            ) : null}
                             {selectedUserDetails.getLinkStatus.accountsFetchError ? (
                               <div style={{ color: "var(--danger)", fontSize: "0.8rem", marginTop: 4 }}>
                                 {selectedUserDetails.getLinkStatus.accountsFetchError}
@@ -2050,7 +2274,7 @@ export default function DashboardHomePage() {
 
                 <div className="card" style={{ animationDelay: "0.55s" }}>
                   <div className="card-header">
-                    <span className="card-title">Top Donors</span>
+                    <span className="card-title">Active Donors</span>
                     <span className="card-badge">
                       {statsData.donorSelection.policy.replace(/_/g, " ")} · {statsData.donorSelection.timezone}
                     </span>
