@@ -99,3 +99,14 @@ See `slugswap-release.md` for the detailed release plan.
 ## Contributing
 
 For questions, issues, or contribution guidance, contact the development team.
+
+## GET API integration notes
+
+The GET barcode flow currently **does not use a server-side session cache**. Each barcode fetch re-authenticates with GET using the stored device credentials/PIN and then requests the latest payload.
+
+For clients consuming claim/scan status:
+
+- `GET /api/get/scan-state` returns scan/status metadata only (`state`, `lastCheckedAt`, `expiresAt`).
+- Barcode payloads are returned by `GET /api/get/barcode`.
+
+Keep those endpoints separate in client logic to avoid treating scan-state responses as barcode payload responses.
