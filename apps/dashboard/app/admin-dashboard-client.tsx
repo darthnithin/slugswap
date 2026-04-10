@@ -308,6 +308,7 @@ export default function DashboardHomePage() {
   const [isLoadingUserDetails, setIsLoadingUserDetails] = useState(false);
   const [userDetailsError, setUserDetailsError] = useState<string | null>(null);
   const [isUnlinkingGetForUser, setIsUnlinkingGetForUser] = useState(false);
+  const [isPausingDonor, setIsPausingDonor] = useState(false);
   const [deletingClaimId, setDeletingClaimId] = useState<string | null>(null);
   const [chartGranularity, setChartGranularity] = useState<ChartGranularity>("weekly");
 
@@ -880,6 +881,66 @@ export default function DashboardHomePage() {
       setToast(`Failed to unlink GET — ${message}`);
     } finally {
       setIsUnlinkingGetForUser(false);
+    }
+  }, [selectedUserId, selectedUserDetails, router, fetchData, fetchUserDetails]);
+
+  const handleAdminPauseDonor = useCallback(async () => {
+    if (!selectedUserId || !selectedUserDetails?.donorUsage) {
+      setToast("Select a donor first");
+      return;
+    }
+
+    const donorStatus = selectedUserDetails.donorUsage.status;
+    if (donorStatus !== "active" && donorStatus !== "paused") {
+      setToast("Only active or paused donors can be changed here");
+      return;
+    }
+
+    const label =
+      selectedUserDetails.user.name ||
+      selectedUserDetails.user.email ||
+      selectedUserDetails.user.id;
+    const isPaused = donorStatus === "paused";
+    const nextPaused = !isPaused;
+    const actionLabel = nextPaused ? "pause" : "resume";
+
+    const confirmed = window.confirm(
+      `${nextPaused ? "Pause" : "Resume"} donor access for ${label}?`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsPausingDonor(true);
+    try {
+      const res = await fetch("/api/admin/pause-donor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: selectedUserId, paused: nextPaused }),
+      });
+
+      if (res.status === 401) {
+        router.replace("/admin/login");
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(await readApiError(res));
+      }
+
+      const data = (await res.json()) as { status?: string };
+      setToast(
+        data.status
+          ? `Donor ${actionLabel}d — status is now ${data.status}`
+          : `Donor ${actionLabel}d`
+      );
+      void fetchData();
+      void fetchUserDetails(selectedUserId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : `Failed to ${actionLabel} donor`;
+      setToast(`Failed to ${actionLabel} donor — ${message}`);
+    } finally {
+      setIsPausingDonor(false);
     }
   }, [selectedUserId, selectedUserDetails, router, fetchData, fetchUserDetails]);
 
@@ -2024,7 +2085,7 @@ export default function DashboardHomePage() {
                                 Allowed range: {configData.config.minDonationAmount} to {configData.config.maxDonationAmount} pts
                               </div>
                             ) : null}
-                            <div style={{ marginTop: 10 }}>
+                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
                               <button
                                 type="button"
                                 className="btn btn-primary"
@@ -2035,6 +2096,34 @@ export default function DashboardHomePage() {
                               >
                                 {isUpdatingDonorLimit ? "Saving..." : "Save Donor Limit"}
                               </button>
+                              {selectedUserDetails.donorUsage &&
+                              ["active", "paused"].includes(selectedUserDetails.donorUsage.status) ? (
+                                <button
+                                  type="button"
+                                  className={
+                                    selectedUserDetails.donorUsage.status === "paused"
+                                      ? "btn btn-primary"
+                                      : "btn btn-ghost"
+                                  }
+                                  onClick={() => {
+                                    void handleAdminPauseDonor();
+                                  }}
+                                  disabled={isPausingDonor}
+                                  style={
+                                    selectedUserDetails.donorUsage.status === "paused"
+                                      ? undefined
+                                      : { color: "var(--danger)", borderColor: "var(--danger)" }
+                                  }
+                                >
+                                  {isPausingDonor
+                                    ? selectedUserDetails.donorUsage.status === "paused"
+                                      ? "Resuming..."
+                                      : "Pausing..."
+                                    : selectedUserDetails.donorUsage.status === "paused"
+                                      ? "Resume Donor"
+                                      : "Pause Donor"}
+                                </button>
+                              ) : null}
                             </div>
                           </div>
 

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import {
   authenticateAppUser,
   syncAuthenticatedUser,
 } from "@/lib/server/app-user-auth";
-import { getCredentials, users } from "@/lib/server/schema";
+import { getCredentials, users, donations } from "@/lib/server/schema";
 import { decryptSecret, encryptSecret } from "@/lib/server/get/credentials";
 import {
   authenticatePin,
@@ -252,6 +252,15 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       }
 
       await db.delete(getCredentials).where(eq(getCredentials.userId, userId));
+      await db
+        .update(donations)
+        .set({ status: 'paused', updatedAt: new Date() })
+        .where(
+          and(
+            eq(donations.userId, userId),
+            eq(donations.status, 'active')
+          )
+        );
       return NextResponse.json({ success: true, linked: false }, { status: 200 });
     } catch (error: any) {
       const { status, message } = formatGetLinkError(error);

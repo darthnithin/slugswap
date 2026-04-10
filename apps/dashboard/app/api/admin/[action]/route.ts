@@ -657,6 +657,8 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           timestamp: new Date().toISOString(),
           pool: poolHealth,
           donors: {
+            // TODO: ensure donors are not marked active if their GET account is
+            // disconnected
             active: Number(activeDonors[0]?.count || 0),
             paused: Number(pausedDonors[0]?.count || 0),
             total: Number(totalDonors[0]?.count || 0),
@@ -1037,6 +1039,34 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     }
   }
 
+  if (action === "pause-donor") {
+    if (req.method !== "POST") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+    try {
+      const body = (await req.json()) as { userId?: string; paused?: boolean }
+      const { userId, paused } = body;
+      if (!userId || typeof paused !== "boolean") {
+        return NextResponse.json({ error: "Missing userId or paused value" }, { status: 400 });
+      }
+      const [updated] = await db
+        .update(schema.donations)
+        .set({status: paused ? "paused" : "active", updatedAt: new Date()})
+        .where(eq(schema.donations.userId, userId))
+        .returning();
+      if (!updated) {
+        return NextResponse.json({ error: "Donor not found" }, { status: 404 });
+      }
+      return NextResponse.json({ success: true, status: updated.status }, { status: 200 })
+    } catch (error: any) {
+      console.error("Error pausing donor:", error);
+      return NextResponse.json(
+        { error: error?.message || "Internal server error" },
+        { status: 500 }
+      );
+    }
+  }
+
   if (action === "unlink-get") {
     if (req.method !== "POST") {
       return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
@@ -1074,6 +1104,16 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       }
 
       await revokeAndDeleteGetCredential(credential);
+
+      await db
+        .update(schema.donations)
+        .set({ status: 'paused', updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.donations.userId, userId),
+            eq(schema.donations.status, 'active')
+          )
+        );
 
       return NextResponse.json(
         {
