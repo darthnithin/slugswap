@@ -1,63 +1,68 @@
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 
 import { stealthTheme } from '../lib/stealth-theme';
 
-type NavKey = 'home' | 'menu' | 'order' | 'explore' | 'more';
-
-type NavItem = {
-  key: NavKey;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  activeIcon?: keyof typeof Ionicons.glyphMap;
-};
-
-const NAV_ITEMS: NavItem[] = [
-  { key: 'home', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
-  { key: 'menu', label: 'Menu', icon: 'wallet-outline', activeIcon: 'wallet' },
-  { key: 'order', label: 'Order', icon: 'bag-outline', activeIcon: 'bag' },
-  { key: 'explore', label: 'Explore', icon: 'map-outline', activeIcon: 'map' },
-  { key: 'more', label: 'more', icon: 'menu-outline', activeIcon: 'menu' },
-];
-
 const colors = stealthTheme.colors;
 
-export function GetMobileTabBar({
-  active = 'home',
-  onHomePress,
-}: {
-  active?: NavKey;
-  onHomePress?: () => void;
-}) {
+function getTabLabel(label: unknown, title: unknown, fallback: string): string {
+  if (typeof label === 'string') return label;
+  if (typeof title === 'string') return title;
+  return fallback;
+}
+
+export function GetMobileTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
+  const bottomInset = Math.min(insets.bottom, 8); // max 8px bottom inset
+  const barHeight = 78 + bottomInset;
+
   return (
     <View style={styles.shell}>
-      <View style={styles.bar}>
-        {NAV_ITEMS.map((item) => {
-          const isActive = item.key === active;
-          const iconName = isActive ? item.activeIcon ?? item.icon : item.icon;
-          const content = (
-            <View style={[styles.item, isActive ? styles.itemActive : null]}>
-              <Ionicons
-                name={iconName}
-                size={26}
-                color={isActive ? colors.accent : colors.textMuted}
-              />
-              <Text style={[styles.label, isActive ? styles.labelActive : null]}>{item.label}</Text>
-            </View>
-          );
+      <View style={[styles.bar, { minHeight: barHeight }]}>
+        {state.routes.map((route, index) => {
+          const { options } = descriptors[route.key];
+          const isFocused = state.index === index;
+          const color = isFocused ? colors.accent : colors.textMuted;
+          const label = getTabLabel(options.tabBarLabel, options.title, route.name);
 
-          if (item.key === 'home' && onHomePress) {
-            return (
-              <Pressable key={item.key} onPress={onHomePress} style={styles.pressable}>
-                {content}
-              </Pressable>
-            );
-          }
+          const onPress = () => {
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name, route.params);
+            }
+          };
+
+          const onLongPress = () => {
+            navigation.emit({
+              type: 'tabLongPress',
+              target: route.key,
+            });
+          };
 
           return (
-            <View key={item.key} style={styles.pressable}>
-              {content}
-            </View>
+            <Pressable
+              key={route.key}
+              accessibilityRole="button"
+              accessibilityState={isFocused ? { selected: true } : {}}
+              accessibilityLabel={options.tabBarAccessibilityLabel}
+              testID={options.tabBarButtonTestID}
+              onPress={onPress}
+              onLongPress={onLongPress}
+              style={styles.pressable}
+            >
+              <View style={[styles.item, isFocused ? styles.itemActive : null]}>
+                {options.tabBarIcon?.({
+                  focused: isFocused,
+                  color,
+                  size: 26,
+                })}
+                <Text style={[styles.label, isFocused ? styles.labelActive : null]}>{label}</Text>
+              </View>
+            </Pressable>
           );
         })}
       </View>
@@ -67,10 +72,6 @@ export function GetMobileTabBar({
 
 const styles = StyleSheet.create({
   shell: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,

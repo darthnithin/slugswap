@@ -29,6 +29,7 @@ import {
   setDonation,
   unlinkGetAccount,
   type DonorImpact,
+  type RequesterPoolStatus,
 } from '../../../../../lib/api';
 import { supabase } from '../../../../../lib/supabase';
 import {
@@ -43,9 +44,10 @@ import {
   typeScale,
 } from '../../../lib/stealth-theme';
 import { useRouter } from 'expo-router';
-import { GetMobileTabBar } from '../../../components/GetMobileTabBar';
 
 const UCSC_TRACKED_BALANCE_ACCOUNTS = new Set(['flexi dollars', 'banana bucks', 'slug points']);
+const POOL_EMPTY_TITLE = 'No points available';
+const POOL_EMPTY_MESSAGE = 'The shared donor pool is empty right now. Check back later.';
 
 const EMPTY_IMPACT: DonorImpact = {
   isActive: false,
@@ -248,6 +250,9 @@ export default function DonorScreen() {
   const [requesterWeeklyLimit, setRequesterWeeklyLimit] = useState(shareSnapshot?.requesterWeeklyLimit ?? 0);
   const [requesterWeekEnd, setRequesterWeekEnd] = useState<string | null>(shareSnapshot?.requesterWeekEnd ?? null);
   const [requesterDaysUntilReset, setRequesterDaysUntilReset] = useState(shareSnapshot?.requesterDaysUntilReset ?? 0);
+  const [requesterPoolStatus, setRequesterPoolStatus] = useState<RequesterPoolStatus>(
+    shareSnapshot?.requesterPoolStatus ?? 'unavailable'
+  );
 
   const loadUserAndImpact = useCallback(async (options?: { showBlockingLoader?: boolean }) => {
     const showBlockingLoader = options?.showBlockingLoader ?? false;
@@ -282,11 +287,13 @@ export default function DonorScreen() {
       let nextRequesterWeeklyLimit = 0;
       let nextRequesterWeekEnd: string | null = null;
       let nextRequesterDaysUntilReset = 0;
+      let nextRequesterPoolStatus: RequesterPoolStatus = 'unavailable';
       try {
         const allowance = await getRequesterAllowance();
         nextRequesterWeeklyLimit = allowance.weeklyLimit;
         nextRequesterWeekEnd = allowance.weekEnd;
         nextRequesterDaysUntilReset = allowance.daysUntilReset;
+        nextRequesterPoolStatus = allowance.poolStatus;
       } catch {
         // don't matter
       }
@@ -303,6 +310,7 @@ export default function DonorScreen() {
         requesterWeeklyLimit: nextRequesterWeeklyLimit,
         requesterWeekEnd: nextRequesterWeekEnd,
         requesterDaysUntilReset: nextRequesterDaysUntilReset,
+        requesterPoolStatus: nextRequesterPoolStatus,
       };
 
       setUserId(nextSnapshot.userId);
@@ -321,6 +329,7 @@ export default function DonorScreen() {
       setRequesterWeeklyLimit(nextSnapshot.requesterWeeklyLimit);
       setRequesterWeekEnd(nextSnapshot.requesterWeekEnd);
       setRequesterDaysUntilReset(nextSnapshot.requesterDaysUntilReset);
+      setRequesterPoolStatus(nextSnapshot.requesterPoolStatus);
       setShareSnapshot(nextSnapshot);
       markShareLoaded();
     } catch (error) {
@@ -350,6 +359,7 @@ export default function DonorScreen() {
       requesterWeeklyLimit,
       requesterWeekEnd,
       requesterDaysUntilReset,
+      requesterPoolStatus,
       ...overrides,
     });
   }, [
@@ -360,6 +370,7 @@ export default function DonorScreen() {
     isGetLinked,
     requesterWeekEnd,
     requesterWeeklyLimit,
+    requesterPoolStatus,
     setShareSnapshot,
     userEmail,
     userId,
@@ -578,20 +589,30 @@ export default function DonorScreen() {
           <View style={styles.passContent}>
             <Text style={styles.passName}>{userDisplayName}</Text>
 
-            <Pressable
-              onPress={() => router.push('/scan-card')}
-              style={({ pressed }) => [
-                styles.passActionPill,
-                { opacity: buttonOpacity(pressed, false) },
-              ]}
-            >
-              <SymbolView
-                name="barcode.viewfinder"
-                tintColor="#ffffff"
-                size={22}
-              />
-              <Text style={styles.passActionText}>Scan Card</Text>
-            </Pressable>
+            {requesterPoolStatus === 'empty' ? (
+              <View style={styles.poolDisabledCard}>
+                <View style={styles.poolDisabledHeader}>
+                  <SymbolView name="barcode.viewfinder" tintColor={colors.textSoft} size={20} />
+                  <Text style={styles.poolDisabledTitle}>{POOL_EMPTY_TITLE}</Text>
+                </View>
+                <Text style={styles.poolDisabledCopy}>{POOL_EMPTY_MESSAGE}</Text>
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => router.push('/scan-card')}
+                style={({ pressed }) => [
+                  styles.passActionPill,
+                  { opacity: buttonOpacity(pressed, false) },
+                ]}
+              >
+                <SymbolView
+                  name="barcode.viewfinder"
+                  tintColor="#ffffff"
+                  size={22}
+                />
+                <Text style={styles.passActionText}>Scan Card</Text>
+              </Pressable>
+            )}
           </View>
         </View>
         <SectionCard>
@@ -783,8 +804,6 @@ export default function DonorScreen() {
           <Text style={styles.logoutText}>{isSigningOut ? 'Signing out...' : 'Log out'}</Text>
         </Pressable>
       </ScrollView>
-
-      <GetMobileTabBar active="home" />
     </View>
   );
 }
@@ -799,7 +818,7 @@ const styles = StyleSheet.create({
   content: {
     padding: 18,
     gap: 18,
-    paddingBottom: 116,
+    paddingBottom: 36,
   },
   loadingScreen: {
     flex: 1,
@@ -864,6 +883,33 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 28,
     fontWeight: '500',
+  },
+  poolDisabledCard: {
+    minHeight: 62,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: '#edf1f4',
+    borderWidth: 1,
+    borderColor: '#d5dde5',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  poolDisabledHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  poolDisabledTitle: {
+    color: colors.textMuted,
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '700',
+  },
+  poolDisabledCopy: {
+    color: colors.textSoft,
+    fontSize: 13,
+    lineHeight: 18,
   },
   passActionPill: {
     marginTop: 2,

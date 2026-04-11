@@ -133,6 +133,16 @@ export type ClaimGenerationFailureReason =
   | 'pool_low'
   | 'pool_exhausted'
   | 'pool_unavailable';
+export type RequesterPoolStatus = 'available' | 'empty' | 'unavailable';
+export type RequesterAllowance = {
+  weeklyLimit: number;
+  usedAmount: number;
+  remainingAmount: number;
+  weekStart: string | null;
+  weekEnd: string | null;
+  daysUntilReset: number;
+  poolStatus: RequesterPoolStatus;
+};
 
 type ClaimCodePayload = {
   id: string;
@@ -268,7 +278,7 @@ export async function getRequesterAllowance() {
     throw new Error(errorMessage);
   }
 
-  return response.json();
+  return response.json() as Promise<RequesterAllowance>;
 }
 
 export async function generateClaimCode(amount: number) {

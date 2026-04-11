@@ -6,7 +6,7 @@ import {
   useState,
   ReactNode,
 } from "react";
-import type { DonorImpact } from "./api";
+import type { DonorImpact, RequesterPoolStatus } from "./api";
 
 export interface GetAccountBalance {
   id: string;
@@ -26,6 +26,7 @@ export interface ShareTabSnapshot {
   requesterWeeklyLimit: number;
   requesterWeekEnd: string | null;
   requesterDaysUntilReset: number;
+  requesterPoolStatus: RequesterPoolStatus;
 }
 
 interface TabCacheState {

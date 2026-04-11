@@ -7,10 +7,36 @@ import {
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 import { getAdminConfig } from "@/lib/server/config";
+import { rankDonorCandidatesForClaim } from "@/lib/server/claims/donor-selection";
 
 export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
+type RequesterPoolStatus = "available" | "empty" | "unavailable";
+
+function classifyRequesterPoolStatus(error: unknown): RequesterPoolStatus {
+  const message = error instanceof Error ? error.message : "";
+
+  if (
+    message.includes("No eligible donors available under weekly cap limits") ||
+    message.includes("No linked donor GET account available")
+  ) {
+    return "empty";
+  }
+
+  return "unavailable";
+}
+
+async function getRequesterPoolStatus(
+  claimAmount: number
+): Promise<RequesterPoolStatus> {
+  try {
+    await rankDonorCandidatesForClaim(claimAmount);
+    return "available";
+  } catch (error) {
+    return classifyRequesterPoolStatus(error);
+  }
+}
 
 
 async function dispatch(req: NextRequest, ctx: Ctx) {
@@ -28,6 +54,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       return auth.response;
     }
     await syncAuthenticatedUser(auth.user);
+    const { config } = await getAdminConfig();
 
     // const user = auth.user;
 
@@ -68,7 +95,19 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       .limit(1);
 
     if (weeklyPool.length === 0) {
-      return NextResponse.json({ weeklyLimit: 0, usedAmount: 0, remainingAmount: 0, weekStart: null, weekEnd: null, daysUntilReset: 0 }, { status: 200 });
+      const poolStatus = await getRequesterPoolStatus(config.defaultClaimAmount);
+      return NextResponse.json(
+        {
+          weeklyLimit: 0,
+          usedAmount: 0,
+          remainingAmount: 0,
+          weekStart: null,
+          weekEnd: null,
+          daysUntilReset: 0,
+          poolStatus,
+        },
+        { status: 200 }
+      );
     }
     const pool = weeklyPool[0];
 
@@ -84,7 +123,6 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       .limit(1);
 
     if (userAllowance.length === 0) {
-      const { config } = await getAdminConfig();
       const defaultWeeklyLimit = config.defaultWeeklyAllowance;
       const [newAllowance] = await db
         .insert(schema.userAllowances)
@@ -102,6 +140,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     const allowance = userAllowance[0];
     const timeUntilReset = pool.weekEnd.getTime() - now.getTime();
     const daysUntilReset = Math.ceil(timeUntilReset / (1000 * 60 * 60 * 24));
+    const poolStatus = await getRequesterPoolStatus(config.defaultClaimAmount);
 
     return NextResponse.json(
       {
@@ -111,6 +150,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         weekStart: pool.weekStart.toISOString(),
         weekEnd: pool.weekEnd.toISOString(),
         daysUntilReset,
+        poolStatus,
       },
       { status: 200 }
     );
