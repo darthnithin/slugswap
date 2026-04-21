@@ -5,7 +5,7 @@ export default function MenuScreen() {
     <TabPlaceholderScreen
       title="Menu"
       icon="wallet-outline"
-      description="This tab is wired up now and ready for real dining account or balance features."
+      description="Coming Soon!"
     />
   );
 }

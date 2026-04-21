@@ -617,7 +617,7 @@ export default function DonorScreen() {
         </View>
         <SectionCard>
           <SectionHeader
-            icon="chart.pie"
+          icon={{ios: 'chart.pie', android: 'clock_loader_40', web: 'clock_loader_40'}}
             title="Allowance"
 
           />
@@ -638,7 +638,7 @@ export default function DonorScreen() {
         </SectionCard>
         <SectionCard>
           <SectionHeader
-            icon="wallet.pass"
+            icon={{ios: 'wallet.pass', android: 'account_balance_wallet', web: 'account_balance_wallet'}}
             title="GET Balances"
             detail={isGetLinked ? 'Your live GET balances' : 'Connect GET to sync campus balances'}
           />
