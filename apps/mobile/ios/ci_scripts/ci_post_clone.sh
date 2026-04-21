@@ -1,4 +1,4 @@
-#!/bin.bash
+#!/bin/bash
 set -e
 echo "Running ci_post_clone.sh"
 
@@ -6,6 +6,7 @@ echo "Running ci_post_clone.sh"
 cd ../../
 
 # install node and cocoapods
+#HOMEBREW_NO_AUTO_UPDATE=1 brew install node cocoapods
 brew install node cocoapods
 
 # install node modules
@@ -15,7 +16,5 @@ npm install
 #npm i patch-package
 #npx patch-package
 
-# xcode cloud sets `CI` env var to 'TRUE':
-# This causes a crash: Error: GetEnv.NoBoolean: TRUE is not a boolean.
-# This is a workaround for that issue.
-npx expo prebuild
+
+npx expo prebuild -p ios
