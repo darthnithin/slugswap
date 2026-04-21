@@ -7,16 +7,19 @@ const workspaceRoot = path.resolve(projectRoot, '../..');
 
 const config = getDefaultConfig(projectRoot);
 
-// 1. Watch all files within the monorepo
-config.watchFolders = [workspaceRoot];
+// Preserve Expo's defaults and add the workspace root for monorepo resolution.
+config.watchFolders = [...new Set([...(config.watchFolders ?? []), workspaceRoot])];
 
-// 2. Let Metro know where to resolve packages
+// Prefer local packages first, then fall back to the workspace root.
 config.resolver.nodeModulesPaths = [
-  path.resolve(projectRoot, 'node_modules'),
-  path.resolve(workspaceRoot, 'node_modules'),
+  ...new Set([
+    ...(config.resolver.nodeModulesPaths ?? []),
+    path.resolve(projectRoot, 'node_modules'),
+    path.resolve(workspaceRoot, 'node_modules'),
+  ]),
 ];
 
-// 3. Force Metro to resolve shared workspace files
+// Allow Metro to traverse the workspace for shared packages and files.
 config.resolver.disableHierarchicalLookup = false;
 
 module.exports = config;

@@ -85,10 +85,12 @@ yarn-error.*
 *.tsbuildinfo
 
 # generated native folders
-ios/
 android/
-apps/mobile/ios/
+apps/mobile/ios/*
 apps/mobile/android/
+
+# xcode cloud script exemption
+!apps/mobile/ios/ci_scripts/
 
 # Next.js
 .next/

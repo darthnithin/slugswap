@@ -31,7 +31,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="(share)"
           options={{
-            title: 'Home',
+
             tabBarLabel: 'Home',
             tabBarIcon: ({ focused, color, size }) => (
               <TabIcon
@@ -47,8 +47,23 @@ export default function TabLayout() {
         <Tabs.Screen
           name="menu"
           options={{
-            title: 'Menu',
+
             tabBarLabel: 'Menu',
+            tabBarIcon: ({ focused, color, size }) => (
+              <TabIcon
+                focused={focused}
+                color={color}
+                size={size}
+                name="fast-food-outline"
+                activeName="fast-food"
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="(request)"
+          options={{
+            tabBarLabel: 'My GET',
             tabBarIcon: ({ focused, color, size }) => (
               <TabIcon
                 focused={focused}
@@ -61,25 +76,9 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="(request)"
-          options={{
-            title: 'Order',
-            tabBarLabel: 'Order',
-            tabBarIcon: ({ focused, color, size }) => (
-              <TabIcon
-                focused={focused}
-                color={color}
-                size={size}
-                name="bag-outline"
-                activeName="bag"
-              />
-            ),
-          }}
-        />
-        <Tabs.Screen
           name="explore"
           options={{
-            title: 'Explore',
+
             tabBarLabel: 'Explore',
             tabBarIcon: ({ focused, color, size }) => (
               <TabIcon
@@ -95,7 +94,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="more"
           options={{
-            title: 'More',
+
             tabBarLabel: 'more',
             tabBarIcon: ({ focused, color, size }) => (
               <TabIcon
