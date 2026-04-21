@@ -1,20 +1,24 @@
 #!/bin/bash
 set -e
-echo "Running ci_post_clone.sh"
+system_profiler SPHardwareDataType
 
+echo "Running ci_post_clone.sh"
+date
 # cd out of ios/ci_scripts into main project directory
 cd ../../
 
-# install node and cocoapods
-#HOMEBREW_NO_AUTO_UPDATE=1 brew install node cocoapods
-brew install node cocoapods
+# install node
+#HOMEBREW_NO_AUTO_UPDATE=1 brew install node
+time brew install node
 
 # install node modules
-npm install
+time npm install
 
 # See note above about patching for GetEnv Issue
 #npm i patch-package
 #npx patch-package
 
 
-npx expo prebuild -p ios
+time npx expo prebuild -p ios
+echo "Prebuild complete"
+date
