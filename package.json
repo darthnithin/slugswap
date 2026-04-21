@@ -32,6 +32,7 @@
     "story:generate:svg": "npx dotenv-cli -e .env -- npx tsx scripts/instagram-stories/write-instagram-story-data.ts && npx tsx scripts/instagram-stories/generate-instagram-story.ts",
     "mobile:eas:init": "cd apps/mobile && npx eas-cli init",
     "mobile:eas:build:ios": "cd apps/mobile && npx eas-cli build --platform ios --profile production",
+    "mobile:eas:build:ios:local": "cd apps/mobile && npx eas-cli build --platform ios --profile production --local",
     "mobile:eas:submit:ios": "cd apps/mobile && npx eas-cli submit --platform ios --profile production --latest",
     "mobile:eas:testflight": "cd apps/mobile && npx eas-cli build -p ios --profile production --submit",
     "mobile:eas:update": "cd apps/mobile && npx eas-cli update --channel production",
