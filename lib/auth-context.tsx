@@ -63,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!initialized || isLoading) return;
 
     const inAuthGroup = segments[0] === 'auth';
+    const isPublicMenuRoute = pathname === '/menu' || segments.includes('menu');
 
     console.log('Navigation check:', {
       hasSession: !!session,
@@ -74,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isRootRoute = pathname === '/' && segments.join('/') === '';
 
     // Prevent redirect loops
-    if (!session && !inAuthGroup && pathname !== '/auth/sign-in') {
+    if (!session && !inAuthGroup && !isPublicMenuRoute && pathname !== '/auth/sign-in') {
       console.log('Redirecting to sign-in');
       router.replace('/auth/sign-in');
     } else if (session && (inAuthGroup || isRootRoute)) {

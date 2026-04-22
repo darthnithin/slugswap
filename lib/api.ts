@@ -44,6 +44,22 @@ function resolveApiBaseUrl(): string {
   const expoDevHost = readExpoDevHost();
 
   if (configuredUrl) {
+    if (
+      Platform.OS === 'web' &&
+      typeof window !== 'undefined' &&
+      window.location?.origin &&
+      window.location.pathname.startsWith('/app')
+    ) {
+      try {
+        const parsed = new URL(configuredUrl);
+        if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+          return window.location.origin;
+        }
+      } catch {
+        // Fall through to the configured value when URL parsing fails.
+      }
+    }
+
     if (Platform.OS !== 'web' && expoDevHost) {
       return rewriteLocalhostUrl(configuredUrl, expoDevHost);
     }
@@ -165,6 +181,28 @@ export type MobileUpdatePolicyResponse = {
     androidStoreUrl: string | null;
   };
   updatedAt: string;
+};
+
+export type DiningLocation = {
+  id: string;
+  slug: string;
+  name: string;
+};
+
+export type DiningMenu = {
+  location: DiningLocation;
+  date: string;
+  sourceDateLabel: string;
+  fetchedAt: string;
+  availableDates: Array<{ date: string; label: string }>;
+  meals: Array<{
+    id: string;
+    name: string;
+    sections: Array<{
+      name: string;
+      items: Array<{ name: string }>;
+    }>;
+  }>;
 };
 
 function normalizeClaimGenerationFailureReason(
@@ -543,4 +581,35 @@ export async function getMobileAppConfig() {
   }
 
   return response.json() as Promise<MobileUpdatePolicyResponse>;
+}
+
+export async function getDiningLocations() {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/menus/locations`, {
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to fetch dining locations');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{ locations: DiningLocation[] }>;
+}
+
+export async function getDiningMenu(params: { locationId: string; date: string }) {
+  const searchParams = new URLSearchParams({
+    locationId: params.locationId,
+    date: params.date,
+  });
+
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/menus?${searchParams.toString()}`, {
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to fetch dining menu');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<DiningMenu>;
 }
