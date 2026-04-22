@@ -438,6 +438,38 @@ export async function getGetAccounts() {
   return response.json() as Promise<{ linked: boolean; accounts: Array<{ id: string; accountDisplayName: string; balance: number | null }> }>;
 }
 
+export async function getGetBarcode() {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/get/barcode`, {
+    headers,
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to fetch GET barcode');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{ linked: boolean; code: string; fetchedAt: string }>;
+}
+
+export async function getGetWallet() {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/get/wallet`, {
+    headers,
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to fetch GET wallet');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<{
+    linked: boolean;
+    accounts: Array<{ id: string; accountDisplayName: string; balance: number | null }>;
+    barcode: { code: string; fetchedAt: string };
+  }>;
+}
+
 export async function getUserBalance(params: { name?: string; email?: string; userId?: string }) {
   const headers = await getAuthHeaders();
   const searchParams = new URLSearchParams();

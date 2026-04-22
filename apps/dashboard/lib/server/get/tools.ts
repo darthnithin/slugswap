@@ -185,6 +185,31 @@ export async function retrieveAccounts(sessionId: string): Promise<GetAccount[]>
       : [];
 }
 
+function extractBarcodePayload(raw: unknown): string | null {
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  if (raw && typeof raw === "object") {
+    const maybe = raw as { payload?: string; barcodePayload?: string };
+    const value = maybe.payload || maybe.barcodePayload;
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+export async function retrievePatronBarcodePayload(sessionId: string): Promise<string> {
+  const payload = await callGetApi<{ sessionId: string }, unknown>(
+    "authentication",
+    "retrievePatronBarcodePayload",
+    { sessionId }
+  );
+
+  const code = extractBarcodePayload(payload);
+  if (!code) {
+    throw new GetApiError("GET provider returned an empty barcode payload");
+  }
+
+  return code;
+}
+
 export async function revokePin(sessionId: string, deviceId: string) {
   const response = await callGetApi<{ deviceId: string; sessionId: string }, boolean>(
     "user",

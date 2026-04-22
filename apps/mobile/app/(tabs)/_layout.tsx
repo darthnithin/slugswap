@@ -61,7 +61,7 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="(request)"
+          name="(wallet)"
           options={{
             tabBarLabel: 'My GET',
             tabBarIcon: ({ focused, color, size }) => (

@@ -1,5 +1,5 @@
 import { Slot } from "expo-router";
 
-export default function RequestLayout() {
+export default function WalletLayout() {
   return <Slot />;
 }

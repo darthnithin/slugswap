@@ -14,6 +14,7 @@ import {
   extractValidatedSessionId,
   generateDeviceId,
   retrieveAccounts,
+  retrievePatronBarcodePayload,
   revokePin,
   verifyPin,
 } from "@/lib/server/get/tools";
@@ -163,6 +164,62 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       );
     } catch (error: any) {
       const message = error?.message || "Failed to retrieve GET accounts";
+      const status = message.includes("not linked") ? 400 : 500;
+      return NextResponse.json({ error: message }, { status });
+    }
+  }
+
+  if (action === "wallet") {
+    if (req.method !== "GET") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+    try {
+      const auth = await authenticateAppUser(req);
+      if ("response" in auth) {
+        return auth.response;
+      }
+      await syncAuthenticatedUser(auth.user);
+
+      const { sessionId } = await getActiveGetSession(auth.user.id);
+      const accounts = await retrieveAccounts(sessionId);
+      await syncDonorPauseStateFromAccounts(auth.user.id, accounts);
+      const code = await retrievePatronBarcodePayload(sessionId);
+
+      return NextResponse.json(
+        {
+          linked: true,
+          accounts,
+          barcode: { code, fetchedAt: new Date().toISOString() },
+        },
+        { status: 200 }
+      );
+    } catch (error: any) {
+      const message = error?.message || "Failed to retrieve GET wallet";
+      const status = message.includes("not linked") ? 400 : 500;
+      return NextResponse.json({ error: message }, { status });
+    }
+  }
+
+  if (action === "barcode") {
+    if (req.method !== "GET") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+    try {
+      const auth = await authenticateAppUser(req);
+      if ("response" in auth) {
+        return auth.response;
+      }
+      await syncAuthenticatedUser(auth.user);
+
+      const { sessionId } = await getActiveGetSession(auth.user.id);
+      const code = await retrievePatronBarcodePayload(sessionId);
+
+      return NextResponse.json(
+        { linked: true, code, fetchedAt: new Date().toISOString() },
+        { status: 200 }
+      );
+    } catch (error: any) {
+      const message = error?.message || "Failed to retrieve GET barcode";
       const status = message.includes("not linked") ? 400 : 500;
       return NextResponse.json({ error: message }, { status });
     }
