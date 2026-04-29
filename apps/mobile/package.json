@@ -24,6 +24,7 @@
     "expo-glass-effect": "~55.0.10",
     "expo-insights": "~55.0.16",
     "expo-linking": "~55.0.12",
+    "expo-maps": "~55.0.16",
     "expo-router": "~55.0.12",
     "expo-status-bar": "~55.0.5",
     "expo-symbols": "~55.0.7",

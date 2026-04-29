@@ -39,7 +39,14 @@
     "scheme": "slugswap",
     "plugins": [
       "expo-router",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-maps",
+        {
+          "requestLocationPermission": true,
+          "locationPermission": "Allow SlugSwap to use your location for maps!"
+        }
+      ]
     ],
     "extra": {
       "router": {},
