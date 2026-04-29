@@ -195,6 +195,25 @@ export type DiningMenu = {
   sourceDateLabel: string;
   fetchedAt: string;
   availableDates: Array<{ date: string; label: string }>;
+  recommendedPublishedMealId: string | null;
+  serviceSchedule: {
+    source: 'regular' | 'special-override' | 'unavailable';
+    closed: boolean;
+    periods: Array<{
+      id: string;
+      label: string;
+      startMinutes: number;
+      endMinutes: number;
+      mappedPublishedMealIds: string[];
+    }>;
+    activePeriodId: string | null;
+    currentStatusLabel: string | null;
+    note: string | null;
+    specialHours: {
+      opensAt: string | null;
+      closesAt: string | null;
+    } | null;
+  };
   meals: Array<{
     id: string;
     name: string;

@@ -53,23 +53,17 @@ function todayInPacific(): string {
   return `${year}-${month}-${day}`;
 }
 
-function currentMealPreference(): string {
-  const hourLabel = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Los_Angeles',
-    hour: '2-digit',
-    hour12: false,
-  }).format(new Date());
-  const hour = Number(hourLabel);
-
-  if (hour < 11) return 'breakfast';
-  if (hour < 16) return 'lunch';
-  if (hour < 21) return 'dinner';
-  return 'late-night';
+function isTodayOrFuture(date: string): boolean {
+  return date >= todayInPacific();
 }
 
 function chooseDefaultMeal(menu: DiningMenu): string | null {
-  const preferred = currentMealPreference();
-  return menu.meals.find((meal) => meal.id === preferred)?.id ?? menu.meals[0]?.id ?? null;
+  return (
+    menu.recommendedPublishedMealId ??
+    menu.meals.find((meal) => meal.id === menu.serviceSchedule.activePeriodId)?.id ??
+    menu.meals[0]?.id ??
+    null
+  );
 }
 
 function formatUpdatedAt(value: string): string {
@@ -91,6 +85,22 @@ function formatDateLabel(date: string): string {
     month: 'short',
     day: 'numeric',
   });
+}
+
+function formatSpecialHoursRange(hours: { opensAt: string | null; closesAt: string | null } | null) {
+  if (!hours?.opensAt || !hours?.closesAt) return 'Closed';
+
+  function formatTime(value: string): string {
+    const [hoursRaw, minutesRaw] = value.split(':');
+    const hours24 = Number(hoursRaw);
+    const minutes = Number(minutesRaw ?? '0');
+    const meridiem = hours24 >= 12 ? 'PM' : 'AM';
+    const hours12 = hours24 % 12 || 12;
+    if (minutes === 0) return `${hours12} ${meridiem}`;
+    return `${hours12}:${minutes.toString().padStart(2, '0')} ${meridiem}`;
+  }
+
+  return `${formatTime(hours.opensAt)} - ${formatTime(hours.closesAt)}`;
 }
 
 function Chip({
@@ -201,13 +211,20 @@ export default function MenuScreen() {
       if (options?.showRefreshing) setRefreshing(true);
       setErrorMessage(null);
 
+      if (!isTodayOrFuture(date)) {
+        setErrorMessage('Past dining menus are not available.');
+        if (options?.showBlockingLoader) setLoading(false);
+        if (options?.showRefreshing) setRefreshing(false);
+        return;
+      }
+
       try {
         const nextMenu = await getDiningMenu({ locationId, date });
         applyMenu(nextMenu);
         await saveMenuCache(nextMenu);
       } catch (error: any) {
         const cached = await readMenuCache(locationId, date);
-        if (cached) {
+        if (cached && isTodayOrFuture(cached.menu.date)) {
           applyMenu(cached.menu, cached.savedAt);
           setErrorMessage(error?.message || 'Showing the last loaded menu');
         } else {
@@ -270,10 +287,11 @@ export default function MenuScreen() {
     ]);
   }, [loadLocations, loadMenu, selectedDate, selectedLocationId]);
 
-  const availableDates =
+  const availableDates = (
     menu?.availableDates.length
       ? menu.availableDates
-      : [{ date: selectedDate, label: formatDateLabel(selectedDate) }];
+      : [{ date: selectedDate, label: formatDateLabel(selectedDate) }]
+  ).filter((dateOption) => isTodayOrFuture(dateOption.date));
 
   if (loading && !menu) {
     return (
@@ -312,6 +330,33 @@ export default function MenuScreen() {
         </View>
       </View>
 
+      {menu?.serviceSchedule.currentStatusLabel ? (
+        <View style={styles.notice}>
+          <Ionicons name="time-outline" size={18} color={colors.brand} />
+          <Text selectable style={styles.noticeText}>
+            {menu.serviceSchedule.currentStatusLabel}
+          </Text>
+        </View>
+      ) : null}
+
+      {menu?.serviceSchedule.specialHours ? (
+        <View style={styles.notice}>
+          <Ionicons name="calendar-outline" size={18} color={colors.brand} />
+          <Text selectable style={styles.noticeText}>
+            Special hours: {formatSpecialHoursRange(menu.serviceSchedule.specialHours)}
+          </Text>
+        </View>
+      ) : null}
+
+      {menu?.serviceSchedule.note ? (
+        <View style={styles.notice}>
+          <Ionicons name="information-circle-outline" size={18} color={colors.textMuted} />
+          <Text selectable style={styles.noticeText}>
+            {menu.serviceSchedule.note}
+          </Text>
+        </View>
+      ) : null}
+
       {staleSavedAt ? (
         <View style={styles.notice}>
           <Ionicons name="cloud-offline-outline" size={18} color={colors.warning} />
@@ -334,6 +379,7 @@ export default function MenuScreen() {
         <Text style={styles.controlLabel}>Location</Text>
         <ScrollView
           horizontal
+          style={styles.horizontalRail}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.rail}
         >
@@ -356,6 +402,7 @@ export default function MenuScreen() {
         <Text style={styles.controlLabel}>Date</Text>
         <ScrollView
           horizontal
+          style={styles.horizontalRail}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.rail}
         >
@@ -522,9 +569,15 @@ const styles = StyleSheet.create({
     ...typeScale.eyebrow,
     color: colors.textMuted,
   },
+  horizontalRail: {
+    alignSelf: 'stretch',
+    overflow: 'hidden', // niether visible not hidden looks quite right
+    //TODO: figure that out.
+  },
   rail: {
-    gap: 8,
-    paddingRight: 18,
+    gap: 4,
+    paddingLeft: 0,
+    paddingRight: 0,
   },
   chip: {
     minHeight: 38,
@@ -533,7 +586,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: stealthTheme.radii.pill,
+    borderRadius: stealthTheme.radii.sm,
     backgroundColor: colors.surface,
   },
   chipSelected: {

@@ -1,9 +1,14 @@
 import * as cheerio from "cheerio";
+import {
+  resolveDiningSchedule,
+  type DiningServiceSchedule,
+} from "@/lib/server/menus/schedule";
 
 const FOODPRO_BASE_URL = "https://nutrition.sa.ucsc.edu/";
 const FOODPRO_COOKIE_HEADER =
   "WebInaCartLocation=; WebInaCartDates=; WebInaCartMeals=; WebInaCartRecipes=; WebInaCartQtys=";
-const CACHE_REVALIDATE_SECONDS = 900;
+const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
+const CACHE_REVALIDATE_SECONDS = 1800;
 const CACHE_TAG = "ucsc-menus";
 const COLLEGE_NINE_LOCATION_ID = "40";
 
@@ -19,6 +24,8 @@ export type DiningMenu = {
   sourceDateLabel: string;
   fetchedAt: string;
   availableDates: Array<{ date: string; label: string }>;
+  recommendedPublishedMealId: string | null;
+  serviceSchedule: DiningServiceSchedule;
   meals: Array<{
     id: string;
     name: string;
@@ -56,6 +63,23 @@ const LOCATION_SLUGS: Record<string, string> = {
   "50": "porter-market",
 };
 
+const LOCATION_LABELS: Record<string, string> = {
+  "05": "Cowell/Stevenson",
+  "20": "Crown/Merrill",
+  "21": "Banana Joe's",
+  "22": "Perk Coffee Bar",
+  "23": "Oakes Cafe",
+  "24": "Owl's Nest",
+  "25": "Porter/Kresge",
+  "26": "Stevenson Coffee House",
+  "30": "RCC/Oakes",
+  "40": "College 9/JRL",
+  "45": "UCEN Bistro",
+  "46": "Global Village Cafe",
+  "47": "Merrill Market",
+  "50": "Porter Market",
+};
+
 function normalizeText(value: string): string {
   return value.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -72,7 +96,7 @@ function toLocation(id: string, name: string): DiningLocation {
   return {
     id,
     slug: LOCATION_SLUGS[id] ?? slugify(name),
-    name,
+    name: LOCATION_LABELS[id] ?? name,
   };
 }
 
@@ -99,6 +123,31 @@ function parseDateInput(date: string): { iso: string; foodPro: string } {
     iso: `${match[1]}-${match[2]}-${match[3]}`,
     foodPro: `${month}/${day}/${year}`,
   };
+}
+
+function todayInPacific(): string {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(new Date());
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  if (!year || !month || !day) {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  return `${year}-${month}-${day}`;
+}
+
+function assertDateIsNotPast(date: string) {
+  if (date < todayInPacific()) {
+    throw new FoodProError("Past dining menus are not available.", 400);
+  }
 }
 
 function parseFoodProDate(value: string | null): string | null {
@@ -147,7 +196,7 @@ async function fetchFoodProHtml(url: string): Promise<string> {
     cache: "force-cache",
     headers: {
       Cookie: FOODPRO_COOKIE_HEADER,
-      "User-Agent": "SlugSwap menu fetcher",
+      "User-Agent": USER_AGENT,
     },
     next: {
       revalidate: CACHE_REVALIDATE_SECONDS,
@@ -284,6 +333,7 @@ export async function getDiningMenu(input: {
   date: string;
 }): Promise<DiningMenu> {
   const { iso } = parseDateInput(input.date);
+  assertDateIsNotPast(iso);
   const locationId = input.locationId.trim();
   if (!locationId) {
     throw new FoodProError("Missing locationId.", 400);
@@ -299,11 +349,20 @@ export async function getDiningMenu(input: {
   const $ = cheerio.load(html);
   const sourceDateLabel = normalizeText($(".shortmenutitle").first().text());
   const meals = parseMeals($);
-  const availableDates = parseAvailableDates($);
+  const today = todayInPacific();
+  const availableDates = parseAvailableDates($).filter(
+    (dateOption) => dateOption.date >= today
+  );
 
   if (!sourceDateLabel || meals.length === 0) {
     throw new FoodProError("Unable to parse UCSC dining menu.", 503);
   }
+
+  const { serviceSchedule, recommendedPublishedMealId } = await resolveDiningSchedule({
+    locationId,
+    date: iso,
+    meals: meals.map((meal) => ({ id: meal.id, name: meal.name })),
+  });
 
   return {
     location,
@@ -311,6 +370,8 @@ export async function getDiningMenu(input: {
     sourceDateLabel,
     fetchedAt: new Date().toISOString(),
     availableDates,
+    recommendedPublishedMealId,
+    serviceSchedule,
     meals,
   };
 }
