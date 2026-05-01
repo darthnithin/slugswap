@@ -57,7 +57,7 @@
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-native": "0.83.4",
-    "vercel": "^50.38.2"
+    "vercel": "^53.1.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
