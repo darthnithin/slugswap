@@ -87,7 +87,7 @@ export default function SignIn() {
     <View style={styles.screen}>
       <View style={styles.heroCard}>
         <View style={styles.heroNotch} />
-        <Text style={styles.heroTitle}>UCSC Dining Services</Text>
+        <Text style={styles.heroTitle}>SlugSwap Sign-in</Text>
         <View style={styles.heroBand} />
         <View style={styles.heroBody}>
           <View style={styles.avatarShell}>
@@ -95,7 +95,7 @@ export default function SignIn() {
           </View>
           <Text style={styles.appName}>SlugSwap</Text>
           <Text style={styles.appSubtitle}>
-            A quieter, familiar pass-style experience for sharing dining points.
+            Let's eat!
           </Text>
         </View>
       </View>
@@ -103,7 +103,7 @@ export default function SignIn() {
       <View style={styles.panel}>
         <Text style={styles.panelTitle}>Sign in to continue</Text>
         <Text style={styles.panelCopy}>
-          Use your Google account to open your donor or requester pass and keep your data synced.
+          Use your UCSC Google account to sign in.
         </Text>
 
         <Pressable
@@ -121,10 +121,6 @@ export default function SignIn() {
           )}
         </Pressable>
 
-        <View style={styles.inlineMeta}>
-          <View style={[styles.metaDot, { backgroundColor: colors.brand }]} />
-          <Text style={styles.metaText}>Styled to echo the official GET Mobile pass</Text>
-        </View>
       </View>
     </View>
   );
@@ -186,9 +182,9 @@ const styles = StyleSheet.create({
     borderRadius: 62,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    backgroundColor: 'rgba(100, 100, 100, 0.3)',
     borderWidth: 6,
-    borderColor: 'rgba(255, 255, 255, 0.9)',
+    borderColor: 'rgba(255, 255, 255, 0)',
     marginTop: -72,
     marginBottom: 14,
   },

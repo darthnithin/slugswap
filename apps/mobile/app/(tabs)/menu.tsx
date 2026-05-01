@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -55,6 +56,11 @@ function todayInPacific(): string {
 
 function isTodayOrFuture(date: string): boolean {
   return date >= todayInPacific();
+}
+
+function firstParam(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
 }
 
 function chooseDefaultMeal(menu: DiningMenu): string | null {
@@ -142,6 +148,8 @@ function EmptyState({ message }: { message: string }) {
 }
 
 export default function MenuScreen() {
+  const params = useLocalSearchParams<{ locationId?: string | string[] }>();
+  const requestedLocationId = firstParam(params.locationId);
   const [locations, setLocations] = useState<DiningLocation[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState(DEFAULT_LOCATION_ID);
   const [selectedDate, setSelectedDate] = useState(todayInPacific);
@@ -244,7 +252,7 @@ export default function MenuScreen() {
     async function loadInitialState() {
       setLoading(true);
       const storedLocationId = await AsyncStorage.getItem(LAST_LOCATION_KEY);
-      const initialLocationId = storedLocationId || DEFAULT_LOCATION_ID;
+      const initialLocationId = requestedLocationId || storedLocationId || DEFAULT_LOCATION_ID;
       const initialDate = todayInPacific();
 
       if (!active) return;
@@ -262,6 +270,21 @@ export default function MenuScreen() {
       active = false;
     };
   }, [loadLocations, loadMenu]);
+
+  useEffect(() => {
+    if (!requestedLocationId || requestedLocationId === selectedLocationId) return;
+    if (loading && !menu) return;
+
+    const locationId = requestedLocationId;
+
+    async function loadRequestedLocation() {
+      setSelectedLocationId(locationId);
+      await AsyncStorage.setItem(LAST_LOCATION_KEY, locationId);
+      await loadMenu(locationId, selectedDate, { showBlockingLoader: true });
+    }
+
+    void loadRequestedLocation();
+  }, [loadMenu, loading, menu, requestedLocationId, selectedDate, selectedLocationId]);
 
   const handleLocationPress = useCallback(
     async (locationId: string) => {
