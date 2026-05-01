@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, gt, lte } from "drizzle-orm";
+import { and, eq, gt, gte, lt, lte, sql as sqlOp } from "drizzle-orm";
 import {
   authenticateAppUser,
   syncAuthenticatedUser,
@@ -7,35 +7,66 @@ import {
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
 import { getAdminConfig } from "@/lib/server/config";
-import { rankDonorCandidatesForClaim } from "@/lib/server/claims/donor-selection";
+import { getPacificWeekWindow } from "@/lib/server/timezone";
 
 export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
 type RequesterPoolStatus = "available" | "empty" | "unavailable";
 
-function classifyRequesterPoolStatus(error: unknown): RequesterPoolStatus {
-  const message = error instanceof Error ? error.message : "";
+function durationMs(startedAt: number): number {
+  return Date.now() - startedAt;
+}
 
-  if (
-    message.includes("No eligible donors available under weekly cap limits") ||
-    message.includes("No linked donor GET account available")
-  ) {
-    return "empty";
-  }
+function logApiTiming(label: string, payload: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") return;
+  console.info(label, payload);
+}
 
-  return "unavailable";
+function parsePoints(value: string | number | null | undefined): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 async function getRequesterPoolStatus(
-  claimAmount: number
+  claimAmount: number,
+  weekStart: Date,
+  weekEnd: Date
 ): Promise<RequesterPoolStatus> {
-  try {
-    await rankDonorCandidatesForClaim(claimAmount);
-    return "available";
-  } catch (error) {
-    return classifyRequesterPoolStatus(error);
-  }
+  const [activeLinkedCap, redeemedThisWeek] = await Promise.all([
+    db
+      .select({ total: sqlOp<string>`coalesce(sum(${schema.donations.amount}), '0')` })
+      .from(schema.donations)
+      .innerJoin(
+        schema.getCredentials,
+        eq(schema.getCredentials.userId, schema.donations.userId)
+      )
+      .where(eq(schema.donations.status, "active")),
+    db
+      .select({ total: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')` })
+      .from(schema.claimCodes)
+      .innerJoin(
+        schema.donations,
+        eq(schema.claimCodes.donorUserId, schema.donations.userId)
+      )
+      .innerJoin(
+        schema.getCredentials,
+        eq(schema.getCredentials.userId, schema.donations.userId)
+      )
+      .where(
+        and(
+          eq(schema.donations.status, "active"),
+          eq(schema.claimCodes.status, "redeemed"),
+          gte(schema.claimCodes.redeemedAt, weekStart),
+          lt(schema.claimCodes.redeemedAt, weekEnd)
+        )
+      ),
+  ]);
+
+  const availablePoints =
+    parsePoints(activeLinkedCap[0]?.total) - parsePoints(redeemedThisWeek[0]?.total);
+
+  return availablePoints >= claimAmount ? "available" : "empty";
 }
 
 
@@ -48,13 +79,30 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
   }
 
+  const startedAt = Date.now();
+  let authMs: number | null = null;
+  let syncUserMs: number | null = null;
+  let configMs: number | null = null;
+  let poolMs: number | null = null;
+  let allowanceReadMs: number | null = null;
+  let allowanceCreateMs: number | null = null;
+  let poolStatusMs: number | null = null;
+
   try {
+    const authStartedAt = Date.now();
     const auth = await authenticateAppUser(req);
+    authMs = durationMs(authStartedAt);
     if ("response" in auth) {
       return auth.response;
     }
+
+    const syncStartedAt = Date.now();
     await syncAuthenticatedUser(auth.user);
+    syncUserMs = durationMs(syncStartedAt);
+
+    const configStartedAt = Date.now();
     const { config } = await getAdminConfig();
+    configMs = durationMs(configStartedAt);
 
     // const user = auth.user;
 
@@ -83,6 +131,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     const user = auth.user;
     const now = new Date();
     // Find the actual pool instead of creating one
+    const poolStartedAt = Date.now();
     const weeklyPool = await db
       .select()
       .from(schema.weeklyPools)
@@ -93,9 +142,29 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         )
       )
       .limit(1);
+    poolMs = durationMs(poolStartedAt);
 
     if (weeklyPool.length === 0) {
-      const poolStatus = await getRequesterPoolStatus(config.defaultClaimAmount);
+      const weekWindow = getPacificWeekWindow(now);
+      const poolStatusStartedAt = Date.now();
+      const poolStatus = await getRequesterPoolStatus(
+        config.defaultClaimAmount,
+        weekWindow.weekStart,
+        weekWindow.weekEnd
+      );
+      poolStatusMs = durationMs(poolStatusStartedAt);
+      logApiTiming("[api.requesters.allowance.timing]", {
+        userId: user.id,
+        authMs,
+        syncUserMs,
+        configMs,
+        poolMs,
+        allowanceReadMs,
+        allowanceCreateMs,
+        poolStatusMs,
+        hasPool: false,
+        totalMs: durationMs(startedAt),
+      });
       return NextResponse.json(
         {
           weeklyLimit: 0,
@@ -111,6 +180,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     }
     const pool = weeklyPool[0];
 
+    const allowanceReadStartedAt = Date.now();
     let userAllowance = await db
       .select()
       .from(schema.userAllowances)
@@ -121,9 +191,11 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         )
       )
       .limit(1);
+    allowanceReadMs = durationMs(allowanceReadStartedAt);
 
     if (userAllowance.length === 0) {
       const defaultWeeklyLimit = config.defaultWeeklyAllowance;
+      const allowanceCreateStartedAt = Date.now();
       const [newAllowance] = await db
         .insert(schema.userAllowances)
         .values({
@@ -134,13 +206,33 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           remainingAmount: defaultWeeklyLimit.toString(),
         })
         .returning();
+      allowanceCreateMs = durationMs(allowanceCreateStartedAt);
       userAllowance = [newAllowance];
     }
 
     const allowance = userAllowance[0];
     const timeUntilReset = pool.weekEnd.getTime() - now.getTime();
     const daysUntilReset = Math.ceil(timeUntilReset / (1000 * 60 * 60 * 24));
-    const poolStatus = await getRequesterPoolStatus(config.defaultClaimAmount);
+    const poolStatusStartedAt = Date.now();
+    const poolStatus = await getRequesterPoolStatus(
+      config.defaultClaimAmount,
+      pool.weekStart,
+      pool.weekEnd
+    );
+    poolStatusMs = durationMs(poolStatusStartedAt);
+
+    logApiTiming("[api.requesters.allowance.timing]", {
+      userId: user.id,
+      authMs,
+      syncUserMs,
+      configMs,
+      poolMs,
+      allowanceReadMs,
+      allowanceCreateMs,
+      poolStatusMs,
+      hasPool: true,
+      totalMs: durationMs(startedAt),
+    });
 
     return NextResponse.json(
       {
@@ -155,6 +247,17 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       { status: 200 }
     );
   } catch (error: any) {
+    logApiTiming("[api.requesters.allowance.timing]", {
+      authMs,
+      syncUserMs,
+      configMs,
+      poolMs,
+      allowanceReadMs,
+      allowanceCreateMs,
+      poolStatusMs,
+      totalMs: durationMs(startedAt),
+      error: error?.message || "Unknown error",
+    });
     console.error("Error fetching allowance:", error);
     return NextResponse.json(
       { error: error?.message || "Internal server error" },

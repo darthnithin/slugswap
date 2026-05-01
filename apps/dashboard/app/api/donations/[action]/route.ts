@@ -14,6 +14,15 @@ export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
 
+function durationMs(startedAt: number): number {
+  return Date.now() - startedAt;
+}
+
+function logApiTiming(label: string, payload: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") return;
+  console.info(label, payload);
+}
+
 function isUnlinkedGetAccountError(error: unknown): boolean {
   return error instanceof Error && error.message === "GET account is not linked";
 }
@@ -102,21 +111,40 @@ async function handleImpact(req: NextRequest) {
   if (req.method !== "GET") {
     return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
   }
+  const startedAt = Date.now();
+  let authMs: number | null = null;
+  let donationMs: number | null = null;
+  let statsMs: number | null = null;
+  let liveBalanceMs: number | null = null;
+
   try {
+    const authStartedAt = Date.now();
     const auth = await authenticateAppUser(req);
+    authMs = durationMs(authStartedAt);
     if ("response" in auth) {
       return auth.response;
     }
     const userId = auth.user.id;
 
+    const donationStartedAt = Date.now();
     const donations = await db
       .select()
       .from(schema.donations)
       .where(eq(schema.donations.userId, userId))
       .limit(1);
+    donationMs = durationMs(donationStartedAt);
 
     if (donations.length === 0) {
       const weekWindow = getPacificWeekWindow();
+      logApiTiming("[api.donations.impact.timing]", {
+        userId,
+        authMs,
+        donationMs,
+        statsMs,
+        liveBalanceMs,
+        hasDonation: false,
+        totalMs: durationMs(startedAt),
+      });
       return NextResponse.json(
         {
           isActive: false,
@@ -142,6 +170,7 @@ async function handleImpact(req: NextRequest) {
     const now = new Date();
     const weekWindow = getPacificWeekWindow(now);
 
+    const statsStartedAt = Date.now();
     const [peopleHelped, allTimeContributed, redeemedThisWeek, reservedThisWeek] =
       await Promise.all([
         db
@@ -186,6 +215,7 @@ async function handleImpact(req: NextRequest) {
             )
           ),
       ]);
+    statsMs = durationMs(statsStartedAt);
 
     const redeemedWeekAmount = parseFloat(redeemedThisWeek[0]?.total || "0");
     const reservedWeekAmount = parseFloat(reservedThisWeek[0]?.total || "0");
@@ -194,6 +224,7 @@ async function handleImpact(req: NextRequest) {
     let remainingThisWeek = capRemainingThisWeek;
 
     if (donation.status === "active") {
+      const liveBalanceStartedAt = Date.now();
       try {
         const liveTrackedBalance = await fetchLiveTrackedBalance(userId);
         if (typeof liveTrackedBalance === "number" && !Number.isNaN(liveTrackedBalance)) {
@@ -203,9 +234,22 @@ async function handleImpact(req: NextRequest) {
         if (!isUnlinkedGetAccountError(error)) {
           console.warn(`Failed to fetch live GET balance for donor ${userId}:`, error);
         }
+      } finally {
+        liveBalanceMs = durationMs(liveBalanceStartedAt);
       }
     }
     const capReached = remainingThisWeek <= 0;
+
+    logApiTiming("[api.donations.impact.timing]", {
+      userId,
+      authMs,
+      donationMs,
+      statsMs,
+      liveBalanceMs,
+      hasDonation: true,
+      status: donation.status,
+      totalMs: durationMs(startedAt),
+    });
 
     return NextResponse.json(
       {
@@ -226,6 +270,14 @@ async function handleImpact(req: NextRequest) {
       { status: 200 }
     );
   } catch (error: any) {
+    logApiTiming("[api.donations.impact.timing]", {
+      authMs,
+      donationMs,
+      statsMs,
+      liveBalanceMs,
+      totalMs: durationMs(startedAt),
+      error: error?.message || "Unknown error",
+    });
     console.error("Error fetching impact:", error);
     return NextResponse.json(
       { error: error?.message || "Internal server error" },

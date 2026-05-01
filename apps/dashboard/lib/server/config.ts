@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { db } from "@/lib/server/db";
 import { adminConfig } from "@/lib/server/schema";
 
@@ -40,6 +41,8 @@ export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
 };
 
 const ADMIN_CONFIG_ID = "global";
+const ADMIN_CONFIG_CACHE_TAG = "admin-config";
+const ADMIN_CONFIG_CACHE_SECONDS = 60 * 60;
 
 function normalizePoolCalculationMethod(value: unknown): PoolCalculationMethod {
   if (value === "equal" || value === "proportional") return value;
@@ -131,7 +134,7 @@ async function ensureConfigRow() {
     .onConflictDoNothing();
 }
 
-export async function getAdminConfig(): Promise<{ config: AdminConfig; updatedAt: Date }> {
+async function loadAdminConfigFromDb(): Promise<{ config: AdminConfig; updatedAt: Date }> {
   await ensureConfigRow();
 
   const row = await db.query.adminConfig.findFirst({
@@ -148,10 +151,23 @@ export async function getAdminConfig(): Promise<{ config: AdminConfig; updatedAt
   };
 }
 
+const getCachedAdminConfig = unstable_cache(
+  loadAdminConfigFromDb,
+  [ADMIN_CONFIG_CACHE_TAG],
+  {
+    revalidate: ADMIN_CONFIG_CACHE_SECONDS,
+    tags: [ADMIN_CONFIG_CACHE_TAG],
+  }
+);
+
+export async function getAdminConfig(): Promise<{ config: AdminConfig; updatedAt: Date }> {
+  return getCachedAdminConfig();
+}
+
 export async function updateAdminConfig(
   updates: Partial<AdminConfig>
 ): Promise<{ config: AdminConfig; updatedAt: Date }> {
-  const current = await getAdminConfig();
+  const current = await loadAdminConfigFromDb();
 
   const merged: AdminConfig = {
     ...current.config,
@@ -262,6 +278,8 @@ export async function updateAdminConfig(
       },
     })
     .returning();
+
+  revalidateTag(ADMIN_CONFIG_CACHE_TAG);
 
   return {
     config: rowToConfig(saved),
