@@ -107,7 +107,6 @@ async function handleImpact(req: NextRequest) {
     if ("response" in auth) {
       return auth.response;
     }
-    await syncAuthenticatedUser(auth.user);
     const userId = auth.user.id;
 
     const donations = await db
@@ -194,14 +193,16 @@ async function handleImpact(req: NextRequest) {
 
     let remainingThisWeek = capRemainingThisWeek;
 
-    try {
-      const liveTrackedBalance = await fetchLiveTrackedBalance(userId);
-      if (typeof liveTrackedBalance === "number" && !Number.isNaN(liveTrackedBalance)) {
-        remainingThisWeek = Math.min(capRemainingThisWeek, Math.max(0, liveTrackedBalance));
-      }
-    } catch (error) {
-      if (!isUnlinkedGetAccountError(error)) {
-        console.warn(`Failed to fetch live GET balance for donor ${userId}:`, error);
+    if (donation.status === "active") {
+      try {
+        const liveTrackedBalance = await fetchLiveTrackedBalance(userId);
+        if (typeof liveTrackedBalance === "number" && !Number.isNaN(liveTrackedBalance)) {
+          remainingThisWeek = Math.min(capRemainingThisWeek, Math.max(0, liveTrackedBalance));
+        }
+      } catch (error) {
+        if (!isUnlinkedGetAccountError(error)) {
+          console.warn(`Failed to fetch live GET balance for donor ${userId}:`, error);
+        }
       }
     }
     const capReached = remainingThisWeek <= 0;

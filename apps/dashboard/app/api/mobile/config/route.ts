@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminConfig } from "@/lib/server/config";
 
 export const runtime = "nodejs";
+const CACHE_CONTROL = "public, s-maxage=300, stale-while-revalidate=3600";
 
 export async function GET() {
   try {
@@ -17,7 +18,12 @@ export async function GET() {
         },
         updatedAt: updatedAt.toISOString(),
       },
-      { status: 200 }
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": CACHE_CONTROL,
+        },
+      }
     );
   } catch (error) {
     console.error("Error loading mobile update policy:", error);

@@ -590,9 +590,7 @@ export async function getUserBalance(params: { name?: string; email?: string; us
 }
 
 export async function getMobileAppConfig() {
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/mobile/config`, {
-    cache: 'no-store',
-  });
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/mobile/config`);
 
   if (!response.ok) {
     const errorMessage = await readApiError(response, 'Failed to fetch mobile update policy');

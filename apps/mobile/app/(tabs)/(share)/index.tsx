@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import * as WebBrowser from 'expo-web-browser';
-import { useFocusEffect } from 'expo-router';
 
 import { useAuth } from '../../../../../lib/auth-context';
 import {
@@ -225,7 +224,7 @@ function PrimaryButton({
 export default function DonorScreen() {
   const { signOut } = useAuth();
   const router = useRouter();
-  const { hasLoadedShare, markShareLoaded, shareSnapshot, setShareSnapshot } = useTabCache();
+  const { markShareLoaded, shareSnapshot, setShareSnapshot } = useTabCache();
   const hasShareSnapshot = !!shareSnapshot;
 
   const [weeklyAmount, setWeeklyAmount] = useState(shareSnapshot?.weeklyAmount ?? '');
@@ -253,6 +252,47 @@ export default function DonorScreen() {
   const [requesterPoolStatus, setRequesterPoolStatus] = useState<RequesterPoolStatus>(
     shareSnapshot?.requesterPoolStatus ?? 'unavailable'
   );
+  const shareSnapshotRef = useRef<ShareTabSnapshot | null>(shareSnapshot);
+  const getAccountsRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    shareSnapshotRef.current = shareSnapshot;
+  }, [shareSnapshot]);
+
+  const updateShareSnapshot = useCallback((snapshot: ShareTabSnapshot) => {
+    shareSnapshotRef.current = snapshot;
+    setShareSnapshot(snapshot);
+  }, [setShareSnapshot]);
+
+  const loadGetAccountsInBackground = useCallback(async (options?: { alertOnError?: boolean }) => {
+    const requestId = getAccountsRequestIdRef.current + 1;
+    getAccountsRequestIdRef.current = requestId;
+    setRefreshingBalance(true);
+
+    try {
+      const accounts = await getGetAccounts();
+      if (getAccountsRequestIdRef.current !== requestId) return;
+
+      const nextAccounts = accounts.accounts || [];
+      setGetAccounts(nextAccounts);
+
+      const currentSnapshot = shareSnapshotRef.current;
+      if (currentSnapshot?.isGetLinked) {
+        updateShareSnapshot({
+          ...currentSnapshot,
+          getAccounts: nextAccounts,
+        });
+      }
+    } catch (error: any) {
+      if (options?.alertOnError) {
+        Alert.alert('Refresh Failed', error.message || 'Failed to refresh GET balance');
+      }
+    } finally {
+      if (getAccountsRequestIdRef.current === requestId) {
+        setRefreshingBalance(false);
+      }
+    }
+  }, [updateShareSnapshot]);
 
   const loadUserAndImpact = useCallback(async (options?: { showBlockingLoader?: boolean }) => {
     const showBlockingLoader = options?.showBlockingLoader ?? false;
@@ -269,34 +309,21 @@ export default function DonorScreen() {
       }
 
       const linkState = await getGetLinkStatus();
-      let nextGetAccounts: GetAccountBalance[] = [];
+      const nextGetAccounts = linkState.linked ? getAccounts : [];
 
-      if (linkState.linked) {
-        try {
-          const accounts = await getGetAccounts();
-          nextGetAccounts = accounts.accounts || [];
-        } catch {
-          nextGetAccounts = [];
-        }
-      }
+      const impactPromise = linkState.linked
+        ? getDonorImpact()
+        : Promise.resolve(EMPTY_IMPACT);
+      const allowancePromise = getRequesterAllowance().catch(() => null);
+      const [impactData, allowance] = await Promise.all([impactPromise, allowancePromise]);
 
-      const impactData = await getDonorImpact();
       const normalizedImpact = normalizeDonorImpact(impactData);
       const normalizedWeeklyAmount =
-        impactData.weeklyAmount > 0 ? impactData.weeklyAmount.toString() : '';
-      let nextRequesterWeeklyLimit = 0;
-      let nextRequesterWeekEnd: string | null = null;
-      let nextRequesterDaysUntilReset = 0;
-      let nextRequesterPoolStatus: RequesterPoolStatus = 'unavailable';
-      try {
-        const allowance = await getRequesterAllowance();
-        nextRequesterWeeklyLimit = allowance.weeklyLimit;
-        nextRequesterWeekEnd = allowance.weekEnd;
-        nextRequesterDaysUntilReset = allowance.daysUntilReset;
-        nextRequesterPoolStatus = allowance.poolStatus;
-      } catch {
-        // don't matter
-      }
+        linkState.linked && impactData.weeklyAmount > 0 ? impactData.weeklyAmount.toString() : '';
+      const nextRequesterWeeklyLimit = allowance?.weeklyLimit ?? 0;
+      const nextRequesterWeekEnd = allowance?.weekEnd ?? null;
+      const nextRequesterDaysUntilReset = allowance?.daysUntilReset ?? 0;
+      const nextRequesterPoolStatus: RequesterPoolStatus = allowance?.poolStatus ?? 'unavailable';
 
       const nextSnapshot: ShareTabSnapshot = {
         userId: user.id,
@@ -330,15 +357,27 @@ export default function DonorScreen() {
       setRequesterWeekEnd(nextSnapshot.requesterWeekEnd);
       setRequesterDaysUntilReset(nextSnapshot.requesterDaysUntilReset);
       setRequesterPoolStatus(nextSnapshot.requesterPoolStatus);
-      setShareSnapshot(nextSnapshot);
+      updateShareSnapshot(nextSnapshot);
       markShareLoaded();
+
+      if (linkState.linked) {
+        void loadGetAccountsInBackground();
+      } else {
+        getAccountsRequestIdRef.current += 1;
+        setRefreshingBalance(false);
+      }
     } catch (error) {
       console.error('Error loading impact:', error);
       Alert.alert('Error', 'Failed to load your donation data');
     } finally {
       if (showBlockingLoader) setLoading(false);
     }
-  }, [markShareLoaded, setShareSnapshot]);
+  }, [
+    getAccounts,
+    loadGetAccountsInBackground,
+    markShareLoaded,
+    updateShareSnapshot,
+  ]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -347,7 +386,7 @@ export default function DonorScreen() {
   }, [loadUserAndImpact]);
 
   const cacheShareSnapshot = useCallback((overrides: Partial<ShareTabSnapshot> = {}) => {
-    setShareSnapshot({
+    updateShareSnapshot({
       userId,
       userEmail,
       weeklyAmount,
@@ -371,7 +410,7 @@ export default function DonorScreen() {
     requesterWeekEnd,
     requesterWeeklyLimit,
     requesterPoolStatus,
-    setShareSnapshot,
+    updateShareSnapshot,
     userEmail,
     userId,
     weeklyAmount,
@@ -389,13 +428,6 @@ export default function DonorScreen() {
     if (hasShareSnapshot) return;
     void loadUserAndImpact({ showBlockingLoader: true });
   }, [hasShareSnapshot, loadUserAndImpact]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (!hasLoadedShare || !hasShareSnapshot) return;
-      void loadUserAndImpact({ showBlockingLoader: false });
-    }, [hasLoadedShare, hasShareSnapshot, loadUserAndImpact])
-  );
 
   const handleSetContribution = async () => {
     if (!userId) return;
@@ -487,6 +519,8 @@ export default function DonorScreen() {
         setIsGetLinked(false);
         setGetLinkedAt(null);
         setGetAccounts([]);
+        getAccountsRequestIdRef.current += 1;
+        setRefreshingBalance(false);
         cacheShareSnapshot({
           isGetLinked: false,
           getLinkedAt: null,
@@ -527,18 +561,7 @@ export default function DonorScreen() {
 
   const handleRefreshBalance = async () => {
     if (!userId || !isGetLinked) return;
-
-    setRefreshingBalance(true);
-    try {
-      const accounts = await getGetAccounts();
-      const nextAccounts = accounts.accounts || [];
-      setGetAccounts(nextAccounts);
-      cacheShareSnapshot({ getAccounts: nextAccounts });
-    } catch (error: any) {
-      Alert.alert('Refresh Failed', error.message || 'Failed to refresh GET balance');
-    } finally {
-      setRefreshingBalance(false);
-    }
+    await loadGetAccountsInBackground({ alertOnError: true });
   };
 
   const handleSignOut = async () => {
@@ -649,7 +672,11 @@ export default function DonorScreen() {
                 <Text style={styles.balanceHeroLabel}>Total available</Text>
                 <Text style={styles.balanceHeroValue}>{totalAvailableBalance.toFixed(2)} pts</Text>
                 <Text style={styles.balanceHeroMeta}>
-                  {getLinkedAt ? `Linked ${new Date(getLinkedAt).toLocaleDateString()}` : 'Linked'}
+                  {refreshingBalance
+                    ? 'Refreshing balances...'
+                    : getLinkedAt
+                      ? `Linked ${new Date(getLinkedAt).toLocaleDateString()}`
+                      : 'Linked'}
                 </Text>
               </View>
 
@@ -665,8 +692,11 @@ export default function DonorScreen() {
                 </View>
               ) : (
                 <View style={styles.emptyState}>
+                  {refreshingBalance ? <ActivityIndicator size="small" color={colors.brand} /> : null}
                   <Text style={styles.emptyCopy}>
-                    Linked successfully, but GET did not return the tracked UCSC account balances yet.
+                    {refreshingBalance
+                      ? 'Refreshing campus balances...'
+                      : 'Linked successfully, but GET did not return the tracked UCSC account balances yet.'}
                   </Text>
                 </View>
               )}
@@ -1108,6 +1138,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
     borderColor: colors.border,
+    gap: 8,
   },
   emptyCopy: {
     ...typeScale.body,

@@ -27,6 +27,15 @@ type Ctx = { params: Promise<{ action: string }> };
 
 import type { GetAccount } from "@/lib/server/get/tools";
 
+function durationMs(startedAt: number): number {
+  return Date.now() - startedAt;
+}
+
+function logApiTiming(label: string, payload: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") return;
+  console.info(label, payload);
+}
+
 function formatGetLinkError(error: any): { status: number; message: string } {
   const cause = error?.cause;
   const code = cause?.code as string | undefined;
@@ -116,15 +125,31 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     if (req.method !== "GET") {
       return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
     }
+    const startedAt = Date.now();
+    let authMs: number | null = null;
+    let credentialMs: number | null = null;
+
     try {
+      const authStartedAt = Date.now();
       const auth = await authenticateAppUser(req);
+      authMs = durationMs(authStartedAt);
       if ("response" in auth) {
         return auth.response;
       }
-      await syncAuthenticatedUser(auth.user);
 
-      const credential = await db.query.getCredentials.findFirst({
-        where: eq(getCredentials.userId, auth.user.id),
+      const credentialStartedAt = Date.now();
+      const [credential] = await db
+        .select({ linkedAt: getCredentials.linkedAt })
+        .from(getCredentials)
+        .where(eq(getCredentials.userId, auth.user.id))
+        .limit(1);
+      credentialMs = durationMs(credentialStartedAt);
+
+      logApiTiming("[api.get.link-status.timing]", {
+        userId: auth.user.id,
+        authMs,
+        credentialMs,
+        totalMs: durationMs(startedAt),
       });
 
       return NextResponse.json(
@@ -135,6 +160,12 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         { status: 200 }
       );
     } catch (error: any) {
+      logApiTiming("[api.get.link-status.timing]", {
+        authMs,
+        credentialMs,
+        totalMs: durationMs(startedAt),
+        error: error?.message || "Unknown error",
+      });
       console.error("Error checking GET link status:", error);
       return NextResponse.json(
         { error: error?.message || "Internal server error" },
