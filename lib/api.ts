@@ -183,6 +183,20 @@ export type MobileUpdatePolicyResponse = {
   updatedAt: string;
 };
 
+export type MobileHomeResponse = {
+  user: {
+    id: string;
+    email: string | null;
+    fullName: string | null;
+  };
+  linkStatus: {
+    linked: boolean;
+    linkedAt: string | null;
+  };
+  impact: DonorImpact;
+  allowance: RequesterAllowance;
+};
+
 export type DiningLocation = {
   id: string;
   slug: string;
@@ -598,6 +612,20 @@ export async function getMobileAppConfig() {
   }
 
   return response.json() as Promise<MobileUpdatePolicyResponse>;
+}
+
+export async function getMobileHome() {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/mobile/home`, {
+    headers,
+  });
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to fetch mobile home');
+    throw new Error(errorMessage);
+  }
+
+  return response.json() as Promise<MobileHomeResponse>;
 }
 
 export async function getDiningLocations() {

@@ -18,11 +18,9 @@ import * as WebBrowser from 'expo-web-browser';
 
 import { useAuth } from '../../../../../lib/auth-context';
 import {
-  getDonorImpact,
   getGetAccounts,
-  getGetLinkStatus,
   getGetLoginUrl,
-  getRequesterAllowance,
+  getMobileHome,
   linkGetAccount,
   pauseDonation,
   setDonation,
@@ -30,7 +28,6 @@ import {
   type DonorImpact,
   type RequesterPoolStatus,
 } from '../../../../../lib/api';
-import { supabase } from '../../../../../lib/supabase';
 import {
   useTabCache,
   type GetAccountBalance,
@@ -299,23 +296,11 @@ export default function DonorScreen() {
     if (showBlockingLoader) setLoading(true);
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        Alert.alert('Error', 'Please sign in first');
-        return;
-      }
-
-      const linkState = await getGetLinkStatus();
+      const home = await getMobileHome();
+      const linkState = home.linkStatus;
       const nextGetAccounts = linkState.linked ? getAccounts : [];
-
-      const impactPromise = linkState.linked
-        ? getDonorImpact()
-        : Promise.resolve(EMPTY_IMPACT);
-      const allowancePromise = getRequesterAllowance().catch(() => null);
-      const [impactData, allowance] = await Promise.all([impactPromise, allowancePromise]);
+      const impactData = home.impact;
+      const allowance = home.allowance;
 
       const normalizedImpact = normalizeDonorImpact(impactData);
       const normalizedWeeklyAmount =
@@ -326,8 +311,8 @@ export default function DonorScreen() {
       const nextRequesterPoolStatus: RequesterPoolStatus = allowance?.poolStatus ?? 'unavailable';
 
       const nextSnapshot: ShareTabSnapshot = {
-        userId: user.id,
-        userEmail: user.email ?? null,
+        userId: home.user.id,
+        userEmail: home.user.email,
         weeklyAmount: normalizedWeeklyAmount,
         isActive: impactData.isActive,
         impact: normalizedImpact,
@@ -343,9 +328,7 @@ export default function DonorScreen() {
       setUserId(nextSnapshot.userId);
       setUserEmail(nextSnapshot.userEmail);
       setUserDisplayName(
-        typeof user.user_metadata?.full_name === 'string'
-          ? user.user_metadata.full_name
-          : formatNameFromEmail(user.email ?? null)
+        home.user.fullName ?? formatNameFromEmail(home.user.email)
       );
       setWeeklyAmount(nextSnapshot.weeklyAmount);
       setIsActive(nextSnapshot.isActive);

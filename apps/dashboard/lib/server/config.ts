@@ -161,7 +161,11 @@ const getCachedAdminConfig = unstable_cache(
 );
 
 export async function getAdminConfig(): Promise<{ config: AdminConfig; updatedAt: Date }> {
-  return getCachedAdminConfig();
+  const result = await getCachedAdminConfig();
+  return {
+    config: result.config,
+    updatedAt: new Date(result.updatedAt),
+  };
 }
 
 export async function updateAdminConfig(

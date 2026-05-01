@@ -178,22 +178,67 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     if (req.method !== "GET") {
       return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
     }
+    const startedAt = Date.now();
+    let userId: string | null = null;
+    let authMs: number | null = null;
+    let syncUserMs: number | null = null;
+    let sessionMs: number | null = null;
+    let retrieveAccountsMs: number | null = null;
+    let pauseSyncMs: number | null = null;
+
     try {
+      const authStartedAt = Date.now();
       const auth = await authenticateAppUser(req);
+      authMs = durationMs(authStartedAt);
       if ("response" in auth) {
+        logApiTiming("[api.get.accounts.timing]", {
+          authMs,
+          totalMs: durationMs(startedAt),
+          shortCircuit: "auth",
+        });
         return auth.response;
       }
-      await syncAuthenticatedUser(auth.user);
+      userId = auth.user.id;
 
+      const syncUserStartedAt = Date.now();
+      await syncAuthenticatedUser(auth.user);
+      syncUserMs = durationMs(syncUserStartedAt);
+
+      const sessionStartedAt = Date.now();
       const { sessionId } = await getActiveGetSession(auth.user.id);
+      sessionMs = durationMs(sessionStartedAt);
+      const retrieveAccountsStartedAt = Date.now();
       const accounts = await retrieveAccounts(sessionId);
+      retrieveAccountsMs = durationMs(retrieveAccountsStartedAt);
+      const pauseSyncStartedAt = Date.now();
       await syncDonorPauseStateFromAccounts(auth.user.id, accounts);
+      pauseSyncMs = durationMs(pauseSyncStartedAt);
+
+      logApiTiming("[api.get.accounts.timing]", {
+        userId,
+        authMs,
+        syncUserMs,
+        sessionMs,
+        retrieveAccountsMs,
+        pauseSyncMs,
+        totalMs: durationMs(startedAt),
+      });
 
       return NextResponse.json(
         { linked: true, accounts },
         { status: 200 }
       );
     } catch (error: any) {
+      logApiTiming("[api.get.accounts.timing]", {
+        userId,
+        authMs,
+        syncUserMs,
+        sessionMs,
+        retrieveAccountsMs,
+        pauseSyncMs,
+        totalMs: durationMs(startedAt),
+        error: error?.message || "Unknown error",
+      });
       const message = error?.message || "Failed to retrieve GET accounts";
       const status = message.includes("not linked") ? 400 : 500;
       return NextResponse.json({ error: message }, { status });

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/server/db";
 import { getCredentials } from "@/lib/server/schema";
 import { decryptSecret } from "./credentials";
-import { authenticatePin, verifyPin } from "./tools";
+import { authenticatePin } from "./tools";
 
 function durationMs(startedAt: number): number {
   return Date.now() - startedAt;
@@ -17,24 +17,28 @@ export async function getActiveGetSession(
   userId: string
 ): Promise<{ sessionId: string; deviceId: string }> {
   const startedAt = Date.now();
+  const credentialStartedAt = Date.now();
   const credential = await db.query.getCredentials.findFirst({
     where: eq(getCredentials.userId, userId),
   });
+  const credentialMs = durationMs(credentialStartedAt);
 
   if (!credential) {
     throw new Error("GET account is not linked");
   }
 
+  const decryptStartedAt = Date.now();
   const pin = decryptSecret(credential.encryptedPin);
+  const decryptMs = durationMs(decryptStartedAt);
   const authStartedAt = Date.now();
   const sessionId = await authenticatePin(pin, credential.deviceId);
-  const verifyStartedAt = Date.now();
-  await verifyPin(sessionId, credential.deviceId, pin);
+  const authenticateMs = durationMs(authStartedAt);
 
   logGetSessionTiming({
     userId,
-    authMs: durationMs(authStartedAt),
-    verifyMs: durationMs(verifyStartedAt),
+    credentialMs,
+    decryptMs,
+    authenticateMs,
     totalMs: durationMs(startedAt),
   });
 
