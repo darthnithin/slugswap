@@ -106,3 +106,4 @@ apps/dashboard/public/app/
 
 # local investigation artifacts
 tmp/
+NOTES.md
