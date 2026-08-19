@@ -30,14 +30,20 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  const isVercelDeployment = process.env.VERCEL === "1";
+
   return (
     <html lang="en">
       <body
         className={`${instrumentSerif.variable} ${outfit.variable} ${jetbrainsMono.variable}`}
       >
         {children}
-        <Analytics />
-        <SpeedInsights />
+        {isVercelDeployment ? (
+          <>
+            <Analytics />
+            <SpeedInsights />
+          </>
+        ) : null}
       </body>
     </html>
   );

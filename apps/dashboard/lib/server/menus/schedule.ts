@@ -52,6 +52,7 @@ const MBHI_ENDPOINT = "https://dining.wordpress.ucsc.edu/wp-admin/admin-ajax.php
 const MBHI_ACTION = "mb-bhipro-fetch-shortcode";
 const MBHI_CACHE_REVALIDATE_SECONDS = 1800;
 const MBHI_CACHE_TAG = "ucsc-menu-schedules";
+const MBHI_REQUEST_TIMEOUT_MS = 10_000;
 
 const SCHEDULED_LOCATIONS: Record<string, ConfiguredLocation> = {
   "nine-jrl": {
@@ -336,7 +337,6 @@ function buildMbhiOptions(locationName: string, code: "mbhi_specials" | "mbhi_va
   const rawOptions = `location="${locationName}" format="12" output="table"`;
   const encodedOptions = Buffer.from(rawOptions, "utf8").toString("base64");
   const url = new URL(MBHI_ENDPOINT);
-  url.searchParams.set("t", String(Date.now()));
   url.searchParams.set("action", MBHI_ACTION);
   url.searchParams.set("code", code);
   url.searchParams.set("options", encodedOptions);
@@ -344,23 +344,34 @@ function buildMbhiOptions(locationName: string, code: "mbhi_specials" | "mbhi_va
 }
 
 async function fetchMbhiHtml(url: string): Promise<string> {
-  const response = await fetch(url, {
-    cache: "force-cache",
-    headers: {
-      accept: "text/html,application/json;q=0.9,*/*;q=0.8",
-      "user-agent": "SlugSwap Menu Schedule Fetcher",
-    },
-    next: {
-      revalidate: MBHI_CACHE_REVALIDATE_SECONDS,
-      tags: [MBHI_CACHE_TAG],
-    },
-  });
+  try {
+    const response = await fetch(url, {
+      cache: "force-cache",
+      headers: {
+        accept: "text/html,application/json;q=0.9,*/*;q=0.8",
+        "user-agent": "SlugSwap Menu Schedule Fetcher",
+      },
+      next: {
+        revalidate: MBHI_CACHE_REVALIDATE_SECONDS,
+        tags: [MBHI_CACHE_TAG],
+      },
+      signal: AbortSignal.timeout(MBHI_REQUEST_TIMEOUT_MS),
+    });
 
-  if (!response.ok) {
-    throw new Error(`MBHI returned ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`MBHI returned ${response.status}`);
+    }
+
+    return await response.text();
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.name === "AbortError" || error.name === "TimeoutError")
+    ) {
+      throw new Error("MBHI schedule source timed out");
+    }
+    throw error;
   }
-
-  return response.text();
 }
 
 function parseSpecialEntries(html: string): Record<string, SpecialHoursOverride> {
@@ -547,7 +558,15 @@ export async function resolveDiningSchedule(input: {
     return buildUnavailableSchedule(input.meals);
   }
 
-  const specialOverride = await getSpecialHoursOverride(input.locationId, input.date);
+  let specialOverride: SpecialHoursOverride | null = null;
+  try {
+    specialOverride = await getSpecialHoursOverride(input.locationId, input.date);
+  } catch (error) {
+    console.warn(
+      `Unable to load special dining hours for location ${input.locationId}; using regular schedule:`,
+      error
+    );
+  }
   if (specialOverride) {
     return buildSpecialOverrideSchedule(input.date, specialOverride, input.meals);
   }

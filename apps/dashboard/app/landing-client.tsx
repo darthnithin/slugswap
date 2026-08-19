@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useAnimationControls } from "framer-motion";
-import { Apple, ArrowRight, Chrome, Smartphone } from "lucide-react";
+import { Apple, ArrowRight, MonitorDown, Smartphone } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
@@ -407,7 +407,7 @@ export default function LandingClient({
 
             <motion.div whileHover={{ scale: 1.1, rotate: 5 }} whileTap={{ scale: 0.95 }}>
               <CtaButton href="/app" bg="bg-[#f7dc6f]" text="text-black" rotate="-rotate-1">
-                <Chrome className="h-6 w-6" />
+                <MonitorDown className="h-6 w-6" />
                 OPEN WEB APP
               </CtaButton>
             </motion.div>
@@ -432,7 +432,7 @@ export default function LandingClient({
             {[
               {
                 title: "POOLED SUPPORT",
-                desc: "Your monthly donation splits into weekly pools. Everyone draws from the community fund.",
+                desc: "Your weekly contribution joins the shared pool. Everyone draws from the community fund.",
                 color: "#4ecdc4",
                 rotate: 2,
               },

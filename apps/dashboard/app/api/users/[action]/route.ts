@@ -62,18 +62,57 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     }
 
     if (req.method === "PATCH") {
-      const { name, avatar_url } = (await req.json()) as {
-        name?: string;
-        avatar_url?: string;
-      };
+      const body = (await req.json().catch(() => null)) as {
+        name?: unknown;
+        avatar_url?: unknown;
+      } | null;
+      if (!body) {
+        return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+      }
+
+      const { name, avatar_url } = body;
+      if (name !== undefined && name !== null && typeof name !== "string") {
+        return NextResponse.json({ error: "name must be a string or null" }, { status: 400 });
+      }
+      const normalizedName = typeof name === "string" ? name.trim() : null;
+      if (normalizedName && normalizedName.length > 100) {
+        return NextResponse.json({ error: "name is too long" }, { status: 400 });
+      }
+
+      if (
+        avatar_url !== undefined &&
+        avatar_url !== null &&
+        typeof avatar_url !== "string"
+      ) {
+        return NextResponse.json(
+          { error: "avatar_url must be an HTTPS URL or null" },
+          { status: 400 }
+        );
+      }
+      const normalizedAvatar =
+        typeof avatar_url === "string" ? avatar_url.trim() : null;
+      if (normalizedAvatar) {
+        try {
+          const parsed = new URL(normalizedAvatar);
+          if (parsed.protocol !== "https:" || normalizedAvatar.length > 2048) {
+            throw new Error("invalid avatar URL");
+          }
+        } catch {
+          return NextResponse.json(
+            { error: "avatar_url must be an HTTPS URL or null" },
+            { status: 400 }
+          );
+        }
+      }
+
       const updates: Partial<typeof users.$inferInsert> = {
         updatedAt: new Date(),
       };
       if (name !== undefined) {
-        updates.name = typeof name === "string" ? name : null;
+        updates.name = normalizedName || null;
       }
       if (avatar_url !== undefined) {
-        updates.avatarUrl = typeof avatar_url === "string" ? avatar_url : null;
+        updates.avatarUrl = normalizedAvatar || null;
       }
       const [data] = await db
         .update(users)

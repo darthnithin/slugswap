@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -17,7 +17,7 @@ import {
   getDiningMenu,
   type DiningLocation,
   type DiningMenu,
-} from '../../../../lib/api';
+} from '@/lib/api';
 import {
   buttonOpacity,
   cardShadow,
@@ -159,6 +159,8 @@ export default function MenuScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [staleSavedAt, setStaleSavedAt] = useState<string | null>(null);
+  const menuRequestControllerRef = useRef<AbortController | null>(null);
+  const handledRequestedLocationRef = useRef<string | null>(null);
 
   const selectedLocation = useMemo(
     () =>
@@ -209,29 +211,55 @@ export default function MenuScreen() {
     setStaleSavedAt(staleAt);
   }, []);
 
+  const clearDisplayedMenu = useCallback(() => {
+    setMenu(null);
+    setSelectedMealId(null);
+    setStaleSavedAt(null);
+  }, []);
+
   const loadMenu = useCallback(
     async (
       locationId: string,
       date: string,
       options?: { showBlockingLoader?: boolean; showRefreshing?: boolean }
     ) => {
+      menuRequestControllerRef.current?.abort();
+      const requestController = new AbortController();
+      menuRequestControllerRef.current = requestController;
+      const isCurrentRequest = () =>
+        menuRequestControllerRef.current === requestController && !requestController.signal.aborted;
+
       if (options?.showBlockingLoader) setLoading(true);
       if (options?.showRefreshing) setRefreshing(true);
       setErrorMessage(null);
 
       if (!isTodayOrFuture(date)) {
-        setErrorMessage('Past dining menus are not available.');
-        if (options?.showBlockingLoader) setLoading(false);
-        if (options?.showRefreshing) setRefreshing(false);
+        if (isCurrentRequest()) {
+          setErrorMessage('Past dining menus are not available.');
+          menuRequestControllerRef.current = null;
+          if (options?.showBlockingLoader) setLoading(false);
+          if (options?.showRefreshing) setRefreshing(false);
+        }
         return;
       }
 
       try {
-        const nextMenu = await getDiningMenu({ locationId, date });
+        const nextMenu = await getDiningMenu(
+          { locationId, date },
+          { signal: requestController.signal }
+        );
+        if (!isCurrentRequest()) return;
+
         applyMenu(nextMenu);
-        await saveMenuCache(nextMenu);
+        void saveMenuCache(nextMenu).catch((error) => {
+          console.warn('Failed to cache dining menu:', error);
+        });
       } catch (error: any) {
+        if (!isCurrentRequest()) return;
+
         const cached = await readMenuCache(locationId, date);
+        if (!isCurrentRequest()) return;
+
         if (cached && isTodayOrFuture(cached.menu.date)) {
           applyMenu(cached.menu, cached.savedAt);
           setErrorMessage(error?.message || 'Showing the last loaded menu');
@@ -239,8 +267,11 @@ export default function MenuScreen() {
           setErrorMessage(error?.message || 'Failed to load dining menu');
         }
       } finally {
-        if (options?.showBlockingLoader) setLoading(false);
-        if (options?.showRefreshing) setRefreshing(false);
+        if (menuRequestControllerRef.current === requestController) {
+          menuRequestControllerRef.current = null;
+          if (options?.showBlockingLoader) setLoading(false);
+          if (options?.showRefreshing) setRefreshing(false);
+        }
       }
     },
     [applyMenu, readMenuCache, saveMenuCache]
@@ -251,11 +282,14 @@ export default function MenuScreen() {
 
     async function loadInitialState() {
       setLoading(true);
-      const storedLocationId = await AsyncStorage.getItem(LAST_LOCATION_KEY);
+      const storedLocationId = await AsyncStorage.getItem(LAST_LOCATION_KEY).catch(() => null);
       const initialLocationId = requestedLocationId || storedLocationId || DEFAULT_LOCATION_ID;
       const initialDate = todayInPacific();
 
       if (!active) return;
+      if (requestedLocationId) {
+        handledRequestedLocationRef.current = requestedLocationId;
+      }
       setSelectedLocationId(initialLocationId);
       setSelectedDate(initialDate);
 
@@ -268,39 +302,63 @@ export default function MenuScreen() {
 
     return () => {
       active = false;
+      const activeRequest = menuRequestControllerRef.current;
+      menuRequestControllerRef.current = null;
+      activeRequest?.abort();
     };
   }, [loadLocations, loadMenu]);
 
   useEffect(() => {
-    if (!requestedLocationId || requestedLocationId === selectedLocationId) return;
+    if (
+      !requestedLocationId ||
+      handledRequestedLocationRef.current === requestedLocationId
+    ) {
+      return;
+    }
     if (loading && !menu) return;
 
     const locationId = requestedLocationId;
+    handledRequestedLocationRef.current = locationId;
 
     async function loadRequestedLocation() {
       setSelectedLocationId(locationId);
-      await AsyncStorage.setItem(LAST_LOCATION_KEY, locationId);
+      clearDisplayedMenu();
+      void AsyncStorage.setItem(LAST_LOCATION_KEY, locationId).catch((error) => {
+        console.warn('Failed to remember dining location:', error);
+      });
       await loadMenu(locationId, selectedDate, { showBlockingLoader: true });
     }
 
     void loadRequestedLocation();
-  }, [loadMenu, loading, menu, requestedLocationId, selectedDate, selectedLocationId]);
+  }, [
+    clearDisplayedMenu,
+    loadMenu,
+    loading,
+    menu,
+    requestedLocationId,
+    selectedDate,
+    selectedLocationId,
+  ]);
 
   const handleLocationPress = useCallback(
     async (locationId: string) => {
       setSelectedLocationId(locationId);
-      await AsyncStorage.setItem(LAST_LOCATION_KEY, locationId);
+      clearDisplayedMenu();
+      void AsyncStorage.setItem(LAST_LOCATION_KEY, locationId).catch((error) => {
+        console.warn('Failed to remember dining location:', error);
+      });
       await loadMenu(locationId, selectedDate, { showBlockingLoader: true });
     },
-    [loadMenu, selectedDate]
+    [clearDisplayedMenu, loadMenu, selectedDate]
   );
 
   const handleDatePress = useCallback(
     async (date: string) => {
       setSelectedDate(date);
+      clearDisplayedMenu();
       await loadMenu(selectedLocationId, date, { showBlockingLoader: true });
     },
-    [loadMenu, selectedLocationId]
+    [clearDisplayedMenu, loadMenu, selectedLocationId]
   );
 
   const onRefresh = useCallback(async () => {
@@ -594,8 +652,7 @@ const styles = StyleSheet.create({
   },
   horizontalRail: {
     alignSelf: 'stretch',
-    overflow: 'hidden', // niether visible not hidden looks quite right
-    //TODO: figure that out.
+    overflow: 'hidden',
   },
   rail: {
     gap: 4,

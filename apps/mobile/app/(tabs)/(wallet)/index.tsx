@@ -10,19 +10,21 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { SymbolView, type SymbolViewProps } from 'expo-symbols';
+import {
+  CrossPlatformSymbol,
+  type CrossPlatformSymbolName,
+} from '@/components/cross-platform-symbol';
 
 import { PDF417Barcode } from '../../../components/PDF417Barcode';
 import {
   getGetBarcode,
   getGetLinkStatus,
   getGetWallet,
-} from '../../../../../lib/api';
-import { supabase } from '../../../../../lib/supabase';
+} from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 import {
   buttonOpacity,
   cardShadow,
-  monoFontFamily,
   stealthTheme,
   typeScale,
 } from '../../../lib/stealth-theme';
@@ -60,7 +62,7 @@ function SecondaryButton({
 }: {
   label: string;
   onPress: () => void;
-  icon: SymbolViewProps['name'];
+  icon: CrossPlatformSymbolName;
   loading?: boolean;
 }) {
   return (
@@ -76,7 +78,7 @@ function SecondaryButton({
         <ActivityIndicator size="small" color={colors.brand} />
       ) : (
         <>
-          <SymbolView name={icon} tintColor={colors.brand} size={15} />
+          <CrossPlatformSymbol name={icon} tintColor={colors.brand} size={15} />
           <Text style={styles.secondaryButtonLabel}>{label}</Text>
         </>
       )}
@@ -98,6 +100,10 @@ function MetricTile({ label, value }: { label: string; value: string }) {
 export default function WalletScreen() {
   const router = useRouter();
   const barcodeRefreshInFlightRef = useRef(false);
+  const barcodeWriteIdRef = useRef(0);
+  const skipInitialFocusRefreshRef = useRef(true);
+  const walletRefreshInFlightRef = useRef(false);
+  const walletRequestIdRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [barcodeRefreshing, setBarcodeRefreshing] = useState(false);
@@ -107,6 +113,7 @@ export default function WalletScreen() {
   const [accounts, setAccounts] = useState<GetAccountBalance[]>([]);
   const [barcodeCode, setBarcodeCode] = useState<string | null>(null);
   const [barcodeFetchedAt, setBarcodeFetchedAt] = useState<string | null>(null);
+  const [barcodeRefreshError, setBarcodeRefreshError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const trackedAccounts = useMemo(
@@ -117,28 +124,38 @@ export default function WalletScreen() {
     [accounts]
   );
 
-  const totalAvailableBalance = useMemo(
-    () =>
-      trackedAccounts.reduce((sum, account) => {
-        if (typeof account.balance !== 'number' || Number.isNaN(account.balance)) return sum;
-        return sum + account.balance;
-      }, 0),
-    [trackedAccounts]
-  );
+  const totalAvailableBalance = useMemo(() => {
+    const numericBalances = trackedAccounts
+      .map((account) => account.balance)
+      .filter(
+        (balance): balance is number =>
+          typeof balance === 'number' && !Number.isNaN(balance)
+      );
+
+    if (numericBalances.length === 0) return null;
+    return numericBalances.reduce((sum, balance) => sum + balance, 0);
+  }, [trackedAccounts]);
 
   const loadBarcode = useCallback(async (options?: { silent?: boolean }) => {
     if (barcodeRefreshInFlightRef.current) return;
 
     barcodeRefreshInFlightRef.current = true;
+    const writeId = barcodeWriteIdRef.current + 1;
+    barcodeWriteIdRef.current = writeId;
     if (!options?.silent) setBarcodeRefreshing(true);
 
     try {
       const barcode = await getGetBarcode();
+      if (barcodeWriteIdRef.current !== writeId) return;
       setBarcodeCode(barcode.code);
       setBarcodeFetchedAt(barcode.fetchedAt);
+      setBarcodeRefreshError(null);
     } catch (error: any) {
+      if (barcodeWriteIdRef.current !== writeId) return;
+      const message = error?.message || 'Failed to refresh your GET code';
+      setBarcodeRefreshError(message);
       if (!options?.silent) {
-        Alert.alert('Refresh Failed', error?.message || 'Failed to refresh your GET code');
+        Alert.alert('Refresh Failed', message);
       }
     } finally {
       barcodeRefreshInFlightRef.current = false;
@@ -147,6 +164,10 @@ export default function WalletScreen() {
   }, []);
 
   const loadWallet = useCallback(async (options?: { showBlockingLoader?: boolean }) => {
+    const requestId = walletRequestIdRef.current + 1;
+    walletRequestIdRef.current = requestId;
+    const barcodeWriteId = barcodeWriteIdRef.current + 1;
+    barcodeWriteIdRef.current = barcodeWriteId;
     const showBlockingLoader = options?.showBlockingLoader ?? false;
     if (showBlockingLoader) setLoading(true);
     setErrorMessage(null);
@@ -156,48 +177,77 @@ export default function WalletScreen() {
         data: { user },
       } = await supabase.auth.getUser();
 
+      if (walletRequestIdRef.current !== requestId) return;
       if (!user) {
         Alert.alert('Error', 'Please sign in first');
         return;
       }
 
-      setDisplayName(
+      const nextDisplayName =
         typeof user.user_metadata?.full_name === 'string'
           ? user.user_metadata.full_name
-          : formatNameFromEmail(user.email ?? null)
-      );
+          : formatNameFromEmail(user.email ?? null);
 
       const linkState = await getGetLinkStatus();
+      if (walletRequestIdRef.current !== requestId) return;
+
+      setDisplayName(nextDisplayName);
       setIsGetLinked(linkState.linked);
       setLinkedAt(linkState.linkedAt);
 
       if (!linkState.linked) {
+        barcodeWriteIdRef.current += 1;
         setAccounts([]);
         setBarcodeCode(null);
         setBarcodeFetchedAt(null);
+        setBarcodeRefreshError(null);
         return;
       }
 
       const wallet = await getGetWallet();
+      if (walletRequestIdRef.current !== requestId) return;
+
       setAccounts(wallet.accounts || []);
-      setBarcodeCode(wallet.barcode.code);
-      setBarcodeFetchedAt(wallet.barcode.fetchedAt);
+      if (barcodeWriteIdRef.current === barcodeWriteId) {
+        setBarcodeCode(wallet.barcode.code);
+        setBarcodeFetchedAt(wallet.barcode.fetchedAt);
+        setBarcodeRefreshError(null);
+      }
     } catch (error: any) {
+      if (walletRequestIdRef.current !== requestId) return;
       setErrorMessage(error?.message || 'Failed to load your GET wallet');
     } finally {
-      if (showBlockingLoader) setLoading(false);
+      if (showBlockingLoader && walletRequestIdRef.current === requestId) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void loadWallet({ showBlockingLoader: true });
+
+    return () => {
+      walletRequestIdRef.current += 1;
+      barcodeWriteIdRef.current += 1;
+    };
   }, [loadWallet]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (skipInitialFocusRefreshRef.current) {
+        skipInitialFocusRefreshRef.current = false;
+        return undefined;
+      }
+
+      void loadWallet();
+      return undefined;
+    }, [loadWallet])
+  );
 
   useFocusEffect(
     useCallback(() => {
       if (!isGetLinked) return undefined;
 
-      void loadBarcode({ silent: true });
       const intervalId = setInterval(() => {
         void loadBarcode({ silent: true });
       }, BARCODE_REFRESH_MS);
@@ -206,10 +256,17 @@ export default function WalletScreen() {
     }, [isGetLinked, loadBarcode])
   );
 
-  const onRefresh = useCallback(async () => {
+  const refreshWallet = useCallback(async () => {
+    if (walletRefreshInFlightRef.current) return;
+
+    walletRefreshInFlightRef.current = true;
     setRefreshing(true);
-    await loadWallet();
-    setRefreshing(false);
+    try {
+      await loadWallet();
+    } finally {
+      walletRefreshInFlightRef.current = false;
+      setRefreshing(false);
+    }
   }, [loadWallet]);
 
   const linkedDateLabel = linkedAt
@@ -238,7 +295,7 @@ export default function WalletScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={onRefresh}
+            onRefresh={refreshWallet}
             tintColor={colors.brand}
             colors={[colors.brand]}
           />
@@ -249,7 +306,7 @@ export default function WalletScreen() {
           <Text style={styles.passTitle}>UCSC Dining Services</Text>
           <View style={styles.passBand}>
             <View style={styles.passAvatarShell}>
-              <SymbolView
+              <CrossPlatformSymbol
                 name={isGetLinked ? 'person.crop.circle.badge.checkmark' : 'wallet.pass'}
                 tintColor="rgba(255,255,255,0.88)"
                 size={112}
@@ -269,17 +326,31 @@ export default function WalletScreen() {
                 </View>
               ) : (
                 <View style={styles.barcodePlaceholder}>
-                  <SymbolView name="lock" tintColor={colors.textSoft} size={24} />
+                  <CrossPlatformSymbol name="lock" tintColor={colors.textSoft} size={24} />
                   <Text style={styles.placeholderText}>Link GET to show your campus scan code.</Text>
                 </View>
               )}
             </View>
+            {isGetLinked ? (
+              <View style={styles.codeMetaPanel}>
+                <Text style={styles.codeMeta}>{barcodeUpdatedLabel}</Text>
+                {barcodeRefreshError ? (
+                  <Text accessibilityLiveRegion="polite" style={styles.codeRefreshWarning}>
+                    Scan code refresh delayed. Check your connection before scanning.
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
           </View>
         </View>
 
         {errorMessage ? (
           <View style={styles.errorBanner}>
-            <SymbolView name="exclamationmark.triangle" tintColor={colors.warning} size={18} />
+            <CrossPlatformSymbol
+              name="exclamationmark.triangle"
+              tintColor={colors.warning}
+              size={18}
+            />
             <Text selectable style={styles.errorText}>
               {errorMessage}
             </Text>
@@ -289,7 +360,7 @@ export default function WalletScreen() {
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionIcon}>
-              <SymbolView name="creditcard" tintColor={colors.textSoft} size={18} />
+              <CrossPlatformSymbol name="creditcard" tintColor={colors.textSoft} size={18} />
             </View>
             <View style={styles.sectionHeaderText}>
               <Text style={styles.sectionTitle}>Balance</Text>
@@ -304,7 +375,7 @@ export default function WalletScreen() {
               <View style={styles.balanceHero}>
                 <Text style={styles.balanceHeroLabel}>Total available</Text>
                 <Text selectable style={styles.balanceHeroValue}>
-                  {totalAvailableBalance.toFixed(2)} pts
+                  {totalAvailableBalance === null ? 'n/a' : `${totalAvailableBalance.toFixed(2)} pts`}
                 </Text>
                 <Text style={styles.balanceHeroMeta}>{linkedDateLabel}</Text>
               </View>
@@ -332,7 +403,7 @@ export default function WalletScreen() {
                   label="Refresh Balance"
                   icon="arrow.clockwise"
                   onPress={() => {
-                    void loadWallet();
+                    void refreshWallet();
                   }}
                   loading={refreshing}
                 />
@@ -358,7 +429,7 @@ export default function WalletScreen() {
                   { opacity: buttonOpacity(pressed) },
                 ]}
               >
-                <SymbolView name="arrow.left" tintColor="#ffffff" size={16} />
+                <CrossPlatformSymbol name="arrow.left" tintColor="#ffffff" size={16} />
                 <Text style={styles.primaryButtonLabel}>Go to Home</Text>
               </Pressable>
             </View>
@@ -445,10 +516,6 @@ const styles = StyleSheet.create({
     lineHeight: 28,
     fontWeight: '600',
   },
-  passMeta: {
-    ...typeScale.caption,
-    color: 'rgba(255,255,255,0.78)',
-  },
   barcodeDock: {
     minHeight: 126,
     alignItems: 'center',
@@ -476,18 +543,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.22)',
   },
-  codeLabel: {
-    color: '#ffffff',
-    fontSize: 12,
-    lineHeight: 17,
-    letterSpacing: 1.2,
-    fontFamily: monoFontFamily,
-    fontWeight: '700',
-  },
   codeMeta: {
     marginTop: 6,
     ...typeScale.caption,
     color: 'rgba(255,255,255,0.72)',
+  },
+  codeRefreshWarning: {
+    marginTop: 6,
+    ...typeScale.caption,
+    color: '#ffe0b2',
   },
   errorBanner: {
     flexDirection: 'row',

@@ -7,7 +7,7 @@ SlugSwap is a mobile app that helps university students share dining points. Don
 
 ## Commands
 
-an run `npm run` to see available run commands.
+Run `npm run` to see available commands.
 
 ### Troubleshooting
 ```bash
@@ -16,12 +16,8 @@ npx expo-doctor                # Check for dependency issues, version mismatches
 
 Run `expo-doctor` when you encounter build errors or after upgrading packages to validate the setup.
 
-
-
-
-
-
 ## Environment Setup
+
 If setting up a new environment (such as on the cloud or worktree) make sure that the .env files are copied over.
 
 
@@ -29,7 +25,7 @@ If setting up a new environment (such as on the cloud or worktree) make sure tha
 
 After making changes, always tell the user what they need to do to give the changes effect. Common actions:
 
-- **Schema changes** (`db/schema.ts` or `apps/dashboard/lib/server/schema.ts`): Run `npm run db:push` to apply to Neon
+- **Schema changes** (`db/schema.ts`; the dashboard schema re-exports it): run `npm run db:audit`, review the result on a Neon branch or backup, then run `npm run db:push` to apply it to Neon.
 - **Server / API changes** (`apps/dashboard/`): Run `npm run dashboard:deploy` (preview) or `npm run dashboard:deploy:prod` (production) to deploy to Vercel
 - **Mobile changes** (`apps/mobile/`): Run `npm run mobile:eas:update` for OTA update, or `npm run mobile:eas:testflight` for a new build
 - **Environment variable changes**: Update `.env` locally and/or set in Vercel dashboard / EAS secrets

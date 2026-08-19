@@ -20,6 +20,10 @@ import {
 } from "@/lib/server/config";
 import { getDonorWeeklyUsageMap } from "@/lib/server/claims/donor-usage";
 import { getPacificWeekWindow } from "@/lib/server/timezone";
+import {
+  findCurrentWeeklyPool,
+  getOrCreateCurrentWeeklyPool,
+} from "@/lib/server/weekly-pool";
 import { decryptSecret } from "@/lib/server/get/credentials";
 import { getActiveGetSession } from "@/lib/server/get/session";
 import {
@@ -44,17 +48,6 @@ export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ action: string }> };
 
-function getWeekBounds() {
-  const now = new Date();
-  const dayOfWeek = now.getDay();
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - dayOfWeek);
-  weekStart.setHours(0, 0, 0, 0);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 7);
-  return { weekStart, weekEnd };
-}
-
 function isUnlinkedGetAccountError(error: unknown): boolean {
   return error instanceof Error && error.message === "GET account is not linked";
 }
@@ -74,21 +67,12 @@ async function fetchTrackedGetBalanceTotal(userId: string): Promise<number | nul
 }
 
 async function getActiveWeeklyPool() {
-  const pools = await db
-    .select()
-    .from(schema.weeklyPools)
-    .where(
-      and(
-        lte(schema.weeklyPools.weekStart, new Date()),
-        gte(schema.weeklyPools.weekEnd, new Date())
-      )
-    )
-    .limit(1);
-
-  return pools[0] ?? null;
+  return getOrCreateCurrentWeeklyPool();
 }
 
-async function revokeAndDeleteGetCredential(credential: typeof schema.getCredentials.$inferSelect) {
+async function revokeAndDeleteGetCredential(
+  credential: typeof schema.getCredentials.$inferSelect
+): Promise<boolean> {
   try {
     const pin = decryptSecret(credential.encryptedPin);
     const sessionId = await authenticatePin(pin, credential.deviceId);
@@ -97,9 +81,34 @@ async function revokeAndDeleteGetCredential(credential: typeof schema.getCredent
     console.warn(`GET unlink revoke failed for user ${credential.userId}:`, error);
   }
 
-  await db
-    .delete(schema.getCredentials)
-    .where(eq(schema.getCredentials.userId, credential.userId));
+  return db.transaction(async (tx) => {
+    const [deletedCredential] = await tx
+      .delete(schema.getCredentials)
+      .where(
+        and(
+          eq(schema.getCredentials.userId, credential.userId),
+          eq(schema.getCredentials.deviceId, credential.deviceId),
+          eq(schema.getCredentials.encryptedPin, credential.encryptedPin)
+        )
+      )
+      .returning({ id: schema.getCredentials.id });
+
+    if (!deletedCredential) {
+      return false;
+    }
+
+    await tx
+      .update(schema.donations)
+      .set({ status: "paused", updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.donations.userId, credential.userId),
+          eq(schema.donations.status, "active")
+        )
+      );
+
+    return true;
+  });
 }
 
 function unauthorizedResponse() {
@@ -301,27 +310,20 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
     }
     try {
-      const { weekStart, weekEnd } = getWeekBounds();
       const now = new Date();
-      const [{ config }, ptWeekWindow] = await Promise.all([
+      const ptWeekWindow = getPacificWeekWindow(now);
+      const { weekStart, weekEnd } = ptWeekWindow;
+      const [{ config }, pool] = await Promise.all([
         getAdminConfig(),
-        getPacificWeekWindow(now),
+        findCurrentWeeklyPool(now),
       ]);
-      const currentPool = await db
-        .select()
-        .from(schema.weeklyPools)
-        .where(
-          and(
-            lte(schema.weeklyPools.weekStart, now),
-            gte(schema.weeklyPools.weekEnd, now)
-          )
-        )
-        .limit(1);
-
-      const pool = currentPool[0] || null;
       const estimatedPoolQuery = await db
         .select({ total: sqlOp<string>`coalesce(sum(${schema.donations.amount}), '0')` })
         .from(schema.donations)
+        .innerJoin(
+          schema.getCredentials,
+          eq(schema.getCredentials.userId, schema.donations.userId)
+        )
         .where(eq(schema.donations.status, "active"));
       const estimatedWeeklyTotal = parseFloat(estimatedPoolQuery[0]?.total || "0");
 
@@ -331,7 +333,14 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         .where(
           and(
             gte(schema.claimCodes.createdAt, weekStart),
-            or(ne(schema.claimCodes.status, "active"), gte(schema.claimCodes.expiresAt, now))
+            lt(schema.claimCodes.createdAt, weekEnd),
+            or(
+              eq(schema.claimCodes.status, "redeemed"),
+              and(
+                eq(schema.claimCodes.status, "active"),
+                gte(schema.claimCodes.expiresAt, now)
+              )
+            )
           )
         );
       const weeklyClaimedAmount = parseFloat(weeklyClaimSum[0]?.total || "0");
@@ -358,6 +367,10 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       const activeDonors = await db
         .select({ count: sqlOp<number>`count(*)` })
         .from(schema.donations)
+        .innerJoin(
+          schema.getCredentials,
+          eq(schema.getCredentials.userId, schema.donations.userId)
+        )
         .where(eq(schema.donations.status, "active"));
       const totalDonors = await db
         .select({ count: sqlOp<number>`count(*)` })
@@ -369,10 +382,18 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       const weeklyInflow = await db
         .select({ total: sqlOp<string>`coalesce(sum(${schema.donations.amount}), '0')` })
         .from(schema.donations)
+        .innerJoin(
+          schema.getCredentials,
+          eq(schema.getCredentials.userId, schema.donations.userId)
+        )
         .where(eq(schema.donations.status, "active"));
       const avgWeeklyDonation = await db
         .select({ avg: sqlOp<string>`coalesce(avg(${schema.donations.amount}), '0')` })
         .from(schema.donations)
+        .innerJoin(
+          schema.getCredentials,
+          eq(schema.getCredentials.userId, schema.donations.userId)
+        )
         .where(eq(schema.donations.status, "active"));
 
       const claimStats = await db
@@ -657,8 +678,6 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           timestamp: new Date().toISOString(),
           pool: poolHealth,
           donors: {
-            // TODO: ensure donors are not marked active if their GET account is
-            // disconnected
             active: Number(activeDonors[0]?.count || 0),
             paused: Number(pausedDonors[0]?.count || 0),
             total: Number(totalDonors[0]?.count || 0),
@@ -824,23 +843,14 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       const trackedGetBalanceTotal = getTrackedBalanceTotal(getBalance ?? []);
 
       // Weekly allowance
-      const currentPool = await db
-        .select()
-        .from(schema.weeklyPools)
-        .where(
-          and(
-            lte(schema.weeklyPools.weekStart, now),
-            gte(schema.weeklyPools.weekEnd, now)
-          )
-        )
-        .limit(1);
+      const currentPool = await findCurrentWeeklyPool(now);
 
       let allowanceInfo = null;
-      if (currentPool.length > 0) {
+      if (currentPool) {
         const userAllowance = await db.query.userAllowances.findFirst({
           where: and(
             eq(schema.userAllowances.userId, user.id),
-            eq(schema.userAllowances.weeklyPoolId, currentPool[0].id)
+            eq(schema.userAllowances.weeklyPoolId, currentPool.id)
           ),
         });
         if (userAllowance) {
@@ -979,7 +989,10 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
 
         const redeemedThisWeek = parseFloat(donorRedeemedWeek[0]?.total || "0");
         const reservedThisWeek = parseFloat(donorReservedWeek[0]?.total || "0");
-        const capRemainingThisWeek = weeklyAmount - (redeemedThisWeek + reservedThisWeek);
+        const capRemainingThisWeek = Math.max(
+          0,
+          weeklyAmount - (redeemedThisWeek + reservedThisWeek)
+        );
         const remainingThisWeek =
           typeof trackedGetBalanceTotal === "number"
             ? Math.min(capRemainingThisWeek, Math.max(0, trackedGetBalanceTotal))
@@ -1032,6 +1045,96 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       );
     } catch (error: any) {
       console.error("Error fetching user balance:", error);
+      return NextResponse.json(
+        { error: error?.message || "Internal server error" },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (action === "delete-claim") {
+    if (req.method !== "DELETE") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    try {
+      const body = (await req.json().catch(() => null)) as
+        | { claimCodeId?: string }
+        | null;
+      const claimCodeId = body?.claimCodeId?.trim();
+      const uuidPattern =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+      if (!claimCodeId || !uuidPattern.test(claimCodeId)) {
+        return NextResponse.json({ error: "Invalid claimCodeId" }, { status: 400 });
+      }
+
+      const claim = await db.query.claimCodes.findFirst({
+        columns: {
+          id: true,
+          status: true,
+          expiresAt: true,
+        },
+        where: eq(schema.claimCodes.id, claimCodeId),
+      });
+
+      if (!claim) {
+        return NextResponse.json({ error: "Claim not found" }, { status: 404 });
+      }
+
+      if (claim.status === "redeemed") {
+        return NextResponse.json(
+          { error: "Redeemed claims cannot be deleted" },
+          { status: 409 }
+        );
+      }
+
+      const now = new Date();
+      const isExpiredPendingClaim =
+        (claim.status === "active" || claim.status === "pending") &&
+        claim.expiresAt <= now;
+      const isDeletableStatus =
+        claim.status === "expired" ||
+        claim.status === "cancelled" ||
+        isExpiredPendingClaim;
+
+      if (!isDeletableStatus) {
+        return NextResponse.json(
+          { error: "Only expired or cancelled claims can be deleted" },
+          { status: 409 }
+        );
+      }
+
+      const [deleted] = await db
+        .delete(schema.claimCodes)
+        .where(
+          and(
+            eq(schema.claimCodes.id, claimCodeId),
+            or(
+              eq(schema.claimCodes.status, "expired"),
+              eq(schema.claimCodes.status, "cancelled"),
+              and(
+                inArray(schema.claimCodes.status, ["active", "pending"]),
+                lte(schema.claimCodes.expiresAt, now)
+              )
+            )
+          )
+        )
+        .returning({ id: schema.claimCodes.id });
+
+      if (!deleted) {
+        return NextResponse.json(
+          { error: "Claim changed before it could be deleted" },
+          { status: 409 }
+        );
+      }
+
+      return NextResponse.json(
+        { success: true, claimCodeId: deleted.id },
+        { status: 200 }
+      );
+    } catch (error: any) {
+      console.error("Error deleting claim as admin:", error);
       return NextResponse.json(
         { error: error?.message || "Internal server error" },
         { status: 500 }
@@ -1093,6 +1196,15 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       });
 
       if (!credential) {
+        await db
+          .update(schema.donations)
+          .set({ status: "paused", updatedAt: new Date() })
+          .where(
+            and(
+              eq(schema.donations.userId, userId),
+              eq(schema.donations.status, "active")
+            )
+          );
         return NextResponse.json(
           {
             success: true,
@@ -1103,17 +1215,13 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         );
       }
 
-      await revokeAndDeleteGetCredential(credential);
-
-      await db
-        .update(schema.donations)
-        .set({ status: 'paused', updatedAt: new Date() })
-        .where(
-          and(
-            eq(schema.donations.userId, userId),
-            eq(schema.donations.status, 'active')
-          )
+      const unlinked = await revokeAndDeleteGetCredential(credential);
+      if (!unlinked) {
+        return NextResponse.json(
+          { error: "GET account link changed during unlink; retry the request" },
+          { status: 409 }
         );
+      }
 
       return NextResponse.json(
         {
@@ -1142,7 +1250,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       const userId = body.userId?.trim();
       const weeklyAmount = body.weeklyAmount;
 
-      if (!userId || typeof weeklyAmount !== "number" || Number.isNaN(weeklyAmount)) {
+      if (!userId || typeof weeklyAmount !== "number" || !Number.isFinite(weeklyAmount)) {
         return NextResponse.json(
           { error: "Invalid userId or weeklyAmount" },
           { status: 400 }
@@ -1175,28 +1283,25 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       });
 
       const now = new Date();
-      let donation;
-      if (existingDonation) {
-        const [updated] = await db
-          .update(schema.donations)
-          .set({
+      const [donation] = await db
+        .insert(schema.donations)
+        .values({
+          userId,
+          amount: weeklyAmount.toString(),
+          startDate: now,
+          status: "active",
+        })
+        .onConflictDoUpdate({
+          target: schema.donations.userId,
+          set: {
             amount: weeklyAmount.toString(),
             updatedAt: now,
-          })
-          .where(eq(schema.donations.id, existingDonation.id))
-          .returning();
-        donation = updated;
-      } else {
-        const [created] = await db
-          .insert(schema.donations)
-          .values({
-            userId,
-            amount: weeklyAmount.toString(),
-            startDate: now,
-            status: "active",
-          })
-          .returning();
-        donation = created;
+          },
+        })
+        .returning();
+
+      if (!donation) {
+        throw new Error("Failed to save donor limit");
       }
 
       return NextResponse.json(
@@ -1231,7 +1336,12 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       const body = (await req.json()) as { userId: string; availablePoints: number };
       const { userId, availablePoints } = body;
 
-      if (!userId || typeof availablePoints !== "number" || availablePoints < 0) {
+      if (
+        !userId ||
+        typeof availablePoints !== "number" ||
+        !Number.isFinite(availablePoints) ||
+        availablePoints < 0
+      ) {
         return NextResponse.json(
           { error: "Invalid userId or availablePoints" },
           { status: 400 }
@@ -1247,50 +1357,30 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       }
 
       const poolId = activePool.id;
-
-      // Find existing allowance for this user and week
-      const existingAllowances = await db
-        .select()
-        .from(schema.userAllowances)
-        .where(
-          and(
-            eq(schema.userAllowances.userId, userId),
-            eq(schema.userAllowances.weeklyPoolId, poolId)
-          )
-        )
-        .limit(1);
-
-      let result;
-      if (existingAllowances.length > 0) {
-        // Update existing allowance - set remaining amount directly
-        const currentAllowance = existingAllowances[0];
-        const currentUsed = parseFloat(currentAllowance.usedAmount);
-
-        // Calculate new weekly limit based on available points + used amount
-        const newWeeklyLimit = availablePoints + currentUsed;
-
-        result = await db
-          .update(schema.userAllowances)
-          .set({
-            weeklyLimit: newWeeklyLimit.toString(),
-            remainingAmount: availablePoints.toString(),
+      const availablePointsString = availablePoints.toString();
+      const result = await db
+        .insert(schema.userAllowances)
+        .values({
+          userId,
+          weeklyPoolId: poolId,
+          weeklyLimit: availablePointsString,
+          usedAmount: "0",
+          remainingAmount: availablePointsString,
+        })
+        .onConflictDoUpdate({
+          target: [
+            schema.userAllowances.userId,
+            schema.userAllowances.weeklyPoolId,
+          ],
+          set: {
+            // Evaluate against the locked row so a concurrent redemption's
+            // used amount cannot be overwritten by a stale read.
+            weeklyLimit: sqlOp`${schema.userAllowances.usedAmount} + ${availablePoints}`,
+            remainingAmount: availablePointsString,
             updatedAt: new Date(),
-          })
-          .where(eq(schema.userAllowances.id, currentAllowance.id))
-          .returning();
-      } else {
-        // Create new allowance
-        result = await db
-          .insert(schema.userAllowances)
-          .values({
-            userId,
-            weeklyPoolId: poolId,
-            weeklyLimit: availablePoints.toString(),
-            usedAmount: "0",
-            remainingAmount: availablePoints.toString(),
-          })
-          .returning();
-      }
+          },
+        })
+        .returning();
 
       return NextResponse.json(
         {
@@ -1326,7 +1416,11 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       };
       const weeklyLimit = body.weeklyLimit ?? body.availablePoints;
 
-      if (typeof weeklyLimit !== "number" || weeklyLimit < 0) {
+      if (
+        typeof weeklyLimit !== "number" ||
+        !Number.isFinite(weeklyLimit) ||
+        weeklyLimit < 0
+      ) {
         return NextResponse.json(
           { error: "Invalid weeklyLimit" },
           { status: 400 }
@@ -1372,25 +1466,10 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       const weeklyLimitString = weeklyLimit.toString();
       const now = new Date();
 
-      if (existingAllowances.length > 0) {
-        await db
-          .update(schema.userAllowances)
-          .set({
-            weeklyLimit: weeklyLimitString,
-            remainingAmount: sqlOp`greatest(${weeklyLimit} - ${schema.userAllowances.usedAmount}, 0)`,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(schema.userAllowances.weeklyPoolId, activePool.id),
-              inArray(schema.userAllowances.userId, Array.from(existingUserIds))
-            )
-          );
-      }
-
-      if (missingUserIds.length > 0) {
-        await db.insert(schema.userAllowances).values(
-          missingUserIds.map((userId) => ({
+      await db
+        .insert(schema.userAllowances)
+        .values(
+          userIds.map((userId) => ({
             userId,
             weeklyPoolId: activePool.id,
             weeklyLimit: weeklyLimitString,
@@ -1399,8 +1478,18 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             createdAt: now,
             updatedAt: now,
           }))
-        );
-      }
+        )
+        .onConflictDoUpdate({
+          target: [
+            schema.userAllowances.userId,
+            schema.userAllowances.weeklyPoolId,
+          ],
+          set: {
+            weeklyLimit: weeklyLimitString,
+            remainingAmount: sqlOp`greatest(${weeklyLimit} - ${schema.userAllowances.usedAmount}, 0)`,
+            updatedAt: now,
+          },
+        });
 
       return NextResponse.json(
         {
@@ -1430,7 +1519,11 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       const body = (await req.json()) as { topUpPoints?: number };
       const topUpPoints = body.topUpPoints;
 
-      if (typeof topUpPoints !== "number" || topUpPoints < 0) {
+      if (
+        typeof topUpPoints !== "number" ||
+        !Number.isFinite(topUpPoints) ||
+        topUpPoints < 0
+      ) {
         return NextResponse.json(
           { error: "Invalid topUpPoints" },
           { status: 400 }
@@ -1476,25 +1569,10 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       const topUpPointsString = topUpPoints.toString();
       const now = new Date();
 
-      if (existingAllowances.length > 0) {
-        await db
-          .update(schema.userAllowances)
-          .set({
-            weeklyLimit: sqlOp`(${schema.userAllowances.weeklyLimit} + ${topUpPoints})`,
-            remainingAmount: sqlOp`(${schema.userAllowances.remainingAmount} + ${topUpPoints})`,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(schema.userAllowances.weeklyPoolId, activePool.id),
-              inArray(schema.userAllowances.userId, Array.from(existingUserIds))
-            )
-          );
-      }
-
-      if (missingUserIds.length > 0) {
-        await db.insert(schema.userAllowances).values(
-          missingUserIds.map((userId) => ({
+      await db
+        .insert(schema.userAllowances)
+        .values(
+          userIds.map((userId) => ({
             userId,
             weeklyPoolId: activePool.id,
             weeklyLimit: topUpPointsString,
@@ -1503,8 +1581,18 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
             createdAt: now,
             updatedAt: now,
           }))
-        );
-      }
+        )
+        .onConflictDoUpdate({
+          target: [
+            schema.userAllowances.userId,
+            schema.userAllowances.weeklyPoolId,
+          ],
+          set: {
+            weeklyLimit: sqlOp`(${schema.userAllowances.weeklyLimit} + ${topUpPoints})`,
+            remainingAmount: sqlOp`(${schema.userAllowances.remainingAmount} + ${topUpPoints})`,
+            updatedAt: now,
+          },
+        });
 
       return NextResponse.json(
         {

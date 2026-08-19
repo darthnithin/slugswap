@@ -3,107 +3,64 @@ node_modules/
 .pnp
 .pnp.js
 
-# Expo
-.expo/
-dist/
-web-build/
-
-# Native
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-
-# Metro
-.metro-health-check*
-
-# Debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
-.DS_Store
-*.pem
-
-# Local env files
-.env*.local
+# Environment and local data
 .env
+.env.*
+!.env.example
+/donors.csv
 
-# TypeScript
-*.tsbuildinfo
-
-# IDE
-.vscode/
-.idea/
-
-# Vercel
-.vercel
-
-# Local Claude/Cursor settings and worktrees
-.claude/settings.local.json
-.claude/worktrees/
-.cursor/worktrees/
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
-node_modules/
-
-# Expo
+# Expo and generated web output
 .expo/
 dist/
 web-build/
 expo-env.d.ts
+apps/dashboard/public/app/
 
-# Native
+# Generated native projects and signing material
 .kotlin/
+android/
+apps/mobile/android/
+apps/mobile/ios/*
+!apps/mobile/ios/ci_scripts/
+!apps/mobile/ios/ci_scripts/**
 *.orig.*
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
+*.pem
 
-# Metro
+# Framework and tool caches
+.next/
+apps/dashboard/.next/
+.cache/
+.turbo/
+.vercel/
 .metro-health-check*
+coverage/
+*.tsbuildinfo
+.playwright-cli/
 
-# debug
+# Logs and local investigation artifacts
+*.log
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+tmp/
+NOTES.md
 
-# macOS
+# Editors and operating systems
 .DS_Store
-*.pem
-
-# local env files
-.env*.local
-
-# typescript
-*.tsbuildinfo
-
-# generated native folders
-android/
-apps/mobile/ios/*
-apps/mobile/android/
-
-# xcode cloud script exemption
-!apps/mobile/ios/ci_scripts/
-
-# Next.js
-.next/
-apps/dashboard/.next/
-apps/dashboard/public/app/
-
-# local editor and skill artifacts
 *.swp
+.vscode/
+.idea/
+.claude/settings.local.json
+.claude/worktrees/
+.cursor/worktrees/
+
+# Locally installed agent skills
 .agents/skills/doc-coauthoring/
 .agents/skills/neon-postgres/
 .claude/skills/neon-postgres
 .cursor/skills/neon-postgres
-
-# local investigation artifacts
-tmp/
-NOTES.md

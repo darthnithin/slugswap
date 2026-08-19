@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PDF417Barcode } from '../components/PDF417Barcode';
-import { supabase } from '../../../lib/supabase';
+import { CrossPlatformSymbol } from '../components/cross-platform-symbol';
+import { supabase } from '@/lib/supabase';
 import {
   checkRedemption,
   generateClaimCode,
   refreshClaimCode,
   type CheckoutRail,
   type ClaimGenerationFailureReason,
-} from '../../../lib/api';
+} from '@/lib/api';
 import { cardShadow, monoFontFamily, stealthTheme, typeScale } from '../lib/stealth-theme';
 
 interface ClaimCode {
@@ -27,7 +27,7 @@ interface ClaimCode {
   donorDisplayName?: string | null;
 }
 
-const DEFAULT_CLAIM_AMOUNT = 10;
+const BARCODE_STALE_AFTER_MS = 15_000;
 const FLEXI_ACCOUNT_NAME = 'flexi dollars';
 const POINTS_OR_BUCKS_ACCOUNT_NAMES = new Set(['banana bucks', 'slug points']);
 const LEGACY_POOL_EXHAUSTED_MESSAGES = [
@@ -80,58 +80,108 @@ export default function ScanCardScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [displayName, setDisplayName] = useState('Loading...');
-  const [userId, setUserId] = useState<string | null>(null);
   const [currentCode, setCurrentCode] = useState<ClaimCode | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState('');
   const [refreshingCode, setRefreshingCode] = useState(false);
   const [redemptionMessage, setRedemptionMessage] = useState<string | null>(null);
+  const [lastCodeRefreshAt, setLastCodeRefreshAt] = useState<number | null>(null);
+  const [barcodeRefreshError, setBarcodeRefreshError] = useState<string | null>(null);
+  const activeClaimIdRef = useRef<string | null>(null);
+  const claimLifecycleIdRef = useRef(0);
+  const finalRedemptionClaimIdRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
   const refreshingCodeRef = useRef(false);
 
   useEffect(() => {
+    mountedRef.current = true;
     void loadAndGenerateCode();
+
+    return () => {
+      mountedRef.current = false;
+      claimLifecycleIdRef.current += 1;
+      activeClaimIdRef.current = null;
+      refreshingCodeRef.current = false;
+    };
   }, []);
 
   useEffect(() => {
     if (!currentCode) return;
 
-    const interval = setInterval(async () => {
-      const now = new Date();
-      const expiresAt = new Date(currentCode.expiresAt);
-      const diff = expiresAt.getTime() - now.getTime();
+    const claimId = currentCode.id;
+    const lifecycleId = claimLifecycleIdRef.current;
+    let expiryHandled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
 
-      if (diff <= 0) {
-        if (userId) {
-          try {
-            const result = await checkRedemption(currentCode.id);
-            if (result.redeemed) {
-              setCurrentCode(null);
-              setTimeRemaining('');
-              setRedemptionMessage('Redeemed successfully');
-              return;
-            }
-          } catch (error) {
-            console.warn('Final redemption check failed:', error);
-          }
+    const handleExpiry = async () => {
+      if (
+        expiryHandled ||
+        finalRedemptionClaimIdRef.current === claimId ||
+        activeClaimIdRef.current !== claimId ||
+        claimLifecycleIdRef.current !== lifecycleId
+      ) {
+        return;
+      }
+
+      expiryHandled = true;
+      finalRedemptionClaimIdRef.current = claimId;
+      if (interval) clearInterval(interval);
+
+      const expiryLifecycleId = claimLifecycleIdRef.current + 1;
+      claimLifecycleIdRef.current = expiryLifecycleId;
+      activeClaimIdRef.current = null;
+      setCurrentCode((existing) => (existing?.id === claimId ? null : existing));
+      setTimeRemaining('');
+      setLastCodeRefreshAt(null);
+      setBarcodeRefreshError(null);
+      setMessage('Checking final redemption status...');
+
+      try {
+        const result = await checkRedemption(claimId);
+        if (!mountedRef.current || claimLifecycleIdRef.current !== expiryLifecycleId) return;
+
+        if (result.redeemed) {
+          setMessage(null);
+          setRedemptionMessage('Redeemed successfully');
+        } else {
+          setMessage('This code expired. Close and tap Scan Card again for a new one.');
         }
-
-        setCurrentCode(null);
-        setTimeRemaining('');
+      } catch (error) {
+        if (!mountedRef.current || claimLifecycleIdRef.current !== expiryLifecycleId) return;
+        console.warn('Final redemption check failed:', error);
         setMessage('This code expired. Close and tap Scan Card again for a new one.');
+      }
+    };
+
+    const updateCountdown = () => {
+      const expiresAtMs = new Date(currentCode.expiresAt).getTime();
+      const diff = expiresAtMs - Date.now();
+
+      if (!Number.isFinite(expiresAtMs) || diff <= 0) {
+        void handleExpiry();
         return;
       }
 
       const minutes = Math.floor(diff / 60000);
       const seconds = Math.floor((diff % 60000) / 1000);
       setTimeRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-    }, 1000);
+    };
 
-    return () => clearInterval(interval);
-  }, [currentCode, userId]);
+    interval = setInterval(updateCountdown, 1000);
+    updateCountdown();
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [currentCode]);
 
   useEffect(() => {
-    if (!currentCode || !userId) return;
+    if (!currentCode) return;
+
+    const claimId = currentCode.id;
+    const lifecycleId = claimLifecycleIdRef.current;
+    let effectActive = true;
 
     const interval = setInterval(async () => {
       if (refreshingCodeRef.current) return;
@@ -140,11 +190,58 @@ export default function ScanCardScreen() {
       setRefreshingCode(true);
 
       try {
-        const result = await refreshClaimCode(currentCode.id);
-        if (result.claimCode.status === 'redeemed') {
+        const redemption = await checkRedemption(claimId);
+        if (
+          !effectActive ||
+          !mountedRef.current ||
+          activeClaimIdRef.current !== claimId ||
+          claimLifecycleIdRef.current !== lifecycleId
+        ) {
+          return;
+        }
+
+        if (redemption.redeemed) {
+          claimLifecycleIdRef.current += 1;
+          activeClaimIdRef.current = null;
           setCurrentCode(null);
           setTimeRemaining('');
+          setLastCodeRefreshAt(null);
+          setBarcodeRefreshError(null);
+          setMessage(null);
           setRedemptionMessage('Redeemed successfully');
+          return;
+        }
+
+        const result = await refreshClaimCode(claimId);
+        if (
+          !effectActive ||
+          !mountedRef.current ||
+          activeClaimIdRef.current !== claimId ||
+          claimLifecycleIdRef.current !== lifecycleId
+        ) {
+          return;
+        }
+
+        if (result.claimCode.status === 'redeemed') {
+          claimLifecycleIdRef.current += 1;
+          activeClaimIdRef.current = null;
+          setCurrentCode(null);
+          setTimeRemaining('');
+          setLastCodeRefreshAt(null);
+          setMessage(null);
+          setRedemptionMessage('Redeemed successfully');
+          return;
+        }
+
+        const refreshedExpiryMs = new Date(result.claimCode.expiresAt).getTime();
+        if (!Number.isFinite(refreshedExpiryMs) || refreshedExpiryMs <= Date.now()) {
+          claimLifecycleIdRef.current += 1;
+          activeClaimIdRef.current = null;
+          setCurrentCode(null);
+          setTimeRemaining('');
+          setLastCodeRefreshAt(null);
+          setBarcodeRefreshError(null);
+          setMessage('This code expired. Close and tap Scan Card again for a new one.');
           return;
         }
 
@@ -154,43 +251,68 @@ export default function ScanCardScreen() {
             result.claimCode.recommendedRail ?? currentCode.recommendedRail ?? 'points-or-bucks',
           donorDisplayName: result.claimCode.donorDisplayName ?? currentCode.donorDisplayName ?? null,
         });
+        setLastCodeRefreshAt(Date.now());
+        setBarcodeRefreshError(null);
       } catch (error: any) {
+        if (
+          !effectActive ||
+          !mountedRef.current ||
+          activeClaimIdRef.current !== claimId ||
+          claimLifecycleIdRef.current !== lifecycleId
+        ) {
+          return;
+        }
+
         const errorMessage = error?.message || 'Failed to refresh claim code';
         console.warn('Claim code refresh failed:', errorMessage);
+        setBarcodeRefreshError(errorMessage);
 
         if (
           typeof errorMessage === 'string' &&
           (errorMessage.includes('expired') || errorMessage.includes('not active'))
         ) {
+          claimLifecycleIdRef.current += 1;
+          activeClaimIdRef.current = null;
           setCurrentCode(null);
           setTimeRemaining('');
+          setLastCodeRefreshAt(null);
           setMessage('This code expired. Close and tap Scan Card again for a new one.');
         }
       } finally {
         refreshingCodeRef.current = false;
-        setRefreshingCode(false);
+        if (effectActive && mountedRef.current) {
+          setRefreshingCode(false);
+        }
       }
     }, 5000);
 
-    return () => clearInterval(interval);
-  }, [currentCode, userId]);
+    return () => {
+      effectActive = false;
+      clearInterval(interval);
+    };
+  }, [currentCode]);
 
   async function loadAndGenerateCode() {
+    const lifecycleId = claimLifecycleIdRef.current + 1;
+    claimLifecycleIdRef.current = lifecycleId;
+    activeClaimIdRef.current = null;
+    finalRedemptionClaimIdRef.current = null;
     setLoading(true);
     setMessage(null);
     setRedemptionMessage(null);
+    setBarcodeRefreshError(null);
 
     try {
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
+      if (!mountedRef.current || claimLifecycleIdRef.current !== lifecycleId) return;
       if (!user) {
         Alert.alert('Error', 'Please sign in first');
         return;
       }
 
-      setUserId(user.id);
       setDisplayName(
         formatDisplayName(
           user.email ?? null,
@@ -200,13 +322,18 @@ export default function ScanCardScreen() {
         )
       );
 
-      const result = await generateClaimCode(DEFAULT_CLAIM_AMOUNT);
+      const result = await generateClaimCode();
+      if (!mountedRef.current || claimLifecycleIdRef.current !== lifecycleId) return;
+
+      activeClaimIdRef.current = result.claimCode.id;
       setCurrentCode({
         ...result.claimCode,
         recommendedRail: result.claimCode.recommendedRail ?? 'points-or-bucks',
         donorDisplayName: result.claimCode.donorDisplayName ?? null,
       });
+      setLastCodeRefreshAt(Date.now());
     } catch (error: any) {
+      if (!mountedRef.current || claimLifecycleIdRef.current !== lifecycleId) return;
       const reason = getClaimFailureReason(error);
       if (reason === 'pool_exhausted') {
         setMessage('The shared donor pool is empty right now. Check back later.');
@@ -215,13 +342,22 @@ export default function ScanCardScreen() {
         setMessage(error?.message || 'Unable to generate a scan card right now.');
       }
     } finally {
-      setLoading(false);
+      if (mountedRef.current && claimLifecycleIdRef.current === lifecycleId) {
+        setLoading(false);
+      }
     }
   }
 
   const activeRail = currentCode?.recommendedRail ?? inferCheckoutRail(undefined);
   const checkoutLabel =
     activeRail === 'flexi-dollars' ? 'Flexi Dollars' : 'Slug Points / Banana Bucks';
+  const codeRefreshAgeMs = lastCodeRefreshAt === null ? null : Date.now() - lastCodeRefreshAt;
+  const isBarcodeStale =
+    !!currentCode &&
+    (barcodeRefreshError !== null || codeRefreshAgeMs === null || codeRefreshAgeMs > BARCODE_STALE_AFTER_MS);
+  const claimAmountLabel = currentCode
+    ? `${Number.isInteger(currentCode.amount) ? currentCode.amount : currentCode.amount.toFixed(2)} points`
+    : null;
 
   return (
     <View style={styles.screen}>
@@ -230,7 +366,7 @@ export default function ScanCardScreen() {
           onPress={() => router.back()}
           style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.6 : 1 }]}
         >
-          <SymbolView name="chevron.left" tintColor={colors.text} size={18} />
+          <CrossPlatformSymbol name="chevron.left" tintColor={colors.text} size={18} />
           <Text style={styles.backLabel}>Back</Text>
         </Pressable>
         <Text style={styles.topBarTitle}>Scan Card</Text>
@@ -248,7 +384,7 @@ export default function ScanCardScreen() {
           <View style={styles.cardBand} />
 
           <View style={styles.profilePanel}>
-            <SymbolView
+            <CrossPlatformSymbol
               name="person.crop.circle.badge.questionmark"
               tintColor="rgba(255,255,255,0.92)"
               size={118}
@@ -278,6 +414,7 @@ export default function ScanCardScreen() {
             <Text selectable style={styles.codeLabel}>
               {currentCode.code}
             </Text>
+            <Text style={styles.metaText}>Claim amount: {claimAmountLabel}</Text>
             <Text style={styles.metaText}>Using {checkoutLabel}</Text>
             <Text style={styles.metaText}>
               {currentCode.donorDisplayName
@@ -287,6 +424,11 @@ export default function ScanCardScreen() {
             <Text style={styles.metaText}>
               Expires in {timeRemaining || '0:00'}{refreshingCode ? ' · refreshing' : ''}
             </Text>
+            {isBarcodeStale ? (
+              <Text accessibilityLiveRegion="polite" style={styles.refreshWarning}>
+                Scan code refresh delayed. Check your connection before scanning.
+              </Text>
+            ) : null}
           </View>
         ) : null}
       </ScrollView>
@@ -437,5 +579,10 @@ const styles = StyleSheet.create({
     ...typeScale.caption,
     color: colors.textMuted,
     marginBottom: 4,
+  },
+  refreshWarning: {
+    ...typeScale.caption,
+    color: colors.danger,
+    marginTop: 4,
   },
 });

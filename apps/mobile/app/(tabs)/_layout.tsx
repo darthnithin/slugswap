@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { TabCacheProvider } from '../../../../lib/tab-cache-context';
+import { TabCacheProvider } from '@/lib/tab-cache-context';
 import { GetMobileTabBar } from '../../components/GetMobileTabBar';
 
 function TabIcon({
@@ -31,7 +31,6 @@ export default function TabLayout() {
         <Tabs.Screen
           name="(share)"
           options={{
-
             tabBarLabel: 'Home',
             tabBarIcon: ({ focused, color, size }) => (
               <TabIcon
@@ -47,7 +46,6 @@ export default function TabLayout() {
         <Tabs.Screen
           name="menu"
           options={{
-
             tabBarLabel: 'Menu',
             tabBarIcon: ({ focused, color, size }) => (
               <TabIcon
@@ -78,7 +76,6 @@ export default function TabLayout() {
         <Tabs.Screen
           name="explore"
           options={{
-
             tabBarLabel: 'Explore',
             tabBarIcon: ({ focused, color, size }) => (
               <TabIcon
@@ -94,8 +91,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="more"
           options={{
-
-            tabBarLabel: 'more',
+            tabBarLabel: 'More',
             tabBarIcon: ({ focused, color, size }) => (
               <TabIcon
                 focused={focused}

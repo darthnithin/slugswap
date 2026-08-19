@@ -48,8 +48,8 @@ async function handleSet(req: NextRequest) {
       return NextResponse.json({ error: "Missing amount" }, { status: 400 });
     }
 
-    const weeklyAmount = parseFloat(String(amount));
-    if (Number.isNaN(weeklyAmount) || weeklyAmount <= 0) {
+    const weeklyAmount = Number(String(amount).trim());
+    if (!Number.isFinite(weeklyAmount) || weeklyAmount <= 0) {
       return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
     }
 
@@ -66,35 +66,27 @@ async function handleSet(req: NextRequest) {
       );
     }
 
-    const existingDonations = await db
-      .select()
-      .from(schema.donations)
-      .where(eq(schema.donations.userId, userId))
-      .limit(1);
+    const now = new Date();
+    const [donation] = await db
+      .insert(schema.donations)
+      .values({
+        userId,
+        amount: weeklyAmount.toString(),
+        startDate: now,
+        status: "active",
+      })
+      .onConflictDoUpdate({
+        target: schema.donations.userId,
+        set: {
+          amount: weeklyAmount.toString(),
+          status: "active",
+          updatedAt: now,
+        },
+      })
+      .returning();
 
-    let donation;
-    if (existingDonations.length > 0) {
-      const [updated] = await db
-        .update(schema.donations)
-        .set({
-          amount: weeklyAmount.toString(),
-          status: "active",
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.donations.id, existingDonations[0].id))
-        .returning();
-      donation = updated;
-    } else {
-      const [created] = await db
-        .insert(schema.donations)
-        .values({
-          userId,
-          amount: weeklyAmount.toString(),
-          startDate: new Date(),
-          status: "active",
-        })
-        .returning();
-      donation = created;
+    if (!donation) {
+      throw new Error("Failed to save donation");
     }
 
     return NextResponse.json({ success: true, donation }, { status: 200 });
@@ -219,7 +211,10 @@ async function handleImpact(req: NextRequest) {
 
     const redeemedWeekAmount = parseFloat(redeemedThisWeek[0]?.total || "0");
     const reservedWeekAmount = parseFloat(reservedThisWeek[0]?.total || "0");
-    const capRemainingThisWeek = weeklyAmount - (redeemedWeekAmount + reservedWeekAmount);
+    const capRemainingThisWeek = Math.max(
+      0,
+      weeklyAmount - (redeemedWeekAmount + reservedWeekAmount)
+    );
 
     let remainingThisWeek = capRemainingThisWeek;
 
@@ -256,7 +251,7 @@ async function handleImpact(req: NextRequest) {
         isActive: donation.status === "active",
         weeklyAmount,
         status: donation.status,
-        peopleHelped: peopleHelped[0]?.count || 0,
+        peopleHelped: Number(peopleHelped[0]?.count ?? 0),
         pointsContributed: parseFloat(allTimeContributed[0]?.total || "0"),
         capAmount: weeklyAmount,
         redeemedThisWeek: redeemedWeekAmount,
@@ -301,6 +296,10 @@ async function handlePause(req: NextRequest) {
       paused?: boolean;
     };
     const userId = auth.user.id;
+
+    if (typeof paused !== "boolean") {
+      return NextResponse.json({ error: "paused must be a boolean" }, { status: 400 });
+    }
 
     const newStatus = paused ? "paused" : "active";
     const [updated] = await db

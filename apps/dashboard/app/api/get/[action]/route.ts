@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/server/db";
@@ -27,6 +28,9 @@ type Ctx = { params: Promise<{ action: string }> };
 
 import type { GetAccount } from "@/lib/server/get/tools";
 
+const GET_LINK_CHANGED_ERROR =
+  "GET account link changed while this request was running. Please retry.";
+
 function durationMs(startedAt: number): number {
   return Date.now() - startedAt;
 }
@@ -47,6 +51,10 @@ function formatGetLinkError(error: any): { status: number; message: string } {
   }
 
   if (message?.startsWith("Account sync issue:")) {
+    return { status: 409, message };
+  }
+
+  if (message === GET_LINK_CHANGED_ERROR) {
     return { status: 409, message };
   }
 
@@ -102,9 +110,21 @@ async function ensureUserExists(userId: string, userEmail?: string | null) {
 }
 
 function generatePin(): string {
-  return Math.floor(Math.random() * 10000)
-    .toString()
-    .padStart(4, "0");
+  return randomInt(0, 10_000).toString().padStart(4, "0");
+}
+
+async function bestEffortRevokePin(input: {
+  pin: string;
+  deviceId: string;
+  sessionId?: string | null;
+  context: string;
+}) {
+  try {
+    const sessionId = input.sessionId || (await authenticatePin(input.pin, input.deviceId));
+    await revokePin(sessionId, input.deviceId);
+  } catch (error) {
+    console.warn(`Failed to revoke ${input.context} GET credential:`, error);
+  }
 }
 
 async function dispatch(req: NextRequest, ctx: Ctx) {
@@ -326,7 +346,6 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           );
         }
 
-        const safePin = generatePin();
         await ensureUserExists(userId, auth.user.email);
 
         const validatedSessionId = extractValidatedSessionId(validatedUrl);
@@ -337,26 +356,107 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           );
         }
 
+        const existingCredential = await db.query.getCredentials.findFirst({
+          where: eq(getCredentials.userId, userId),
+        });
+        const safePin = generatePin();
         const deviceId = generateDeviceId();
-        await createPin(validatedSessionId, deviceId, safePin);
-        const apiSessionId = await authenticatePin(safePin, deviceId);
-        await verifyPin(apiSessionId, deviceId, safePin);
+        let apiSessionId: string | null = null;
+        let provisionAttempted = false;
+        let storedNewCredential = false;
+        let storageAttempted = false;
+        let storageConfirmedNotWritten = false;
 
-        await db
-          .insert(getCredentials)
-          .values({
-            userId,
-            deviceId,
-            encryptedPin: encryptSecret(safePin),
-          })
-          .onConflictDoUpdate({
-            target: getCredentials.userId,
-            set: {
-              deviceId,
-              encryptedPin: encryptSecret(safePin),
-              updatedAt: new Date(),
-            },
-          });
+        try {
+          provisionAttempted = true;
+          await createPin(validatedSessionId, deviceId, safePin);
+          apiSessionId = await authenticatePin(safePin, deviceId);
+          await verifyPin(apiSessionId, deviceId, safePin);
+
+          const now = new Date();
+          const encryptedPin = encryptSecret(safePin);
+          storageAttempted = true;
+          const [storedCredential] = existingCredential
+            ? await db
+                .update(getCredentials)
+                .set({
+                  deviceId,
+                  encryptedPin,
+                  updatedAt: now,
+                })
+                .where(
+                  and(
+                    eq(getCredentials.userId, userId),
+                    eq(getCredentials.deviceId, existingCredential.deviceId)
+                  )
+                )
+                .returning({ deviceId: getCredentials.deviceId })
+            : await db
+                .insert(getCredentials)
+                .values({
+                  userId,
+                  deviceId,
+                  encryptedPin,
+                })
+                .onConflictDoNothing({ target: getCredentials.userId })
+                .returning({ deviceId: getCredentials.deviceId });
+
+          if (!storedCredential) {
+            storageConfirmedNotWritten = true;
+            throw new Error(GET_LINK_CHANGED_ERROR);
+          }
+          storedNewCredential = true;
+        } catch (error) {
+          if (
+            !storedNewCredential &&
+            storageAttempted &&
+            !storageConfirmedNotWritten
+          ) {
+            try {
+              const currentCredential = await db.query.getCredentials.findFirst({
+                where: eq(getCredentials.userId, userId),
+              });
+              storedNewCredential = currentCredential?.deviceId === deviceId;
+              storageConfirmedNotWritten = !storedNewCredential;
+            } catch (confirmationError) {
+              console.warn("Failed to confirm GET credential storage after link error:", confirmationError);
+            }
+          }
+
+          if (!storedNewCredential) {
+            if (
+              provisionAttempted &&
+              (!storageAttempted || storageConfirmedNotWritten)
+            ) {
+              await bestEffortRevokePin({
+                pin: safePin,
+                deviceId,
+                sessionId: apiSessionId,
+                context: "newly provisioned",
+              });
+            } else if (provisionAttempted) {
+              console.warn(
+                "GET credential storage outcome is unknown; leaving the new PIN active to avoid breaking a possibly committed link"
+              );
+            }
+            throw error;
+          }
+
+          console.warn("GET credential storage reported an error but the new credential is active:", error);
+        }
+
+        if (existingCredential && existingCredential.deviceId !== deviceId) {
+          try {
+            const previousPin = decryptSecret(existingCredential.encryptedPin);
+            await bestEffortRevokePin({
+              pin: previousPin,
+              deviceId: existingCredential.deviceId,
+              context: "previous",
+            });
+          } catch (error) {
+            console.warn("Failed to decrypt previous GET credential for revocation:", error);
+          }
+        }
 
         return NextResponse.json({ success: true, linked: true }, { status: 200 });
       }
@@ -373,6 +473,15 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
       });
 
       if (!credential) {
+        await db
+          .update(donations)
+          .set({ status: "paused", updatedAt: new Date() })
+          .where(
+            and(
+              eq(donations.userId, userId),
+              eq(donations.status, "active")
+            )
+          );
         return NextResponse.json({ success: true, linked: false }, { status: 200 });
       }
 
@@ -384,16 +493,41 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         console.warn("GET unlink revoke failed:", error);
       }
 
-      await db.delete(getCredentials).where(eq(getCredentials.userId, userId));
-      await db
-        .update(donations)
-        .set({ status: 'paused', updatedAt: new Date() })
-        .where(
-          and(
-            eq(donations.userId, userId),
-            eq(donations.status, 'active')
+      const unlinked = await db.transaction(async (tx) => {
+        const [deletedCredential] = await tx
+          .delete(getCredentials)
+          .where(
+            and(
+              eq(getCredentials.userId, userId),
+              eq(getCredentials.deviceId, credential.deviceId),
+              eq(getCredentials.encryptedPin, credential.encryptedPin)
+            )
           )
+          .returning({ deviceId: getCredentials.deviceId });
+
+        if (!deletedCredential) {
+          return false;
+        }
+
+        await tx
+          .update(donations)
+          .set({ status: "paused", updatedAt: new Date() })
+          .where(
+            and(
+              eq(donations.userId, userId),
+              eq(donations.status, "active")
+            )
+          );
+
+        return true;
+      });
+
+      if (!unlinked) {
+        return NextResponse.json(
+          { error: GET_LINK_CHANGED_ERROR },
+          { status: 409 }
         );
+      }
       return NextResponse.json({ success: true, linked: false }, { status: 200 });
     } catch (error: any) {
       const { status, message } = formatGetLinkError(error);

@@ -4,9 +4,9 @@ import {
   useContext,
   useMemo,
   useState,
-  ReactNode,
-} from "react";
-import type { DonorImpact, RequesterPoolStatus } from "./api";
+  type ReactNode,
+} from 'react';
+import type { DonorImpact, RequesterPoolStatus } from './api';
 
 export interface GetAccountBalance {
   id: string;
@@ -30,52 +30,25 @@ export interface ShareTabSnapshot {
 }
 
 interface TabCacheState {
-  hasLoadedShare: boolean;
-  hasLoadedRequest: boolean;
   shareSnapshot: ShareTabSnapshot | null;
-  markShareLoaded: () => void;
-  markRequestLoaded: () => void;
   setShareSnapshot: (snapshot: ShareTabSnapshot) => void;
 }
 
 const TabCacheContext = createContext<TabCacheState | null>(null);
 
 export function TabCacheProvider({ children }: { children: ReactNode }) {
-  const [hasLoadedShare, setHasLoadedShare] = useState(false);
-  const [hasLoadedRequest, setHasLoadedRequest] = useState(false);
-  const [shareSnapshot, setShareSnapshotState] =
-    useState<ShareTabSnapshot | null>(null);
-
-  const markShareLoaded = useCallback(() => {
-    setHasLoadedShare(true);
-  }, []);
-
-  const markRequestLoaded = useCallback(() => {
-    setHasLoadedRequest(true);
-  }, []);
+  const [shareSnapshot, setShareSnapshotState] = useState<ShareTabSnapshot | null>(null);
 
   const setShareSnapshot = useCallback((snapshot: ShareTabSnapshot) => {
     setShareSnapshotState(snapshot);
-    setHasLoadedShare(true);
   }, []);
 
   const value = useMemo(
     () => ({
-      hasLoadedShare,
-      hasLoadedRequest,
       shareSnapshot,
-      markShareLoaded,
-      markRequestLoaded,
       setShareSnapshot,
     }),
-    [
-      hasLoadedShare,
-      hasLoadedRequest,
-      shareSnapshot,
-      markShareLoaded,
-      markRequestLoaded,
-      setShareSnapshot,
-    ],
+    [shareSnapshot, setShareSnapshot]
   );
 
   return (
@@ -88,7 +61,7 @@ export function TabCacheProvider({ children }: { children: ReactNode }) {
 export function useTabCache() {
   const context = useContext(TabCacheContext);
   if (!context) {
-    throw new Error("useTabCache must be used within TabCacheProvider");
+    throw new Error('useTabCache must be used within TabCacheProvider');
   }
   return context;
 }

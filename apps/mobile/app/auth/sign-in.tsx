@@ -1,6 +1,6 @@
 import { View, Text, Pressable, Alert, ActivityIndicator, Platform, StyleSheet } from 'react-native';
-import { SymbolView } from 'expo-symbols';
-import { supabase } from '../../../../lib/supabase';
+import { supabase } from '@/lib/supabase';
+import { CrossPlatformSymbol } from '@/components/cross-platform-symbol';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { useState } from 'react';
@@ -19,7 +19,6 @@ export default function SignIn() {
         Platform.OS === 'web' && typeof window !== 'undefined'
           ? new URL('/app/auth/callback', window.location.origin).toString()
           : Linking.createURL('auth/callback');
-      console.log('Redirect URL:', redirectUrl);
 
       if (Platform.OS === 'web') {
         const { error } = await supabase.auth.signInWithOAuth({
@@ -70,11 +69,20 @@ export default function SignIn() {
         const refreshToken = urlParams.get('refresh_token');
 
         if (accessToken && refreshToken) {
-          await supabase.auth.setSession({
+          const { error: sessionError } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken,
           });
+          if (sessionError) {
+            throw sessionError;
+          }
+        } else {
+          Alert.alert('Sign in incomplete', 'Google did not return a usable session. Please try again.');
         }
+      } else if (result.type === 'cancel' || result.type === 'dismiss') {
+        Alert.alert('Sign in cancelled', 'No changes were made.');
+      } else {
+        Alert.alert('Sign in incomplete', 'Unable to finish sign in. Please try again.');
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to sign in');
@@ -91,7 +99,11 @@ export default function SignIn() {
         <View style={styles.heroBand} />
         <View style={styles.heroBody}>
           <View style={styles.avatarShell}>
-            <SymbolView name="person.crop.circle" tintColor="rgba(255, 255, 255, 0.92)" size={90} />
+            <CrossPlatformSymbol
+              name="person.crop.circle"
+              tintColor="rgba(255, 255, 255, 0.92)"
+              size={90}
+            />
           </View>
           <Text style={styles.appName}>SlugSwap</Text>
           <Text style={styles.appSubtitle}>
@@ -115,7 +127,7 @@ export default function SignIn() {
             <ActivityIndicator color="#fff" />
           ) : (
             <>
-              <SymbolView name="person.crop.circle" tintColor="#fff" size={20} />
+              <CrossPlatformSymbol name="person.crop.circle" tintColor="#fff" size={20} />
               <Text style={styles.signInLabel}>Sign in with Google</Text>
             </>
           )}
@@ -232,19 +244,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 17,
     fontWeight: '700',
-  },
-  inlineMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  metaDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-  },
-  metaText: {
-    ...typeScale.caption,
-    color: colors.textSoft,
   },
 });

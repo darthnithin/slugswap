@@ -55,10 +55,7 @@ export function middleware(req: NextRequest) {
   const isAllowedOrigin = isSameOrigin || allowedOrigins.has(origin);
 
   if (!isAllowedOrigin) {
-    if (req.method === "OPTIONS") {
-      return NextResponse.json({ error: "Origin not allowed" }, { status: 403 });
-    }
-    return NextResponse.next();
+    return NextResponse.json({ error: "Origin not allowed" }, { status: 403 });
   }
 
   const corsHeaders = buildCorsHeaders(origin);

@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 type GetEnvelope<TParams> = {
   method: string;
   params: TParams;
@@ -11,6 +13,7 @@ type GetResult<TResponse> = {
 const GET_BASE_URL =
   process.env.GET_API_BASE_URL ||
   "https://services.get.cbord.com/GETServices/services/json";
+const GET_API_TIMEOUT_MS = 10_000;
 
 type GetService = "authentication" | "user" | "commerce";
 
@@ -29,42 +32,65 @@ function resolveErrorMessage(payload: unknown, fallback: string) {
   return maybe.exception?.message || fallback;
 }
 
+function isTimeoutError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.name === "TimeoutError")
+  );
+}
+
 export async function callGetApi<TParams, TResponse>(
   service: GetService,
   method: string,
   params: TParams
 ): Promise<TResponse> {
   const body: GetEnvelope<TParams> = { method, params };
-  const response = await fetch(`${GET_BASE_URL}/${service}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  let payload: GetResult<TResponse> | null = null;
   try {
-    payload = (await response.json()) as GetResult<TResponse>;
-  } catch {
+    const response = await fetch(`${GET_BASE_URL}/${service}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(GET_API_TIMEOUT_MS),
+    });
+
+    let payload: GetResult<TResponse> | null = null;
+    try {
+      payload = (await response.json()) as GetResult<TResponse>;
+    } catch (error) {
+      if (isTimeoutError(error)) {
+        throw error;
+      }
+      if (!response.ok) {
+        throw new GetApiError(
+          `GET API ${service}.${method} failed with HTTP ${response.status}`
+        );
+      }
+      throw new GetApiError(`GET API ${service}.${method} returned non-JSON response`);
+    }
+
     if (!response.ok) {
+      throw new GetApiError(resolveErrorMessage(payload, `GET API ${service}.${method} failed`));
+    }
+
+    if (payload?.exception) {
+      throw new GetApiError(resolveErrorMessage(payload, `GET API ${service}.${method} error`));
+    }
+
+    return payload?.response as TResponse;
+  } catch (error) {
+    if (error instanceof GetApiError) {
+      throw error;
+    }
+    if (isTimeoutError(error)) {
       throw new GetApiError(
-        `GET API ${service}.${method} failed with HTTP ${response.status}`
+        `GET API ${service}.${method} timed out after ${GET_API_TIMEOUT_MS / 1000} seconds`
       );
     }
-    throw new GetApiError(`GET API ${service}.${method} returned non-JSON response`);
+    throw new GetApiError(`GET API ${service}.${method} request failed`);
   }
-
-  if (!response.ok) {
-    throw new GetApiError(resolveErrorMessage(payload, `GET API ${service}.${method} failed`));
-  }
-
-  if (payload?.exception) {
-    throw new GetApiError(resolveErrorMessage(payload, `GET API ${service}.${method} error`));
-  }
-
-  return payload?.response as TResponse;
 }
 
 export function extractValidatedSessionId(input: string): string | null {
@@ -93,9 +119,7 @@ export function extractValidatedSessionId(input: string): string | null {
 }
 
 export function generateDeviceId(): string {
-  return Array.from({ length: 16 }, () =>
-    Math.floor(Math.random() * 16).toString(16)
-  ).join("");
+  return randomBytes(8).toString("hex");
 }
 
 export async function createPin(
@@ -171,6 +195,21 @@ type RetrieveAccountsResponse =
   | GetAccount[]
   | { accounts?: GetAccount[]; planName?: string };
 
+function isGetAccount(value: unknown): value is GetAccount {
+  if (!value || typeof value !== "object") return false;
+  const account = value as Partial<GetAccount>;
+  return (
+    typeof account.id === "string" &&
+    account.id.trim().length > 0 &&
+    typeof account.accountDisplayName === "string" &&
+    typeof account.isActive === "boolean" &&
+    typeof account.isAccountTenderActive === "boolean" &&
+    typeof account.depositAccepted === "boolean" &&
+    (account.balance === null ||
+      (typeof account.balance === "number" && Number.isFinite(account.balance)))
+  );
+}
+
 export async function retrieveAccounts(sessionId: string): Promise<GetAccount[]> {
   const raw = await callGetApi<{ sessionId: string }, RetrieveAccountsResponse>(
     "commerce",
@@ -178,11 +217,17 @@ export async function retrieveAccounts(sessionId: string): Promise<GetAccount[]>
     { sessionId }
   );
 
-  return Array.isArray(raw)
+  const accounts = Array.isArray(raw)
     ? raw
-    : Array.isArray(raw?.accounts)
+    : raw && typeof raw === "object" && Array.isArray(raw.accounts)
       ? raw.accounts
-      : [];
+      : null;
+
+  if (!accounts || !accounts.every(isGetAccount)) {
+    throw new GetApiError("GET retrieveAccounts returned an invalid accounts payload");
+  }
+
+  return accounts;
 }
 
 function extractBarcodePayload(raw: unknown): string | null {

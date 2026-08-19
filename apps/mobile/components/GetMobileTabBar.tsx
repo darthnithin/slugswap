@@ -12,12 +12,12 @@ function getTabLabel(label: unknown, title: unknown, fallback: string): string {
 }
 
 export function GetMobileTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
-  const bottomInset = Math.min(insets.bottom, 8); // max 8px bottom inset
+  const bottomInset = Math.max(insets.bottom, 8);
   const barHeight = 78 + bottomInset;
 
   return (
     <View style={styles.shell}>
-      <View style={[styles.bar, { minHeight: barHeight }]}>
+      <View style={[styles.bar, { minHeight: barHeight, paddingBottom: bottomInset }]}>
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key];
           const isFocused = state.index === index;

@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 
 const FALLBACK_LOCAL_API_URL = 'http://localhost:3000';
 const FALLBACK_REMOTE_API_URL = 'https://slugswap.vercel.app';
+const REQUEST_TIMEOUT_MS = 15_000;
 
 function readExpoDevHost(): string | null {
   const constants = Constants as unknown as Record<string, unknown>;
@@ -88,18 +89,74 @@ function normalizeBaseUrl(url: string): string {
 function isLikelyNetworkFailure(error: unknown): boolean {
   if (error instanceof TypeError) return true;
   if (!(error instanceof Error)) return false;
-  return /network request failed|fetch failed|networkerror/i.test(error.message);
+  return /network request failed|fetch failed|networkerror|request timed out/i.test(error.message);
 }
 
 const API_BASE_URL = normalizeBaseUrl(resolveApiBaseUrl());
 const REMOTE_API_BASE_URL = normalizeBaseUrl(FALLBACK_REMOTE_API_URL);
 
-async function fetchWithFallback(url: string, init?: RequestInit): Promise<Response> {
+function isSafeRequest(init?: RequestInit): boolean {
+  const method = (init?.method ?? 'GET').toUpperCase();
+  return method === 'GET' || method === 'HEAD';
+}
+
+type BufferedApiResponse = {
+  bodyText: string;
+  ok: boolean;
+  status: number;
+};
+
+async function fetchWithTimeout(url: string, init?: RequestInit): Promise<BufferedApiResponse> {
+  const controller = new AbortController();
+  const callerSignal = init?.signal;
+  let timedOut = false;
+
+  const abortFromCaller = () => controller.abort();
+  if (callerSignal?.aborted) {
+    controller.abort();
+  } else {
+    callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+  }
+
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+
   try {
-    return await fetch(url, init);
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+    const bodyText = await response.text();
+
+    return {
+      bodyText,
+      ok: response.ok,
+      status: response.status,
+    };
+  } catch (error) {
+    if (timedOut && !callerSignal?.aborted) {
+      throw new Error('Request timed out. Please try again.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
+  }
+}
+
+async function fetchWithFallback(
+  url: string,
+  init?: RequestInit
+): Promise<BufferedApiResponse> {
+  try {
+    return await fetchWithTimeout(url, init);
   } catch (error) {
     const canRetryRemote =
       Platform.OS !== 'web' &&
+      isSafeRequest(init) &&
+      !init?.signal?.aborted &&
       API_BASE_URL !== REMOTE_API_BASE_URL &&
       url.startsWith(`${API_BASE_URL}/api/`) &&
       isLikelyNetworkFailure(error);
@@ -114,7 +171,7 @@ async function fetchWithFallback(url: string, init?: RequestInit): Promise<Respo
       fallbackUrl,
     });
 
-    return fetch(fallbackUrl, init);
+    return fetchWithTimeout(fallbackUrl, init);
   }
 }
 
@@ -254,10 +311,10 @@ function normalizeClaimGenerationFailureReason(
 }
 
 async function readApiErrorPayload(
-  response: Response,
+  response: BufferedApiResponse,
   fallback: string
 ): Promise<{ message: string; reason?: ClaimGenerationFailureReason }> {
-  const bodyText = await response.text();
+  const { bodyText } = response;
   if (!bodyText) return { message: fallback };
 
   try {
@@ -276,9 +333,24 @@ async function readApiErrorPayload(
   }
 }
 
-async function readApiError(response: Response, fallback: string): Promise<string> {
+async function readApiError(
+  response: BufferedApiResponse,
+  fallback: string
+): Promise<string> {
   const payload = await readApiErrorPayload(response, fallback);
   return payload.message;
+}
+
+function readApiJson<T>(response: BufferedApiResponse, fallback: string): T {
+  if (!response.bodyText) {
+    throw new Error(fallback);
+  }
+
+  try {
+    return JSON.parse(response.bodyText) as T;
+  } catch {
+    throw new Error(`${fallback}: server returned an invalid response`);
+  }
 }
 
 async function getAuthHeaders(): Promise<HeadersInit> {
@@ -305,21 +377,7 @@ export async function setDonation(amount: number) {
     throw new Error(errorMessage);
   }
 
-  return response.json();
-}
-
-export async function getDonorImpact() {
-  const headers = await getAuthHeaders();
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/donations/impact`, {
-    headers,
-  });
-
-  if (!response.ok) {
-    const errorMessage = await readApiError(response, 'Failed to fetch impact');
-    throw new Error(errorMessage);
-  }
-
-  return response.json() as Promise<DonorImpact>;
+  return readApiJson(response, 'Failed to read donation response');
 }
 
 export async function pauseDonation(paused: boolean) {
@@ -335,29 +393,15 @@ export async function pauseDonation(paused: boolean) {
     throw new Error(errorMessage);
   }
 
-  return response.json();
+  return readApiJson(response, 'Failed to read donation status response');
 }
 
-export async function getRequesterAllowance() {
-  const headers = await getAuthHeaders();
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/requesters/allowance`, {
-    headers,
-  });
-
-  if (!response.ok) {
-    const errorMessage = await readApiError(response, 'Failed to fetch allowance');
-    throw new Error(errorMessage);
-  }
-
-  return response.json() as Promise<RequesterAllowance>;
-}
-
-export async function generateClaimCode(amount: number) {
+export async function generateClaimCode(amount?: number) {
   const headers = await getAuthHeaders();
   const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/generate`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ amount }),
+    body: JSON.stringify(amount === undefined ? {} : { amount }),
   });
 
   if (!response.ok) {
@@ -367,21 +411,10 @@ export async function generateClaimCode(amount: number) {
     throw error;
   }
 
-  return response.json() as Promise<{ success: boolean; claimCode: ClaimCodePayload }>;
-}
-
-export async function getClaimHistory() {
-  const headers = await getAuthHeaders();
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/history`, {
-    headers,
-  });
-
-  if (!response.ok) {
-    const errorMessage = await readApiError(response, 'Failed to fetch claim history');
-    throw new Error(errorMessage);
-  }
-
-  return response.json();
+  return readApiJson<{ success: boolean; claimCode: ClaimCodePayload }>(
+    response,
+    'Failed to read generated claim code'
+  );
 }
 
 export async function refreshClaimCode(claimCodeId: string) {
@@ -397,10 +430,10 @@ export async function refreshClaimCode(claimCodeId: string) {
     throw new Error(errorMessage);
   }
 
-  return response.json() as Promise<{
+  return readApiJson<{
     success: boolean;
     claimCode: ClaimCodePayload;
-  }>;
+  }>(response, 'Failed to read refreshed claim code');
 }
 
 export async function checkRedemption(claimCodeId: string) {
@@ -416,27 +449,11 @@ export async function checkRedemption(claimCodeId: string) {
     throw new Error(errorMessage);
   }
 
-  return response.json() as Promise<{
+  return readApiJson<{
     redeemed: boolean;
     amount?: number;
     accountName?: string;
-  }>;
-}
-
-export async function deleteClaimCode(claimCodeId: string) {
-  const headers = await getAuthHeaders();
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/claims/delete`, {
-    method: 'DELETE',
-    headers,
-    body: JSON.stringify({ claimCodeId }),
-  });
-
-  if (!response.ok) {
-    const errorMessage = await readApiError(response, 'Failed to delete claim');
-    throw new Error(errorMessage);
-  }
-
-  return response.json() as Promise<{ success: boolean; message: string }>;
+  }>(response, 'Failed to read redemption status');
 }
 
 export async function getGetLoginUrl() {
@@ -447,7 +464,7 @@ export async function getGetLoginUrl() {
     throw new Error(errorMessage);
   }
 
-  return response.json() as Promise<{ loginUrl: string }>;
+  return readApiJson<{ loginUrl: string }>(response, 'Failed to read GET login URL');
 }
 
 export async function getGetLinkStatus() {
@@ -461,7 +478,10 @@ export async function getGetLinkStatus() {
     throw new Error(errorMessage);
   }
 
-  return response.json() as Promise<{ linked: boolean; linkedAt: string | null }>;
+  return readApiJson<{ linked: boolean; linkedAt: string | null }>(
+    response,
+    'Failed to read GET link status'
+  );
 }
 
 export async function linkGetAccount(validatedUrl: string) {
@@ -477,7 +497,10 @@ export async function linkGetAccount(validatedUrl: string) {
     throw new Error(errorMessage);
   }
 
-  return response.json() as Promise<{ success: boolean; linked: boolean }>;
+  return readApiJson<{ success: boolean; linked: boolean }>(
+    response,
+    'Failed to read GET link response'
+  );
 }
 
 export async function unlinkGetAccount() {
@@ -492,7 +515,10 @@ export async function unlinkGetAccount() {
     throw new Error(errorMessage);
   }
 
-  return response.json() as Promise<{ success: boolean; linked: boolean }>;
+  return readApiJson<{ success: boolean; linked: boolean }>(
+    response,
+    'Failed to read GET unlink response'
+  );
 }
 
 export async function getGetAccounts() {
@@ -506,7 +532,14 @@ export async function getGetAccounts() {
     throw new Error(errorMessage);
   }
 
-  return response.json() as Promise<{ linked: boolean; accounts: Array<{ id: string; accountDisplayName: string; balance: number | null }> }>;
+  return readApiJson<{
+    linked: boolean;
+    accounts: Array<{
+      id: string;
+      accountDisplayName: string;
+      balance: number | null;
+    }>;
+  }>(response, 'Failed to read GET accounts');
 }
 
 export async function getGetBarcode() {
@@ -520,7 +553,10 @@ export async function getGetBarcode() {
     throw new Error(errorMessage);
   }
 
-  return response.json() as Promise<{ linked: boolean; code: string; fetchedAt: string }>;
+  return readApiJson<{ linked: boolean; code: string; fetchedAt: string }>(
+    response,
+    'Failed to read GET barcode'
+  );
 }
 
 export async function getGetWallet() {
@@ -534,73 +570,11 @@ export async function getGetWallet() {
     throw new Error(errorMessage);
   }
 
-  return response.json() as Promise<{
+  return readApiJson<{
     linked: boolean;
     accounts: Array<{ id: string; accountDisplayName: string; balance: number | null }>;
     barcode: { code: string; fetchedAt: string };
-  }>;
-}
-
-export async function getUserBalance(params: { name?: string; email?: string; userId?: string }) {
-  const headers = await getAuthHeaders();
-  const searchParams = new URLSearchParams();
-  if (params.name) searchParams.set('name', params.name);
-  if (params.email) searchParams.set('email', params.email);
-  if (params.userId) searchParams.set('userId', params.userId);
-
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/admin/user-balance?${searchParams.toString()}`, {
-    headers,
-  });
-
-  if (!response.ok) {
-    const errorMessage = await readApiError(response, 'Failed to fetch user balance');
-    throw new Error(errorMessage);
-  }
-
-  return response.json() as Promise<{
-    user: {
-      id: string;
-      email: string | null;
-      name: string | null;
-    };
-    weekWindow: {
-      timezone: string;
-      weekStart: string;
-      weekEnd: string;
-    };
-    getLinkStatus: {
-      linked: boolean;
-      linkedAt: string | null;
-      accountsFetchError: string | null;
-    };
-    getBalance: Array<{ id: string; accountDisplayName: string; balance: number | null }> | null;
-    trackedGetBalanceTotal: number | null;
-    weeklyAllowance: {
-      weeklyLimit: number;
-      usedAmount: number;
-      remainingAmount: number;
-    } | null;
-    requesterUsage: {
-      allTimeClaimsCount: number;
-      allTimeClaimsAmount: number;
-      allTimeRedeemedCount: number;
-      allTimeRedeemedAmount: number;
-      thisWeekClaimsCount: number;
-      thisWeekClaimsAmount: number;
-      thisWeekRedeemedCount: number;
-      thisWeekRedeemedAmount: number;
-      activeClaimsCount: number;
-    };
-    donorUsage: {
-      status: string;
-      weeklyAmount: number;
-      redeemedThisWeek: number;
-      reservedThisWeek: number;
-      remainingThisWeek: number;
-      allTimeRedeemedAmount: number;
-      allTimeRedeemedCount: number;
-    } | null;
-  }>;
+  }>(response, 'Failed to read GET wallet');
 }
 
 export async function getMobileAppConfig() {
@@ -611,7 +585,10 @@ export async function getMobileAppConfig() {
     throw new Error(errorMessage);
   }
 
-  return response.json() as Promise<MobileUpdatePolicyResponse>;
+  return readApiJson<MobileUpdatePolicyResponse>(
+    response,
+    'Failed to read mobile update policy'
+  );
 }
 
 export async function getMobileHome() {
@@ -625,7 +602,7 @@ export async function getMobileHome() {
     throw new Error(errorMessage);
   }
 
-  return response.json() as Promise<MobileHomeResponse>;
+  return readApiJson<MobileHomeResponse>(response, 'Failed to read mobile home');
 }
 
 export async function getDiningLocations() {
@@ -638,10 +615,16 @@ export async function getDiningLocations() {
     throw new Error(errorMessage);
   }
 
-  return response.json() as Promise<{ locations: DiningLocation[] }>;
+  return readApiJson<{ locations: DiningLocation[] }>(
+    response,
+    'Failed to read dining locations'
+  );
 }
 
-export async function getDiningMenu(params: { locationId: string; date: string }) {
+export async function getDiningMenu(
+  params: { locationId: string; date: string },
+  options?: { signal?: AbortSignal }
+) {
   const searchParams = new URLSearchParams({
     locationId: params.locationId,
     date: params.date,
@@ -649,6 +632,7 @@ export async function getDiningMenu(params: { locationId: string; date: string }
 
   const response = await fetchWithFallback(`${API_BASE_URL}/api/menus?${searchParams.toString()}`, {
     cache: 'no-store',
+    signal: options?.signal,
   });
 
   if (!response.ok) {
@@ -656,5 +640,5 @@ export async function getDiningMenu(params: { locationId: string; date: string }
     throw new Error(errorMessage);
   }
 
-  return response.json() as Promise<DiningMenu>;
+  return readApiJson<DiningMenu>(response, 'Failed to read dining menu');
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, lte, sql as sqlOp } from "drizzle-orm";
 import {
   authenticateAppUser,
   syncAuthenticatedUser,
@@ -13,10 +13,14 @@ import {
   getDonorUsageForDonor,
   rankDonorCandidatesForClaim,
 } from "@/lib/server/claims/donor-selection";
-import { getAdminConfig } from "@/lib/server/config";
+import { getAdminConfig, getEffectiveClaimAmount } from "@/lib/server/config";
 import { retrieveAccounts, type GetAccount } from "@/lib/server/get/tools";
 import { getActiveGetSession } from "@/lib/server/get/session";
 import { syncDonorPauseStateFromAccounts } from "@/lib/server/get/tracked-balance";
+import {
+  getPacificDayWindow,
+} from "@/lib/server/timezone";
+import { getOrCreateCurrentWeeklyPool } from "@/lib/server/weekly-pool";
 
 export const runtime = "nodejs";
 
@@ -165,19 +169,38 @@ function formatDonorDisplayName(rawName: string | null): string | null {
   return sanitized || null;
 }
 
-function getCurrentWeek() {
-  const now = new Date();
-  const dayOfWeek = now.getDay();
-  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+async function activeClaimResponse(
+  claim: typeof schema.claimCodes.$inferSelect,
+  reused = false
+) {
+  const donorProfile = claim.donorUserId
+    ? await db
+        .select({ name: schema.users.name })
+        .from(schema.users)
+        .where(eq(schema.users.id, claim.donorUserId))
+        .limit(1)
+    : [];
+  const amount = Number(claim.amount);
 
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() + diffToMonday);
-  weekStart.setHours(0, 0, 0, 0);
-
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 7);
-
-  return { weekStart, weekEnd };
+  return NextResponse.json(
+    {
+      success: true,
+      reused,
+      claimCode: {
+        id: claim.id,
+        code: claim.code,
+        amount,
+        expiresAt: claim.expiresAt,
+        status: claim.status,
+        recommendedRail: getRecommendedRailFromBalanceSnapshot(
+          claim.balanceSnapshot,
+          amount
+        ),
+        donorDisplayName: formatDonorDisplayName(donorProfile[0]?.name ?? null),
+      },
+    },
+    { status: 200 }
+  );
 }
 
 
@@ -195,58 +218,70 @@ async function handleGenerate(req: NextRequest) {
     }
     await syncAuthenticatedUser(auth.user);
 
-    const { amount } = (await req.json()) as {
+    const { amount } = (await req.json().catch(() => ({}))) as {
       amount?: number | string;
     };
     const userId = auth.user.id;
     const { config } = await getAdminConfig();
     const claimCodeTtlMs = config.codeExpiryMinutes * 60_000;
 
-    if (!amount) {
-      return NextResponse.json({ error: "Missing amount" }, { status: 400 });
-    }
-
-    const claimAmount = parseFloat(String(amount));
-    if (Number.isNaN(claimAmount) || claimAmount <= 0) {
+    if (amount !== undefined && (!Number.isFinite(Number(amount)) || Number(amount) <= 0)) {
       return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
     }
-
+    // The administrator's configured amount is authoritative. Older clients
+    // may still send their former hard-coded value, so accept but ignore it.
     const requesterStateStartedAt = Date.now();
-    const { weekStart } = getCurrentWeek();
-    let weeklyPool = await db
+    const now = new Date();
+    await db
+      .update(schema.claimCodes)
+      .set({ status: "expired" })
+      .where(
+        and(
+          eq(schema.claimCodes.status, "active"),
+          lte(schema.claimCodes.expiresAt, now)
+        )
+      );
+
+    const existingActiveClaim = await db
       .select()
-      .from(schema.weeklyPools)
-      .where(eq(schema.weeklyPools.weekStart, weekStart))
+      .from(schema.claimCodes)
+      .where(
+        and(
+          eq(schema.claimCodes.userId, userId),
+          eq(schema.claimCodes.status, "active"),
+          gte(schema.claimCodes.expiresAt, now)
+        )
+      )
+      .orderBy(desc(schema.claimCodes.createdAt))
       .limit(1);
 
-    if (weeklyPool.length === 0) {
-      const { weekEnd } = getCurrentWeek();
-      const [newPool] = await db
-        .insert(schema.weeklyPools)
-        .values({
-          weekStart,
-          weekEnd,
-          totalAmount: "0",
-          allocatedAmount: "0",
-          remainingAmount: "0",
-        })
-        .onConflictDoNothing({ target: schema.weeklyPools.weekStart })
-        .returning();
-
-      if (newPool) {
-        weeklyPool = [newPool];
-      } else {
-        weeklyPool = await db
-          .select()
-          .from(schema.weeklyPools)
-          .where(eq(schema.weeklyPools.weekStart, weekStart))
-          .limit(1);
-      }
-
-      if (weeklyPool.length === 0) {
-        throw new Error("Failed to load weekly pool");
-      }
+    if (existingActiveClaim[0]) {
+      return activeClaimResponse(existingActiveClaim[0], true);
     }
+
+    const { dayStart, dayEnd } = getPacificDayWindow(now);
+    const claimCountRows = await db
+      .select({ count: sqlOp<number>`count(*)::int` })
+      .from(schema.claimCodes)
+      .where(
+        and(
+          eq(schema.claimCodes.userId, userId),
+          gte(schema.claimCodes.createdAt, dayStart),
+          lt(schema.claimCodes.createdAt, dayEnd)
+        )
+      );
+    const claimsToday = Number(claimCountRows[0]?.count ?? 0);
+    if (claimsToday >= config.maxClaimsPerDay) {
+      return NextResponse.json(
+        {
+          error: `Daily claim limit reached (${config.maxClaimsPerDay})`,
+          reason: "allowance_exhausted",
+        },
+        { status: 429 }
+      );
+    }
+
+    const weeklyPool = await getOrCreateCurrentWeeklyPool(now);
 
     let userAllowance = await db
       .select()
@@ -254,29 +289,67 @@ async function handleGenerate(req: NextRequest) {
       .where(
         and(
           eq(schema.userAllowances.userId, userId),
-          eq(schema.userAllowances.weeklyPoolId, weeklyPool[0].id)
+          eq(schema.userAllowances.weeklyPoolId, weeklyPool.id)
         )
       )
       .limit(1);
 
     if (userAllowance.length === 0) {
-      const { config } = await getAdminConfig();
       const defaultWeeklyLimit = config.defaultWeeklyAllowance;
       const [newAllowance] = await db
         .insert(schema.userAllowances)
         .values({
           userId,
-          weeklyPoolId: weeklyPool[0].id,
+          weeklyPoolId: weeklyPool.id,
           weeklyLimit: defaultWeeklyLimit.toString(),
           usedAmount: "0",
           remainingAmount: defaultWeeklyLimit.toString(),
         })
+        .onConflictDoNothing({
+          target: [
+            schema.userAllowances.userId,
+            schema.userAllowances.weeklyPoolId,
+          ],
+        })
         .returning();
-      userAllowance = [newAllowance];
+      if (newAllowance) {
+        userAllowance = [newAllowance];
+      } else {
+        userAllowance = await db
+          .select()
+          .from(schema.userAllowances)
+          .where(
+            and(
+              eq(schema.userAllowances.userId, userId),
+              eq(schema.userAllowances.weeklyPoolId, weeklyPool.id)
+            )
+          )
+          .limit(1);
+      }
+    }
+
+    if (!userAllowance[0]) {
+      throw new Error("Failed to load requester allowance");
     }
 
     const allowance = userAllowance[0];
-    const remaining = parseFloat(allowance.remainingAmount);
+    const weeklyLimit = Number(allowance.weeklyLimit);
+    const remaining = Number(allowance.remainingAmount);
+    if (!Number.isFinite(weeklyLimit) || !Number.isFinite(remaining)) {
+      throw new Error("Requester allowance contains invalid amounts");
+    }
+    if (weeklyLimit < 1 || remaining < 1) {
+      return claimGenerationErrorResponse(
+        "Insufficient allowance",
+        400,
+        "allowance_exhausted",
+        { remaining: Math.max(0, remaining) }
+      );
+    }
+    const claimAmount = getEffectiveClaimAmount(
+      config,
+      weeklyLimit
+    );
     if (claimAmount > remaining) {
       return claimGenerationErrorResponse(
         "Insufficient allowance",
@@ -336,7 +409,12 @@ async function handleGenerate(req: NextRequest) {
 
         const availableTrackedBalance = getAvailableTrackedBalance(trackedBalance);
 
-        if (availableTrackedBalance != null && availableTrackedBalance < claimAmount) {
+        if (availableTrackedBalance == null) {
+          fetchFailures.push("Donor tracked balance is unavailable");
+          continue;
+        }
+
+        if (availableTrackedBalance < claimAmount) {
           hadDepletedBalanceReject = true;
           continue;
         }
@@ -357,7 +435,7 @@ async function handleGenerate(req: NextRequest) {
           .insert(schema.claimCodes)
           .values({
             userId,
-            weeklyPoolId: weeklyPool[0].id,
+            weeklyPoolId: weeklyPool.id,
             donorUserId: candidate.donorUserId,
             code,
             amount: claimAmount.toString(),
@@ -365,8 +443,31 @@ async function handleGenerate(req: NextRequest) {
             expiresAt,
             balanceSnapshot,
           })
+          .onConflictDoNothing()
           .returning();
         claimInsertMs = durationMs(claimInsertStartedAt);
+
+        if (!claimCode) {
+          const concurrentClaim = await db
+            .select()
+            .from(schema.claimCodes)
+            .where(
+              and(
+                eq(schema.claimCodes.userId, userId),
+                eq(schema.claimCodes.status, "active"),
+                gte(schema.claimCodes.expiresAt, new Date())
+              )
+            )
+            .orderBy(desc(schema.claimCodes.createdAt))
+            .limit(1);
+
+          if (concurrentClaim[0]) {
+            return activeClaimResponse(concurrentClaim[0], true);
+          }
+
+          // Another requester reserved this donor between ranking and insert.
+          continue;
+        }
 
         const donorProfileStartedAt = Date.now();
         const donorProfile = await db
@@ -402,6 +503,7 @@ async function handleGenerate(req: NextRequest) {
         return NextResponse.json(
           {
             success: true,
+            reused: false,
             claimCode: {
               id: claimCode.id,
               code: claimCode.code,
@@ -415,6 +517,12 @@ async function handleGenerate(req: NextRequest) {
           { status: 200 }
         );
       } catch (error: any) {
+        console.error("[claims.generate] donor candidate failed", {
+          donorUserId: candidate.donorUserId,
+          candidateIndex: candidateIndex + 1,
+          candidateCount: ranked.candidates.length,
+          message: error?.message || "Unknown error",
+        });
         logClaimCandidateFailure({
           requesterUserId: userId,
           donorUserId: candidate.donorUserId,
@@ -449,9 +557,7 @@ async function handleGenerate(req: NextRequest) {
       POOL_UNAVAILABLE_MESSAGE,
       503,
       "pool_unavailable",
-      fetchFailures.length > 0
-        ? { upstreamError: `All donor barcode attempts failed: ${fetchFailures[0]}` }
-        : undefined
+      fetchFailures.length > 0 ? { attemptsFailed: fetchFailures.length } : undefined
     );
   } catch (error: any) {
     console.error("Error generating claim code:", error);
@@ -552,6 +658,15 @@ async function handleRefresh(req: NextRequest) {
       return NextResponse.json({ error: "Claim code is not active" }, { status: 400 });
     }
     if (currentClaim.expiresAt < new Date()) {
+      await db
+        .update(schema.claimCodes)
+        .set({ status: "expired" })
+        .where(
+          and(
+            eq(schema.claimCodes.id, currentClaim.id),
+            eq(schema.claimCodes.status, "active")
+          )
+        );
       return NextResponse.json({ error: "Claim code has expired" }, { status: 400 });
     }
 
@@ -623,7 +738,7 @@ async function handleDelete(req: NextRequest) {
       );
     }
 
-    // Fetch the claim to verify ownership and get amount
+    // Fetch the claim to verify ownership and preserve its audit history.
     const claim = await db
       .select()
       .from(schema.claimCodes)
@@ -636,23 +751,31 @@ async function handleDelete(req: NextRequest) {
 
     const currentClaim = claim[0];
 
-    // Prevent deleting active or redeemed claims (only allow expired/cancelled)
-    if (currentClaim.status === "redeemed") {
+    // A live external barcode may remain usable until expiry, so active and
+    // redeemed claims are immutable.
+    if (currentClaim.status === "active" || currentClaim.status === "redeemed") {
       return NextResponse.json(
-        { error: "Cannot delete redeemed claims" },
+        { error: `Cannot remove ${currentClaim.status} claims` },
         { status: 400 }
       );
     }
 
-    // Delete the claim
+    // Keep an audit row so daily limits and historical accounting cannot be
+    // bypassed by deleting expired attempts.
     await db
-      .delete(schema.claimCodes)
-      .where(eq(schema.claimCodes.id, claimCodeId));
+      .update(schema.claimCodes)
+      .set({ status: "cancelled" })
+      .where(
+        and(
+          eq(schema.claimCodes.id, claimCodeId),
+          eq(schema.claimCodes.userId, userId)
+        )
+      );
 
     return NextResponse.json(
       {
         success: true,
-        message: "Claim deleted successfully",
+        message: "Claim archived successfully",
       },
       { status: 200 }
     );
@@ -669,6 +792,22 @@ async function detectRedemption(
   claim: typeof schema.claimCodes.$inferSelect
 ): Promise<{ amount: number; accountName: string; redeemedAt: Date } | null> {
   if (!claim.donorUserId || !claim.balanceSnapshot) return null;
+
+  const now = new Date();
+  if (claim.status !== "active" || claim.expiresAt <= now) {
+    if (claim.status === "active") {
+      await db
+        .update(schema.claimCodes)
+        .set({ status: "expired" })
+        .where(
+          and(
+            eq(schema.claimCodes.id, claim.id),
+            eq(schema.claimCodes.status, "active")
+          )
+        );
+    }
+    return null;
+  }
 
   let snapshot: BalanceSnapshotEntry[];
   try {
@@ -687,80 +826,105 @@ async function detectRedemption(
     return null;
   }
 
-  for (const snap of snapshot) {
-    if (snap.balance == null) continue;
-    const current = currentAccounts.find((a) => a.id === snap.id);
-    if (!current || current.balance == null) continue;
+  const positiveDeltas = snapshot.flatMap((snap) => {
+    if (snap.balance == null) return [];
+    const current = currentAccounts.find((account) => account.id === snap.id);
+    if (!current || current.balance == null) return [];
 
-    const delta = snap.balance - current.balance;
-    if (delta > 0) {
-      const now = new Date();
+    const amount = snap.balance - current.balance;
+    return amount > 0 ? [{ accountId: snap.id, accountName: snap.name, amount }] : [];
+  });
 
-      await db.transaction(async (tx) => {
-        const updatedClaims = await tx
-          .update(schema.claimCodes)
-          .set({ status: "redeemed", redeemedAt: now, amount: delta.toString() })
-          .where(
-            and(
-              eq(schema.claimCodes.id, claim.id),
-              ne(schema.claimCodes.status, "redeemed")
-            )
-          )
-          .returning({ id: schema.claimCodes.id });
-
-        if (updatedClaims.length === 0) {
-          return;
-        }
-
-        const insertedRedemptions = await tx
-          .insert(schema.redemptions)
-          .values({
-            claimCodeId: claim.id,
-            userId: claim.userId,
-            amount: delta.toString(),
-            redeemedAt: now,
-            getToolsTransactionId: `balance_delta:${snap.id}`,
-          })
-          .onConflictDoNothing({ target: schema.redemptions.claimCodeId })
-          .returning({ id: schema.redemptions.id });
-
-        if (insertedRedemptions.length === 0) {
-          return;
-        }
-
-        // Deduct the actual amount spent from the requester's allowance.
-        const userAllowance = await tx
-          .select()
-          .from(schema.userAllowances)
-          .where(
-            and(
-              eq(schema.userAllowances.userId, claim.userId),
-              eq(schema.userAllowances.weeklyPoolId, claim.weeklyPoolId)
-            )
-          )
-          .limit(1);
-
-        if (userAllowance.length === 0) {
-          return;
-        }
-
-        const allowance = userAllowance[0];
-        const remaining = parseFloat(allowance.remainingAmount);
-        await tx
-          .update(schema.userAllowances)
-          .set({
-            usedAmount: (parseFloat(allowance.usedAmount) + delta).toString(),
-            remainingAmount: Math.max(0, remaining - delta).toString(),
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.userAllowances.id, allowance.id));
-      });
-
-      return { amount: delta, accountName: snap.name, redeemedAt: now };
-    }
+  if (positiveDeltas.length === 0) {
+    return null;
   }
 
-  return null;
+  const detectedAmount = Number(
+    positiveDeltas.reduce((total, entry) => total + entry.amount, 0).toFixed(2)
+  );
+  const expectedMaximum = Number(claim.amount) + 0.01;
+
+  // Balance polling cannot attribute unrelated donor spending. Restrict a
+  // match to this claim's short validity window and configured maximum.
+  if (!Number.isFinite(detectedAmount) || detectedAmount <= 0 || detectedAmount > expectedMaximum) {
+    console.warn("Ignoring ambiguous donor balance change", {
+      claimCodeId: claim.id,
+      expectedMaximum,
+      detectedAmount,
+    });
+    return null;
+  }
+
+  const primaryAccount = positiveDeltas.reduce((largest, entry) =>
+    entry.amount > largest.amount ? entry : largest
+  );
+
+  const didRedeem = await db.transaction(async (tx) => {
+    const updatedClaims = await tx
+      .update(schema.claimCodes)
+      .set({
+        status: "redeemed",
+        redeemedAt: now,
+        amount: detectedAmount.toString(),
+      })
+      .where(
+        and(
+          eq(schema.claimCodes.id, claim.id),
+          eq(schema.claimCodes.status, "active"),
+          gte(schema.claimCodes.expiresAt, now)
+        )
+      )
+      .returning({ id: schema.claimCodes.id });
+
+    if (updatedClaims.length === 0) {
+      return false;
+    }
+
+    await tx.insert(schema.redemptions).values({
+      claimCodeId: claim.id,
+      userId: claim.userId,
+      amount: detectedAmount.toString(),
+      redeemedAt: now,
+      getToolsTransactionId: `balance_delta:${positiveDeltas
+        .map((entry) => entry.accountId)
+        .sort()
+        .join(",")}`,
+    });
+
+    const userAllowance = await tx
+      .select({ id: schema.userAllowances.id })
+      .from(schema.userAllowances)
+      .where(
+        and(
+          eq(schema.userAllowances.userId, claim.userId),
+          eq(schema.userAllowances.weeklyPoolId, claim.weeklyPoolId)
+        )
+      )
+      .orderBy(asc(schema.userAllowances.createdAt), asc(schema.userAllowances.id))
+      .limit(1)
+      .for("update");
+
+    if (userAllowance[0]) {
+      await tx
+        .update(schema.userAllowances)
+        .set({
+          usedAmount: sqlOp`${schema.userAllowances.usedAmount} + ${detectedAmount}`,
+          remainingAmount: sqlOp`greatest(${schema.userAllowances.remainingAmount} - ${detectedAmount}, 0)`,
+          updatedAt: now,
+        })
+        .where(eq(schema.userAllowances.id, userAllowance[0].id));
+    }
+
+    return true;
+  });
+
+  return didRedeem
+    ? {
+        amount: detectedAmount,
+        accountName: primaryAccount.accountName,
+        redeemedAt: now,
+      }
+    : null;
 }
 
 async function handleCheckRedemption(req: NextRequest) {

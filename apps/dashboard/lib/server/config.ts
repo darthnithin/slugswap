@@ -63,12 +63,36 @@ function normalizeDonorSelectionPolicy(value: unknown): DonorSelectionPolicy {
   );
 }
 
-function normalizeNonNegativeInteger(field: string, value: unknown): number {
+function normalizePositiveInteger(field: string, value: unknown): number {
   const numeric = Number(value);
-  if (!Number.isFinite(numeric) || Number.isNaN(numeric) || numeric < 0) {
-    throw new Error(`Invalid value for ${field}`);
+  if (!Number.isFinite(numeric) || !Number.isInteger(numeric) || numeric <= 0) {
+    throw new Error(`${field} must be a positive integer`);
   }
-  return Math.floor(numeric);
+  return numeric;
+}
+
+function validateConfigRelationships(config: AdminConfig) {
+  if (config.minDonationAmount > config.maxDonationAmount) {
+    throw new Error("minDonationAmount must be less than or equal to maxDonationAmount");
+  }
+  if (config.defaultClaimAmount > config.defaultWeeklyAllowance) {
+    throw new Error(
+      "defaultClaimAmount must be less than or equal to defaultWeeklyAllowance"
+    );
+  }
+}
+
+export function getEffectiveClaimAmount(
+  config: AdminConfig,
+  weeklyLimit = config.defaultWeeklyAllowance
+): number {
+  // GET claim codes use whole points, while per-user allowances are stored as
+  // decimals. Round down so a fractional allowance can never be overdrawn.
+  const amount = Math.floor(Math.min(config.defaultClaimAmount, weeklyLimit));
+  if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount <= 0) {
+    throw new Error("Claim generation is disabled by invalid configuration");
+  }
+  return amount;
 }
 
 function normalizeVersion(field: string, value: unknown): string {
@@ -178,42 +202,42 @@ export async function updateAdminConfig(
   };
 
   if (updates.defaultWeeklyAllowance !== undefined) {
-    merged.defaultWeeklyAllowance = normalizeNonNegativeInteger(
+    merged.defaultWeeklyAllowance = normalizePositiveInteger(
       "defaultWeeklyAllowance",
       updates.defaultWeeklyAllowance
     );
   }
 
   if (updates.defaultClaimAmount !== undefined) {
-    merged.defaultClaimAmount = normalizeNonNegativeInteger(
+    merged.defaultClaimAmount = normalizePositiveInteger(
       "defaultClaimAmount",
       updates.defaultClaimAmount
     );
   }
 
   if (updates.codeExpiryMinutes !== undefined) {
-    merged.codeExpiryMinutes = normalizeNonNegativeInteger(
+    merged.codeExpiryMinutes = normalizePositiveInteger(
       "codeExpiryMinutes",
       updates.codeExpiryMinutes
     );
   }
 
   if (updates.maxClaimsPerDay !== undefined) {
-    merged.maxClaimsPerDay = normalizeNonNegativeInteger(
+    merged.maxClaimsPerDay = normalizePositiveInteger(
       "maxClaimsPerDay",
       updates.maxClaimsPerDay
     );
   }
 
   if (updates.minDonationAmount !== undefined) {
-    merged.minDonationAmount = normalizeNonNegativeInteger(
+    merged.minDonationAmount = normalizePositiveInteger(
       "minDonationAmount",
       updates.minDonationAmount
     );
   }
 
   if (updates.maxDonationAmount !== undefined) {
-    merged.maxDonationAmount = normalizeNonNegativeInteger(
+    merged.maxDonationAmount = normalizePositiveInteger(
       "maxDonationAmount",
       updates.maxDonationAmount
     );
@@ -255,6 +279,8 @@ export async function updateAdminConfig(
       updates.androidStoreUrl
     );
   }
+
+  validateConfigRelationships(merged);
 
   const [saved] = await db
     .insert(adminConfig)
