@@ -27,11 +27,16 @@ import {
   type CampusPlaceCategory,
 } from '@/lib/campus-places';
 import {
+  buildAppleMapsPlaceUrl,
+  buildGoogleMapsDirectionsUrl,
+} from '@/lib/campus-directions';
+import {
   buttonOpacity,
   campusFonts,
   cardShadow,
   stealthTheme,
 } from '@/lib/stealth-theme';
+import CampusMaps from '@/modules/campus-maps';
 
 const colors = stealthTheme.colors;
 const CATEGORY_ORDER: readonly CampusPlaceCategory[] = ['dining', 'study', 'essentials'];
@@ -55,6 +60,7 @@ function placeIconName(category: CampusPlaceCategory): keyof typeof Ionicons.gly
 function actionLabel(place: CampusPlace): string {
   if (place.category === 'dining') return 'View menu';
   if (place.category === 'study') return 'Find a room';
+  if (Platform.OS === 'ios' && !CampusMaps) return 'Open in Maps';
   return 'Get directions';
 }
 
@@ -345,7 +351,7 @@ export default function ExploreScreen() {
     }
   };
 
-  const openPlace = (place: CampusPlace) => {
+  const openPlace = async (place: CampusPlace) => {
     if (place.category === 'dining' && place.diningLocationId) {
       router.push({
         pathname: '/(tabs)/menu',
@@ -363,11 +369,29 @@ export default function ExploreScreen() {
     }
 
     const { latitude, longitude } = place.coordinates;
-    const directionsUrl = Platform.select({
-      ios: `https://maps.apple.com/?daddr=${latitude},${longitude}&q=${encodeURIComponent(place.name)}`,
-      default: `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`,
-    });
-    if (directionsUrl) void Linking.openURL(directionsUrl);
+    if (Platform.OS === 'ios' && CampusMaps) {
+      try {
+        const didOpen = await CampusMaps.openDirectionsAsync(
+          place.name,
+          latitude,
+          longitude,
+        );
+        if (didOpen) return;
+      } catch (error) {
+        console.warn('Failed to open native Apple Maps directions:', error);
+      }
+    }
+
+    const directionsUrl =
+      Platform.OS === 'ios'
+        ? buildAppleMapsPlaceUrl(place)
+        : buildGoogleMapsDirectionsUrl(place);
+
+    try {
+      await Linking.openURL(directionsUrl);
+    } catch (error) {
+      console.warn('Failed to open map directions:', error);
+    }
   };
 
   return (

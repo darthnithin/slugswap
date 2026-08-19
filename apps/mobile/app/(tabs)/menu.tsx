@@ -168,7 +168,6 @@ export default function MenuScreen() {
   const [menu, setMenu] = useState<DiningMenu | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [staleSavedAt, setStaleSavedAt] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
   const menuRequestIdRef = useRef(0);
   const selectionRef = useRef({
@@ -190,17 +189,15 @@ export default function MenuScreen() {
     [menu, selectedMealId]
   );
 
-  const applyMenu = useCallback((nextMenu: DiningMenu, staleAt: string | null = null) => {
+  const applyMenu = useCallback((nextMenu: DiningMenu) => {
     setMenu(nextMenu);
     setSelectedDate(nextMenu.date);
     setSelectedMealId(chooseDefaultMeal(nextMenu));
-    setStaleSavedAt(staleAt);
   }, []);
 
   const clearDisplayedMenu = useCallback(() => {
     setMenu(null);
     setSelectedMealId(null);
-    setStaleSavedAt(null);
   }, []);
 
   const showSelection = useCallback(
@@ -286,7 +283,7 @@ export default function MenuScreen() {
       } catch (error: any) {
         if (!isCurrentRequest()) return;
         if (cached && isTodayOrFuture(cached.menu.date)) {
-          applyMenu(cached.menu, cached.savedAt);
+          applyMenu(cached.menu);
         } else {
           setErrorMessage(error?.message || 'Failed to load dining menu');
         }
@@ -484,15 +481,7 @@ export default function MenuScreen() {
       ]}
     >
       <View style={styles.header}>
-        <View style={styles.headerTopline}>
-          <Text style={styles.eyebrow}>UCSC CAMPUS DINING</Text>
-          <View style={styles.liveBadge}>
-            <View style={[styles.liveDot, staleSavedAt ? styles.savedDot : null]} />
-            <Text style={styles.liveBadgeText}>
-              {staleSavedAt ? 'Saved menu' : menu ? 'Live menu' : 'Campus menus'}
-            </Text>
-          </View>
-        </View>
+        <Text style={styles.eyebrow}>UCSC CAMPUS DINING</Text>
         <Text selectable style={styles.title}>Dining</Text>
         <Text selectable style={styles.subtitle}>
           Browse what’s being served across campus.
@@ -535,15 +524,6 @@ export default function MenuScreen() {
           <Ionicons name="information-circle-outline" size={18} color={colors.textMuted} />
           <Text selectable style={styles.noticeText}>
             {menu.serviceSchedule.note}
-          </Text>
-        </View>
-      ) : null}
-
-      {staleSavedAt ? (
-        <View style={styles.notice}>
-          <Ionicons name="cloud-offline-outline" size={18} color={colors.warning} />
-          <Text selectable style={styles.noticeText}>
-            Showing saved data from {formatUpdatedAt(staleSavedAt).replace('Updated ', '')}
           </Text>
         </View>
       ) : null}
@@ -701,36 +681,6 @@ const styles = StyleSheet.create({
   header: {
     gap: 4,
     paddingTop: 2,
-  },
-  headerTopline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  liveBadge: {
-    minHeight: 25,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 9,
-    borderRadius: stealthTheme.radii.pill,
-    backgroundColor: colors.surfaceStrong,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.success,
-  },
-  savedDot: {
-    backgroundColor: colors.warning,
-  },
-  liveBadgeText: {
-    fontFamily: campusFonts.sansSemibold,
-    fontSize: 11,
-    lineHeight: 14,
-    color: colors.brand,
   },
   eyebrow: {
     ...typeScale.eyebrow,
