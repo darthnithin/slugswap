@@ -23,6 +23,8 @@ export type AdminConfig = {
   androidRequiredVersion: string;
   iosStoreUrl: string | null;
   androidStoreUrl: string | null;
+  donorSpendNotificationTitle: string;
+  donorSpendNotificationBody: string;
 };
 
 export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
@@ -38,6 +40,9 @@ export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
   androidRequiredVersion: "1.0.0",
   iosStoreUrl: null,
   androidStoreUrl: null,
+  donorSpendNotificationTitle: "Your SlugPoints helped someone",
+  donorSpendNotificationBody:
+    "Someone just spent {{amount}} of your donated SlugPoints. Thank you for sharing!",
 };
 
 const ADMIN_CONFIG_ID = "global";
@@ -127,6 +132,17 @@ function normalizeOptionalUrl(field: string, value: unknown): string | null {
   }
 }
 
+function normalizeNotificationText(field: string, value: unknown, maxLength: number): string {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) {
+    throw new Error(`${field} must not be empty`);
+  }
+  if (trimmed.length > maxLength) {
+    throw new Error(`${field} must be ${maxLength} characters or fewer`);
+  }
+  return trimmed;
+}
+
 function rowToConfig(row: typeof adminConfig.$inferSelect): AdminConfig {
   return {
     defaultWeeklyAllowance: row.defaultWeeklyAllowance,
@@ -144,6 +160,16 @@ function rowToConfig(row: typeof adminConfig.$inferSelect): AdminConfig {
     ),
     iosStoreUrl: normalizeOptionalUrl("iosStoreUrl", row.iosStoreUrl),
     androidStoreUrl: normalizeOptionalUrl("androidStoreUrl", row.androidStoreUrl),
+    donorSpendNotificationTitle: normalizeNotificationText(
+      "donorSpendNotificationTitle",
+      row.donorSpendNotificationTitle,
+      100
+    ),
+    donorSpendNotificationBody: normalizeNotificationText(
+      "donorSpendNotificationBody",
+      row.donorSpendNotificationBody,
+      500
+    ),
   };
 }
 
@@ -173,6 +199,13 @@ async function loadAdminConfigFromDb(): Promise<{ config: AdminConfig; updatedAt
     config: rowToConfig(row),
     updatedAt: row.updatedAt,
   };
+}
+
+export async function getAdminConfigUncached(): Promise<{
+  config: AdminConfig;
+  updatedAt: Date;
+}> {
+  return loadAdminConfigFromDb();
 }
 
 const getCachedAdminConfig = unstable_cache(
@@ -280,6 +313,22 @@ export async function updateAdminConfig(
     );
   }
 
+  if (updates.donorSpendNotificationTitle !== undefined) {
+    merged.donorSpendNotificationTitle = normalizeNotificationText(
+      "donorSpendNotificationTitle",
+      updates.donorSpendNotificationTitle,
+      100
+    );
+  }
+
+  if (updates.donorSpendNotificationBody !== undefined) {
+    merged.donorSpendNotificationBody = normalizeNotificationText(
+      "donorSpendNotificationBody",
+      updates.donorSpendNotificationBody,
+      500
+    );
+  }
+
   validateConfigRelationships(merged);
 
   const [saved] = await db
@@ -304,6 +353,8 @@ export async function updateAdminConfig(
         androidRequiredVersion: merged.androidRequiredVersion,
         iosStoreUrl: merged.iosStoreUrl,
         androidStoreUrl: merged.androidStoreUrl,
+        donorSpendNotificationTitle: merged.donorSpendNotificationTitle,
+        donorSpendNotificationBody: merged.donorSpendNotificationBody,
         updatedAt: new Date(),
       },
     })

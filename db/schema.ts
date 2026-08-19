@@ -114,6 +114,55 @@ export const claimCodes = pgTable(
   ]
 );
 
+// Expo push tokens are scoped to a signed-in app user. A user can have more
+// than one active device, while a token can belong to only one user at a time.
+export const pushTokens = pgTable(
+  "push_tokens",
+  {
+    token: text("token").primaryKey(),
+    userId: uuid("user_id").references(() => users.id).notNull(),
+    platform: text("platform").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_push_tokens_user_enabled").on(table.userId, table.enabled),
+    check("push_tokens_platform_valid", sql`${table.platform} in ('ios', 'android')`),
+  ]
+);
+
+// A durable outbox prevents duplicate donor notifications when redemption is
+// checked concurrently and preserves the exact title/body that were sent.
+export const notificationDeliveries = pgTable(
+  "notification_deliveries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimCodeId: uuid("claim_code_id").references(() => claimCodes.id).notNull().unique(),
+    donorUserId: uuid("donor_user_id").references(() => users.id).notNull(),
+    kind: text("kind").notNull().default("donor_spend"),
+    status: text("status").notNull().default("pending"),
+    title: text("title"),
+    body: text("body"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    expoTicketIds: text("expo_ticket_ids"),
+    lastError: text("last_error"),
+    submittedAt: timestamp("submitted_at"),
+    sentAt: timestamp("sent_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_notification_deliveries_retry").on(table.status, table.updatedAt),
+    check("notification_deliveries_kind_valid", sql`${table.kind} = 'donor_spend'`),
+    check(
+      "notification_deliveries_status_valid",
+      sql`${table.status} in ('pending', 'sending', 'submitted', 'sent', 'failed', 'skipped')`
+    ),
+    check("notification_deliveries_attempts_nonnegative", sql`${table.attemptCount} >= 0`),
+  ]
+);
+
 // Redemptions table - tracks code redemption history
 export const redemptions = pgTable(
   "redemptions",
@@ -187,6 +236,14 @@ export const adminConfig = pgTable(
     androidRequiredVersion: text("android_required_version").notNull().default("1.0.0"),
     iosStoreUrl: text("ios_store_url"),
     androidStoreUrl: text("android_store_url"),
+    donorSpendNotificationTitle: text("donor_spend_notification_title")
+      .notNull()
+      .default("Your SlugPoints helped someone"),
+    donorSpendNotificationBody: text("donor_spend_notification_body")
+      .notNull()
+      .default(
+        "Someone just spent {{amount}} of your donated SlugPoints. Thank you for sharing!"
+      ),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [

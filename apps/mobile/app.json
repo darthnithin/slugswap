@@ -2,7 +2,7 @@
   "expo": {
     "name": "SlugSwap",
     "slug": "slugswap",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.slugswap",
-      "buildNumber": "44",
+      "buildNumber": "45",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -40,6 +40,7 @@
     "plugins": [
       "expo-router",
       "expo-web-browser",
+      "expo-notifications",
       [
         "expo-maps",
         {

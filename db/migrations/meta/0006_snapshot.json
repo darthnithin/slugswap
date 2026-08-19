@@ -1,0 +1,1213 @@
+{
+  "id": "521cf789-068a-4355-9f93-b4ecf1701c5b",
+  "prevId": "51f8b0a2-5ee8-438a-abe9-4cbe952b2f16",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.admin_config": {
+      "name": "admin_config",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'global'"
+        },
+        "default_weekly_allowance": {
+          "name": "default_weekly_allowance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 50
+        },
+        "default_claim_amount": {
+          "name": "default_claim_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 10
+        },
+        "code_expiry_minutes": {
+          "name": "code_expiry_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 5
+        },
+        "pool_calculation_method": {
+          "name": "pool_calculation_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'equal'"
+        },
+        "max_claims_per_day": {
+          "name": "max_claims_per_day",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 5
+        },
+        "min_donation_amount": {
+          "name": "min_donation_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 10
+        },
+        "max_donation_amount": {
+          "name": "max_donation_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 500
+        },
+        "donor_selection_policy": {
+          "name": "donor_selection_policy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'least_utilized'"
+        },
+        "ios_required_version": {
+          "name": "ios_required_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'1.0.0'"
+        },
+        "android_required_version": {
+          "name": "android_required_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'1.0.0'"
+        },
+        "ios_store_url": {
+          "name": "ios_store_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "android_store_url": {
+          "name": "android_store_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "donor_spend_notification_title": {
+          "name": "donor_spend_notification_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Your SlugPoints helped someone'"
+        },
+        "donor_spend_notification_body": {
+          "name": "donor_spend_notification_body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Someone just spent {{amount}} of your donated SlugPoints. Thank you for sharing!'"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "admin_config_positive_values": {
+          "name": "admin_config_positive_values",
+          "value": "\"admin_config\".\"default_weekly_allowance\" > 0 and \"admin_config\".\"default_claim_amount\" > 0 and \"admin_config\".\"code_expiry_minutes\" > 0 and \"admin_config\".\"max_claims_per_day\" > 0 and \"admin_config\".\"min_donation_amount\" > 0 and \"admin_config\".\"max_donation_amount\" > 0"
+        },
+        "admin_config_donation_range_valid": {
+          "name": "admin_config_donation_range_valid",
+          "value": "\"admin_config\".\"min_donation_amount\" <= \"admin_config\".\"max_donation_amount\""
+        },
+        "admin_config_claim_within_allowance": {
+          "name": "admin_config_claim_within_allowance",
+          "value": "\"admin_config\".\"default_claim_amount\" <= \"admin_config\".\"default_weekly_allowance\""
+        },
+        "admin_config_pool_method_valid": {
+          "name": "admin_config_pool_method_valid",
+          "value": "\"admin_config\".\"pool_calculation_method\" in ('equal', 'proportional')"
+        },
+        "admin_config_donor_policy_valid": {
+          "name": "admin_config_donor_policy_valid",
+          "value": "\"admin_config\".\"donor_selection_policy\" in ('round_robin', 'weighted_round_robin', 'least_utilized', 'highest_balance')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.claim_codes": {
+      "name": "claim_codes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "weekly_pool_id": {
+          "name": "weekly_pool_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "donor_user_id": {
+          "name": "donor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "redeemed_at": {
+          "name": "redeemed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "balance_snapshot": {
+          "name": "balance_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_claim_codes_donor_redeemed": {
+          "name": "idx_claim_codes_donor_redeemed",
+          "columns": [
+            {
+              "expression": "donor_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "redeemed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"claim_codes\".\"status\" = 'redeemed'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_claim_codes_donor_active_reservation": {
+          "name": "idx_claim_codes_donor_active_reservation",
+          "columns": [
+            {
+              "expression": "donor_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"claim_codes\".\"status\" = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "claim_codes_active_requester_unique": {
+          "name": "claim_codes_active_requester_unique",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"claim_codes\".\"status\" = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "claim_codes_active_donor_unique": {
+          "name": "claim_codes_active_donor_unique",
+          "columns": [
+            {
+              "expression": "donor_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"claim_codes\".\"status\" = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "claim_codes_user_id_users_id_fk": {
+          "name": "claim_codes_user_id_users_id_fk",
+          "tableFrom": "claim_codes",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "claim_codes_weekly_pool_id_weekly_pools_id_fk": {
+          "name": "claim_codes_weekly_pool_id_weekly_pools_id_fk",
+          "tableFrom": "claim_codes",
+          "tableTo": "weekly_pools",
+          "columnsFrom": [
+            "weekly_pool_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "claim_codes_donor_user_id_users_id_fk": {
+          "name": "claim_codes_donor_user_id_users_id_fk",
+          "tableFrom": "claim_codes",
+          "tableTo": "users",
+          "columnsFrom": [
+            "donor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "claim_codes_code_unique": {
+          "name": "claim_codes_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "claim_codes_amount_positive": {
+          "name": "claim_codes_amount_positive",
+          "value": "\"claim_codes\".\"amount\" > 0"
+        },
+        "claim_codes_status_valid": {
+          "name": "claim_codes_status_valid",
+          "value": "\"claim_codes\".\"status\" in ('pending', 'active', 'redeemed', 'expired', 'cancelled')"
+        },
+        "claim_codes_expiry_valid": {
+          "name": "claim_codes_expiry_valid",
+          "value": "\"claim_codes\".\"expires_at\" > \"claim_codes\".\"created_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.donations": {
+      "name": "donations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "start_date": {
+          "name": "start_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_date": {
+          "name": "end_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "notify_on_spend": {
+          "name": "notify_on_spend",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "donations_user_id_unique": {
+          "name": "donations_user_id_unique",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "donations_user_id_users_id_fk": {
+          "name": "donations_user_id_users_id_fk",
+          "tableFrom": "donations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "donations_amount_positive": {
+          "name": "donations_amount_positive",
+          "value": "\"donations\".\"amount\" > 0"
+        },
+        "donations_status_valid": {
+          "name": "donations_status_valid",
+          "value": "\"donations\".\"status\" in ('active', 'paused', 'cancelled')"
+        },
+        "donations_date_window_valid": {
+          "name": "donations_date_window_valid",
+          "value": "\"donations\".\"end_date\" is null or \"donations\".\"end_date\" >= \"donations\".\"start_date\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.get_credentials": {
+      "name": "get_credentials",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "encrypted_pin": {
+          "name": "encrypted_pin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "linked_at": {
+          "name": "linked_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "get_credentials_user_id_users_id_fk": {
+          "name": "get_credentials_user_id_users_id_fk",
+          "tableFrom": "get_credentials",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "get_credentials_user_id_unique": {
+          "name": "get_credentials_user_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "user_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.notification_deliveries": {
+      "name": "notification_deliveries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "claim_code_id": {
+          "name": "claim_code_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "donor_user_id": {
+          "name": "donor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'donor_spend'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempt_count": {
+          "name": "attempt_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "expo_ticket_ids": {
+          "name": "expo_ticket_ids",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "submitted_at": {
+          "name": "submitted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_notification_deliveries_retry": {
+          "name": "idx_notification_deliveries_retry",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "notification_deliveries_claim_code_id_claim_codes_id_fk": {
+          "name": "notification_deliveries_claim_code_id_claim_codes_id_fk",
+          "tableFrom": "notification_deliveries",
+          "tableTo": "claim_codes",
+          "columnsFrom": [
+            "claim_code_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "notification_deliveries_donor_user_id_users_id_fk": {
+          "name": "notification_deliveries_donor_user_id_users_id_fk",
+          "tableFrom": "notification_deliveries",
+          "tableTo": "users",
+          "columnsFrom": [
+            "donor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "notification_deliveries_claim_code_id_unique": {
+          "name": "notification_deliveries_claim_code_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "claim_code_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "notification_deliveries_kind_valid": {
+          "name": "notification_deliveries_kind_valid",
+          "value": "\"notification_deliveries\".\"kind\" = 'donor_spend'"
+        },
+        "notification_deliveries_status_valid": {
+          "name": "notification_deliveries_status_valid",
+          "value": "\"notification_deliveries\".\"status\" in ('pending', 'sending', 'submitted', 'sent', 'failed', 'skipped')"
+        },
+        "notification_deliveries_attempts_nonnegative": {
+          "name": "notification_deliveries_attempts_nonnegative",
+          "value": "\"notification_deliveries\".\"attempt_count\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.push_tokens": {
+      "name": "push_tokens",
+      "schema": "",
+      "columns": {
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "platform": {
+          "name": "platform",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_push_tokens_user_enabled": {
+          "name": "idx_push_tokens_user_enabled",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "enabled",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "push_tokens_user_id_users_id_fk": {
+          "name": "push_tokens_user_id_users_id_fk",
+          "tableFrom": "push_tokens",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "push_tokens_platform_valid": {
+          "name": "push_tokens_platform_valid",
+          "value": "\"push_tokens\".\"platform\" in ('ios', 'android')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.redemptions": {
+      "name": "redemptions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "claim_code_id": {
+          "name": "claim_code_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "redeemed_at": {
+          "name": "redeemed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "get_tools_transaction_id": {
+          "name": "get_tools_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "redemptions_claim_code_id_unique": {
+          "name": "redemptions_claim_code_id_unique",
+          "columns": [
+            {
+              "expression": "claim_code_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "redemptions_claim_code_id_claim_codes_id_fk": {
+          "name": "redemptions_claim_code_id_claim_codes_id_fk",
+          "tableFrom": "redemptions",
+          "tableTo": "claim_codes",
+          "columnsFrom": [
+            "claim_code_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "redemptions_user_id_users_id_fk": {
+          "name": "redemptions_user_id_users_id_fk",
+          "tableFrom": "redemptions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "redemptions_amount_positive": {
+          "name": "redemptions_amount_positive",
+          "value": "\"redemptions\".\"amount\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.user_allowances": {
+      "name": "user_allowances",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "weekly_pool_id": {
+          "name": "weekly_pool_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "weekly_limit": {
+          "name": "weekly_limit",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_amount": {
+          "name": "used_amount",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "remaining_amount": {
+          "name": "remaining_amount",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "user_allowances_user_weekly_pool_unique": {
+          "name": "user_allowances_user_weekly_pool_unique",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "weekly_pool_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "user_allowances_user_id_users_id_fk": {
+          "name": "user_allowances_user_id_users_id_fk",
+          "tableFrom": "user_allowances",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "user_allowances_weekly_pool_id_weekly_pools_id_fk": {
+          "name": "user_allowances_weekly_pool_id_weekly_pools_id_fk",
+          "tableFrom": "user_allowances",
+          "tableTo": "weekly_pools",
+          "columnsFrom": [
+            "weekly_pool_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "user_allowances_amounts_nonnegative": {
+          "name": "user_allowances_amounts_nonnegative",
+          "value": "\"user_allowances\".\"weekly_limit\" >= 0 and \"user_allowances\".\"used_amount\" >= 0 and \"user_allowances\".\"remaining_amount\" >= 0"
+        },
+        "user_allowances_remaining_within_limit": {
+          "name": "user_allowances_remaining_within_limit",
+          "value": "\"user_allowances\".\"remaining_amount\" <= \"user_allowances\".\"weekly_limit\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avatar_url": {
+          "name": "avatar_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "users_email_unique": {
+          "name": "users_email_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "email"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.weekly_pools": {
+      "name": "weekly_pools",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "week_start": {
+          "name": "week_start",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "week_end": {
+          "name": "week_end",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_amount": {
+          "name": "total_amount",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "allocated_amount": {
+          "name": "allocated_amount",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "remaining_amount": {
+          "name": "remaining_amount",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "weekly_pools_week_start_unique": {
+          "name": "weekly_pools_week_start_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "week_start"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "weekly_pools_window_valid": {
+          "name": "weekly_pools_window_valid",
+          "value": "\"weekly_pools\".\"week_end\" > \"weekly_pools\".\"week_start\""
+        },
+        "weekly_pools_amounts_nonnegative": {
+          "name": "weekly_pools_amounts_nonnegative",
+          "value": "\"weekly_pools\".\"total_amount\" >= 0 and \"weekly_pools\".\"allocated_amount\" >= 0 and \"weekly_pools\".\"remaining_amount\" >= 0"
+        },
+        "weekly_pools_balances_within_total": {
+          "name": "weekly_pools_balances_within_total",
+          "value": "\"weekly_pools\".\"allocated_amount\" <= \"weekly_pools\".\"total_amount\" and \"weekly_pools\".\"remaining_amount\" <= \"weekly_pools\".\"total_amount\""
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

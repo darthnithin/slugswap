@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -26,6 +27,7 @@ import {
   getMobileHome,
   linkGetAccount,
   pauseDonation,
+  updateDonorSpendNotificationPreference,
   setDonation,
   unlinkGetAccount,
   type DonorImpact,
@@ -36,6 +38,12 @@ import {
   type GetAccountBalance,
   type ShareTabSnapshot,
 } from '@/lib/tab-cache-context';
+import {
+  enablePushNotificationsAsync,
+  scheduleNotificationPreviewAsync,
+  syncExistingPushRegistrationAsync,
+  unregisterStoredPushTokenAsync,
+} from '@/lib/notifications';
 import {
   buttonOpacity,
   cardShadow,
@@ -50,6 +58,7 @@ const POOL_EMPTY_MESSAGE = 'The shared donor pool is empty right now. Check back
 
 const EMPTY_IMPACT: DonorImpact = {
   isActive: false,
+  notifyOnSpend: false,
   weeklyAmount: 0,
   status: 'paused',
   peopleHelped: 0,
@@ -73,6 +82,7 @@ function normalizeDonorImpact(raw: Partial<DonorImpact> | null | undefined): Don
   if (!raw) return EMPTY_IMPACT;
   return {
     isActive: !!raw.isActive,
+    notifyOnSpend: raw.notifyOnSpend === true,
     weeklyAmount: toSafeNumber(raw.weeklyAmount),
     status: typeof raw.status === 'string' ? raw.status : EMPTY_IMPACT.status,
     peopleHelped: toSafeNumber(raw.peopleHelped),
@@ -246,6 +256,8 @@ export default function DonorScreen() {
   const [getAccounts, setGetAccounts] = useState<GetAccountBalance[]>(shareSnapshot?.getAccounts ?? []);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationsSyncing, setNotificationsSyncing] = useState(false);
   const [requesterWeeklyLimit, setRequesterWeeklyLimit] = useState(shareSnapshot?.requesterWeeklyLimit ?? 0);
   const [requesterWeekEnd, setRequesterWeekEnd] = useState<string | null>(shareSnapshot?.requesterWeekEnd ?? null);
   const [requesterDaysUntilReset, setRequesterDaysUntilReset] = useState(shareSnapshot?.requesterDaysUntilReset ?? 0);
@@ -256,6 +268,7 @@ export default function DonorScreen() {
   const getAccountsRequestIdRef = useRef(0);
   const homeRequestIdRef = useRef(0);
   const skipInitialFocusRefreshRef = useRef(!hasShareSnapshot);
+  const notificationRegistrationCheckedForUserRef = useRef<string | null>(null);
 
   useEffect(() => {
     shareSnapshotRef.current = shareSnapshot;
@@ -449,6 +462,104 @@ export default function DonorScreen() {
     }, [loadUserAndImpact])
   );
 
+  useEffect(() => {
+    if (!userId) {
+      notificationRegistrationCheckedForUserRef.current = null;
+      setNotificationsEnabled(false);
+      return;
+    }
+    if (!impact.notifyOnSpend) {
+      notificationRegistrationCheckedForUserRef.current = null;
+      setNotificationsEnabled(false);
+      return;
+    }
+    if (notificationRegistrationCheckedForUserRef.current === userId) return;
+    notificationRegistrationCheckedForUserRef.current = userId;
+
+    let active = true;
+    void syncExistingPushRegistrationAsync()
+      .then((registered) => {
+        if (active) setNotificationsEnabled(registered);
+      })
+      .catch((error) => {
+        console.warn('Failed to refresh notification registration:', error);
+        if (active) setNotificationsEnabled(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [impact.notifyOnSpend, userId]);
+
+  const setLocalNotificationPreference = useCallback(
+    (enabled: boolean) => {
+      setImpact((currentImpact) => {
+        const nextImpact = { ...currentImpact, notifyOnSpend: enabled };
+        const currentSnapshot = shareSnapshotRef.current;
+        if (currentSnapshot) {
+          updateShareSnapshot({ ...currentSnapshot, impact: nextImpact });
+        }
+        return nextImpact;
+      });
+    },
+    [updateShareSnapshot]
+  );
+
+  const enableSpendNotifications = useCallback(async () => {
+    setNotificationsSyncing(true);
+    try {
+      const result = await enablePushNotificationsAsync();
+      if (result.status === 'registered') {
+        await updateDonorSpendNotificationPreference(true);
+        setNotificationsEnabled(true);
+        setLocalNotificationPreference(true);
+        return true;
+      }
+
+      setNotificationsEnabled(false);
+      if (result.status === 'denied') {
+        Alert.alert(
+          'Notifications are off',
+          'Allow notifications for SlugSwap in Settings, then try again.'
+        );
+      } else if (result.status === 'unsupported') {
+        Alert.alert('Unavailable', 'Push notifications are only available in the native app.');
+      } else {
+        Alert.alert('Could not enable notifications', result.message);
+      }
+      return false;
+    } catch (error) {
+      console.error('Failed to enable spend notifications:', error);
+      setNotificationsEnabled(false);
+      Alert.alert('Could not enable notifications', 'Please try again in a moment.');
+      return false;
+    } finally {
+      setNotificationsSyncing(false);
+    }
+  }, [setLocalNotificationPreference]);
+
+  const handleNotificationToggle = useCallback(
+    async (enabled: boolean) => {
+      if (enabled) {
+        await enableSpendNotifications();
+        return;
+      }
+
+      setNotificationsSyncing(true);
+      try {
+        await updateDonorSpendNotificationPreference(false);
+        setNotificationsEnabled(false);
+        setLocalNotificationPreference(false);
+      } catch (error) {
+        console.error('Failed to disable spend notifications:', error);
+        Alert.alert('Could not update notifications', 'Please try again in a moment.');
+      } finally {
+        setNotificationsSyncing(false);
+      }
+    },
+    [enableSpendNotifications, setLocalNotificationPreference]
+  );
+
   const handleSetContribution = async () => {
     if (!userId) return;
 
@@ -464,8 +575,32 @@ export default function DonorScreen() {
       await setDonation(amount);
       invalidateHomeRequests();
       setIsActive(true);
-      Alert.alert('Success', 'Your contribution has been set!');
       await loadUserAndImpact({ showBlockingLoader: false });
+      if (Platform.OS === 'web') {
+        Alert.alert('Success', 'Your contribution has been set!');
+      } else {
+        Alert.alert(
+          'Sharing started',
+          'Would you like a notification whenever someone spends your donated SlugPoints?',
+          [
+            {
+              text: 'Not now',
+              style: 'cancel',
+              onPress: () => {
+                void updateDonorSpendNotificationPreference(false)
+                  .then(() => setLocalNotificationPreference(false))
+                  .catch((error) => console.warn('Failed to disable notification preference:', error));
+              },
+            },
+            {
+              text: 'Enable',
+              onPress: () => {
+                void enableSpendNotifications();
+              },
+            },
+          ]
+        );
+      }
     } catch (error) {
       console.error('Error setting donation:', error);
       Alert.alert('Error', 'Failed to set contribution. Please try again.');
@@ -599,7 +734,23 @@ export default function DonorScreen() {
     getAccountsRequestIdRef.current += 1;
     setIsSigningOut(true);
     try {
-      await signOut();
+      try {
+        await unregisterStoredPushTokenAsync();
+      } catch (error) {
+        console.warn('Failed to disconnect push notifications during sign out:', error);
+        Alert.alert(
+          'Could not sign out',
+          'SlugSwap could not disconnect notifications from this device. Check your connection and try again.'
+        );
+        return;
+      }
+
+      try {
+        await signOut();
+      } catch (error) {
+        console.warn('Failed to sign out:', error);
+        Alert.alert('Could not sign out', 'Check your connection and try again.');
+      }
     } finally {
       setIsSigningOut(false);
     }
@@ -845,6 +996,28 @@ export default function DonorScreen() {
                   <Text style={styles.capFootnote}>Tracking week in {impact.timezone}</Text>
                 </View>
 
+                <View style={styles.notificationRow}>
+                  <View style={styles.notificationCopy}>
+                    <Text style={styles.notificationTitle}>Spend notifications</Text>
+                    <Text style={styles.notificationDetail}>
+                      {notificationsEnabled
+                        ? 'You will know when your donated points help someone.'
+                        : 'Enable alerts when someone spends your donated points.'}
+                    </Text>
+                  </View>
+                  {notificationsSyncing ? (
+                    <ActivityIndicator size="small" color={colors.brand} />
+                  ) : (
+                    <Switch
+                      value={notificationsEnabled}
+                      onValueChange={(enabled) => {
+                        void handleNotificationToggle(enabled);
+                      }}
+                      trackColor={{ false: colors.borderStrong, true: colors.brand }}
+                    />
+                  )}
+                </View>
+
                 <View style={styles.buttonRow}>
                   <SecondaryButton
                     label={isActive ? 'Pause Sharing' : 'Resume Sharing'}
@@ -857,6 +1030,33 @@ export default function DonorScreen() {
                 </View>
               </>
             )}
+          </SectionCard>
+        ) : null}
+
+        {__DEV__ && Platform.OS !== 'web' ? (
+          <SectionCard>
+            <SectionHeader
+              icon="bell.fill"
+              title="Notification Test"
+              detail="Development builds only"
+            />
+            <View style={styles.buttonRow}>
+              <SecondaryButton
+                label="Send Test Notification"
+                icon="bell.fill"
+                onPress={() => {
+                  void scheduleNotificationPreviewAsync(
+                    'Your SlugPoints helped someone',
+                    'Someone just spent 10 of your donated SlugPoints. Thank you for sharing!'
+                  ).catch((error) => {
+                    Alert.alert(
+                      'Test notification failed',
+                      error instanceof Error ? error.message : 'Please try again.'
+                    );
+                  });
+                }}
+              />
+            </View>
           </SectionCard>
         ) : null}
 
@@ -1189,6 +1389,33 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     gap: 10,
+  },
+  notificationRow: {
+    marginHorizontal: 18,
+    marginTop: 16,
+    minHeight: 72,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  notificationCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  notificationTitle: {
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '700',
+  },
+  notificationDetail: {
+    ...typeScale.caption,
+    color: colors.textMuted,
   },
   capRow: {
     flexDirection: 'row',

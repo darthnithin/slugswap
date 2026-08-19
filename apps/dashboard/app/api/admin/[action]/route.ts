@@ -240,7 +240,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
         const message = error?.message || "Internal server error";
         const status =
           typeof message === "string" &&
-          (message.startsWith("Invalid value") || message.includes("must be"))
+          (message.startsWith("Invalid value") || message.includes("must "))
             ? 400
             : 500;
         return NextResponse.json(

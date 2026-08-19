@@ -1,0 +1,12 @@
+{
+  "Simulator Target Bundle": "com.anonymous.slugswap",
+  "aps": {
+    "alert": {
+      "title": "Your SlugPoints helped someone",
+      "body": "Someone just spent 10 of your donated SlugPoints. Thank you for sharing!"
+    },
+    "sound": "default"
+  },
+  "kind": "donor_spend",
+  "claimCodeId": "simulator-test-claim"
+}
