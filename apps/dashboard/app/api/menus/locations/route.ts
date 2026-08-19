@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { FoodProError, getDiningLocations } from "@/lib/server/menus/foodpro";
+import {
+  describeFoodProError,
+  FoodProError,
+  getDiningLocations,
+} from "@/lib/server/menus/foodpro";
 
 export const runtime = "nodejs";
 
@@ -12,7 +16,10 @@ export async function GET() {
     const message =
       error instanceof Error ? error.message : "Failed to load dining locations";
     if (status >= 500) {
-      console.error("Error loading dining locations:", error);
+      console.error("Dining locations upstream request failed", {
+        route: "/api/menus/locations",
+        errors: describeFoodProError(error),
+      });
     } else {
       console.warn("Invalid dining locations request:", message);
     }

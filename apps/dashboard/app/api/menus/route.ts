@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   COLLEGE_NINE_LOCATION_ID,
+  describeFoodProError,
   FoodProError,
   getDiningMenu,
 } from "@/lib/server/menus/foodpro";
@@ -38,7 +39,10 @@ export async function GET(req: NextRequest) {
     const status = error instanceof FoodProError ? error.status : 503;
     const message = error instanceof Error ? error.message : "Failed to load dining menu";
     if (status >= 500) {
-      console.error("Error loading dining menu:", error);
+      console.error("Dining menu upstream request failed", {
+        route: "/api/menus",
+        errors: describeFoodProError(error),
+      });
     } else {
       console.warn("Invalid dining menu request:", message);
     }

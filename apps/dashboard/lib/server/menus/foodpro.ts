@@ -40,11 +40,37 @@ export type DiningMenu = {
 export class FoodProError extends Error {
   constructor(
     message: string,
-    public status: 400 | 404 | 503
+    public status: 400 | 404 | 503,
+    options?: ErrorOptions
   ) {
-    super(message);
+    super(message, options);
     this.name = "FoodProError";
   }
+}
+
+export type FoodProErrorDiagnostic = {
+  name: string;
+  message: string;
+  code?: string;
+};
+
+export function describeFoodProError(error: unknown): FoodProErrorDiagnostic[] {
+  const diagnostics: FoodProErrorDiagnostic[] = [];
+  const seen = new Set<Error>();
+  let current = error;
+
+  while (current instanceof Error && diagnostics.length < 4 && !seen.has(current)) {
+    seen.add(current);
+    const code = (current as Error & { code?: unknown }).code;
+    diagnostics.push({
+      name: current.name,
+      message: current.message,
+      ...(typeof code === "string" ? { code } : {}),
+    });
+    current = current.cause;
+  }
+
+  return diagnostics;
 }
 
 const LOCATION_SLUGS: Record<string, string> = {
@@ -220,9 +246,11 @@ async function fetchFoodProHtml(url: string): Promise<string> {
       error instanceof Error &&
       (error.name === "AbortError" || error.name === "TimeoutError")
     ) {
-      throw new FoodProError("UCSC menu source timed out.", 503);
+      throw new FoodProError("UCSC menu source timed out.", 503, { cause: error });
     }
-    throw new FoodProError("Unable to reach the UCSC menu source.", 503);
+    throw new FoodProError("Unable to reach the UCSC menu source.", 503, {
+      cause: error,
+    });
   }
 }
 
