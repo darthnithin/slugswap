@@ -10,6 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   type DiningLocation,
@@ -28,7 +29,7 @@ import {
 } from '@/lib/dining-menu-cache';
 import {
   buttonOpacity,
-  cardShadow,
+  campusFonts,
   stealthTheme,
   typeScale,
 } from '../../lib/stealth-theme';
@@ -157,6 +158,7 @@ function EmptyState({ message }: { message: string }) {
 }
 
 export default function MenuScreen() {
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ locationId?: string | string[] }>();
   const requestedLocationId = firstParam(params.locationId);
   const [locations, setLocations] = useState<DiningLocation[]>([]);
@@ -166,7 +168,6 @@ export default function MenuScreen() {
   const [menu, setMenu] = useState<DiningMenu | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [staleSavedAt, setStaleSavedAt] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
   const menuRequestIdRef = useRef(0);
   const selectionRef = useRef({
@@ -188,17 +189,15 @@ export default function MenuScreen() {
     [menu, selectedMealId]
   );
 
-  const applyMenu = useCallback((nextMenu: DiningMenu, staleAt: string | null = null) => {
+  const applyMenu = useCallback((nextMenu: DiningMenu) => {
     setMenu(nextMenu);
     setSelectedDate(nextMenu.date);
     setSelectedMealId(chooseDefaultMeal(nextMenu));
-    setStaleSavedAt(staleAt);
   }, []);
 
   const clearDisplayedMenu = useCallback(() => {
     setMenu(null);
     setSelectedMealId(null);
-    setStaleSavedAt(null);
   }, []);
 
   const showSelection = useCallback(
@@ -284,7 +283,7 @@ export default function MenuScreen() {
       } catch (error: any) {
         if (!isCurrentRequest()) return;
         if (cached && isTodayOrFuture(cached.menu.date)) {
-          applyMenu(cached.menu, cached.savedAt);
+          applyMenu(cached.menu);
         } else {
           setErrorMessage(error?.message || 'Failed to load dining menu');
         }
@@ -473,21 +472,33 @@ export default function MenuScreen() {
           tintColor={colors.brand}
         />
       }
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[
+        styles.content,
+        {
+          paddingTop: insets.top + 12,
+          paddingBottom: insets.bottom + 104,
+        },
+      ]}
     >
       <View style={styles.header}>
-        <View style={styles.iconWrap}>
-          <Ionicons name="fast-food" size={24} color={colors.brand} />
+        <Text style={styles.eyebrow}>UCSC CAMPUS DINING</Text>
+        <Text selectable style={styles.title}>Dining</Text>
+        <Text selectable style={styles.subtitle}>
+          Browse what’s being served across campus.
+        </Text>
+      </View>
+
+      <View style={styles.locationBlock}>
+        <View style={styles.locationIcon}>
+          <Ionicons name="location" size={20} color={colors.surface} />
         </View>
-        <View style={styles.headerText}>
-          <Text style={styles.eyebrow}>UCSC Dining</Text>
-          <Text selectable style={styles.title}>
-            {selectedLocation?.name ?? 'Dining Menu'}
-          </Text>
-          <Text selectable style={styles.subtitle}>
-            {menu?.sourceDateLabel ?? formatDateLabel(selectedDate)}
+        <View style={styles.locationCopy}>
+          <Text style={styles.locationLabel}>Dining hall</Text>
+          <Text selectable numberOfLines={1} style={styles.locationName}>
+            {selectedLocation?.name ?? 'Choose a location'}
           </Text>
         </View>
+        <Ionicons name="chevron-down" size={19} color={colors.brand} />
       </View>
 
       {menu?.serviceSchedule.currentStatusLabel ? (
@@ -517,15 +528,6 @@ export default function MenuScreen() {
         </View>
       ) : null}
 
-      {staleSavedAt ? (
-        <View style={styles.notice}>
-          <Ionicons name="cloud-offline-outline" size={18} color={colors.warning} />
-          <Text selectable style={styles.noticeText}>
-            Showing saved data from {formatUpdatedAt(staleSavedAt).replace('Updated ', '')}
-          </Text>
-        </View>
-      ) : null}
-
       {errorMessage ? (
         <View style={styles.notice}>
           <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
@@ -536,7 +538,10 @@ export default function MenuScreen() {
       ) : null}
 
       <View style={styles.controlGroup}>
-        <Text style={styles.controlLabel}>Location</Text>
+        <View style={styles.controlHeading}>
+          <Text style={styles.controlLabel}>Location</Text>
+          <Text style={styles.controlHint}>Swipe to change</Text>
+        </View>
         <ScrollView
           horizontal
           style={styles.horizontalRail}
@@ -560,7 +565,7 @@ export default function MenuScreen() {
       </View>
 
       <View style={styles.controlGroup}>
-        <Text style={styles.controlLabel}>Date</Text>
+        <Text style={styles.controlLabel}>Day</Text>
         <ScrollView
           horizontal
           style={styles.horizontalRail}
@@ -580,7 +585,7 @@ export default function MenuScreen() {
 
       {menu?.meals.length ? (
         <View style={styles.controlGroup}>
-          <Text style={styles.controlLabel}>Meal</Text>
+          <Text style={styles.controlLabel}>Meal period</Text>
           <View style={styles.segmented}>
             {menu.meals.map((meal) => {
               const selected = meal.id === selectedMealId;
@@ -613,11 +618,23 @@ export default function MenuScreen() {
 
       {selectedMeal ? (
         <View style={styles.menuStack}>
+          <View style={styles.menuHeadingRow}>
+            <View>
+              <Text selectable style={styles.menuEyebrow}>
+                {menu?.sourceDateLabel ?? formatDateLabel(selectedDate)}
+              </Text>
+              <Text selectable style={styles.menuHeading}>{selectedMeal.name}</Text>
+            </View>
+            <Ionicons name="restaurant-outline" size={24} color={colors.brand} />
+          </View>
           {selectedMeal.sections.map((section) => (
             <View key={section.name} style={styles.sectionCard}>
-              <Text selectable style={styles.sectionTitle}>
-                {section.name}
-              </Text>
+              <View style={styles.sectionHeadingRow}>
+                <Text selectable style={styles.sectionTitle}>
+                  {section.name}
+                </Text>
+                <View style={styles.sectionRule} />
+              </View>
               <View style={styles.itemList}>
                 {section.items.map((item) => (
                   <View key={`${section.name}:${item.name}`} style={styles.itemRow}>
@@ -658,56 +675,72 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
   },
   content: {
-    gap: 18,
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: 28,
+    gap: 20,
+    paddingHorizontal: 20,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: stealthTheme.radii.lg,
-    backgroundColor: colors.surface,
-    ...cardShadow('surface'),
-  },
-  iconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accentMuted,
-  },
-  headerText: {
-    flex: 1,
-    gap: 3,
+    gap: 4,
+    paddingTop: 2,
   },
   eyebrow: {
     ...typeScale.eyebrow,
     color: colors.brand,
   },
   title: {
-    ...typeScale.title,
+    fontFamily: campusFonts.serifSemibold,
+    fontSize: 48,
+    lineHeight: 52,
+    letterSpacing: -0.8,
     color: colors.text,
   },
   subtitle: {
-    ...typeScale.caption,
+    ...typeScale.body,
     color: colors.textMuted,
+  },
+  locationBlock: {
+    minHeight: 66,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: stealthTheme.radii.md,
+    backgroundColor: colors.surface,
+  },
+  locationIcon: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 13,
+    backgroundColor: colors.brand,
+  },
+  locationCopy: {
+    flex: 1,
+    gap: 1,
+  },
+  locationLabel: {
+    fontFamily: campusFonts.sansMedium,
+    fontSize: 11,
+    lineHeight: 14,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  locationName: {
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 17,
+    lineHeight: 21,
+    color: colors.text,
   },
   notice: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: stealthTheme.radii.sm,
-    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: 2,
+    paddingVertical: 1,
   },
   noticeText: {
     flex: 1,
@@ -715,34 +748,43 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   controlGroup: {
-    gap: 8,
+    gap: 9,
+  },
+  controlHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   controlLabel: {
     ...typeScale.eyebrow,
-    color: colors.textMuted,
+    color: colors.text,
+  },
+  controlHint: {
+    ...typeScale.caption,
+    color: colors.textSoft,
   },
   horizontalRail: {
     alignSelf: 'stretch',
     overflow: 'hidden',
   },
   rail: {
-    gap: 4,
+    gap: 8,
     paddingLeft: 0,
     paddingRight: 0,
   },
   chip: {
-    minHeight: 38,
+    minHeight: 42,
     maxWidth: 260,
     justifyContent: 'center',
     paddingHorizontal: 13,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: stealthTheme.radii.sm,
+    borderRadius: 13,
     backgroundColor: colors.surface,
   },
   chipSelected: {
     borderColor: colors.brand,
-    backgroundColor: colors.accentMuted,
+    backgroundColor: colors.brand,
   },
   chipDisabled: {
     borderColor: colors.border,
@@ -750,10 +792,10 @@ const styles = StyleSheet.create({
   },
   chipLabel: {
     ...typeScale.caption,
-    color: colors.textMuted,
+    color: colors.text,
   },
   chipLabelSelected: {
-    color: colors.brandInk,
+    color: colors.surface,
   },
   chipLabelDisabled: {
     color: colors.textSoft,
@@ -762,48 +804,73 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: stealthTheme.radii.md,
-    backgroundColor: colors.surfaceStrong,
+    padding: 0,
+    backgroundColor: 'transparent',
   },
   segment: {
-    minHeight: 38,
+    minHeight: 44,
     flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 12,
-    borderRadius: stealthTheme.radii.sm,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   segmentSelected: {
-    backgroundColor: colors.surface,
-    ...cardShadow('surface'),
+    borderColor: colors.brand,
+    backgroundColor: colors.brand,
   },
   segmentLabel: {
     ...typeScale.caption,
     color: colors.textMuted,
   },
   segmentLabelSelected: {
-    color: colors.text,
+    color: colors.surface,
   },
   menuStack: {
-    gap: 12,
+    gap: 22,
+    paddingTop: 4,
   },
-  sectionCard: {
-    gap: 11,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: stealthTheme.radii.md,
-    backgroundColor: colors.surface,
+  menuHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 2,
   },
-  sectionTitle: {
-    ...typeScale.title,
+  menuEyebrow: {
+    ...typeScale.eyebrow,
+    marginBottom: 2,
+    color: colors.textMuted,
+  },
+  menuHeading: {
+    fontFamily: campusFonts.serifSemibold,
+    fontSize: 30,
+    lineHeight: 34,
     color: colors.text,
   },
+  sectionCard: {
+    gap: 12,
+  },
+  sectionHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sectionTitle: {
+    fontFamily: campusFonts.serifSemibold,
+    fontSize: 24,
+    lineHeight: 28,
+    color: colors.text,
+  },
+  sectionRule: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.borderStrong,
+  },
   itemList: {
-    gap: 10,
+    gap: 12,
   },
   itemRow: {
     minHeight: 24,
@@ -812,11 +879,11 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   itemDot: {
-    width: 7,
-    height: 7,
-    marginTop: 7,
-    borderRadius: 4,
-    backgroundColor: colors.brand,
+    width: 8,
+    height: 8,
+    marginTop: 6,
+    borderRadius: 3,
+    backgroundColor: colors.gold,
   },
   itemText: {
     flex: 1,

@@ -15,7 +15,7 @@ import {
   type CrossPlatformSymbolName,
 } from '@/components/cross-platform-symbol';
 
-import { PDF417Barcode } from '../../../components/PDF417Barcode';
+import { PDF417Barcode } from '@/components/PDF417Barcode';
 import {
   getGetBarcode,
   getGetLinkStatus,
@@ -24,10 +24,11 @@ import {
 import { supabase } from '@/lib/supabase';
 import {
   buttonOpacity,
+  campusFonts,
   cardShadow,
   stealthTheme,
   typeScale,
-} from '../../../lib/stealth-theme';
+} from '@/lib/stealth-theme';
 
 type GetAccountBalance = {
   id: string;
@@ -112,7 +113,6 @@ export default function WalletScreen() {
   const [displayName, setDisplayName] = useState('My GET');
   const [accounts, setAccounts] = useState<GetAccountBalance[]>([]);
   const [barcodeCode, setBarcodeCode] = useState<string | null>(null);
-  const [barcodeFetchedAt, setBarcodeFetchedAt] = useState<string | null>(null);
   const [barcodeRefreshError, setBarcodeRefreshError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -148,7 +148,6 @@ export default function WalletScreen() {
       const barcode = await getGetBarcode();
       if (barcodeWriteIdRef.current !== writeId) return;
       setBarcodeCode(barcode.code);
-      setBarcodeFetchedAt(barcode.fetchedAt);
       setBarcodeRefreshError(null);
     } catch (error: any) {
       if (barcodeWriteIdRef.current !== writeId) return;
@@ -199,7 +198,6 @@ export default function WalletScreen() {
         barcodeWriteIdRef.current += 1;
         setAccounts([]);
         setBarcodeCode(null);
-        setBarcodeFetchedAt(null);
         setBarcodeRefreshError(null);
         return;
       }
@@ -210,7 +208,6 @@ export default function WalletScreen() {
       setAccounts(wallet.accounts || []);
       if (barcodeWriteIdRef.current === barcodeWriteId) {
         setBarcodeCode(wallet.barcode.code);
-        setBarcodeFetchedAt(wallet.barcode.fetchedAt);
         setBarcodeRefreshError(null);
       }
     } catch (error: any) {
@@ -272,13 +269,6 @@ export default function WalletScreen() {
   const linkedDateLabel = linkedAt
     ? `Linked ${new Date(linkedAt).toLocaleDateString()}`
     : 'GET linked';
-  const barcodeUpdatedLabel = barcodeFetchedAt
-    ? `Updated ${new Date(barcodeFetchedAt).toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit',
-      })}`
-    : 'Waiting for first refresh';
-
   if (loading) {
     return (
       <View style={styles.loadingScreen}>
@@ -302,20 +292,20 @@ export default function WalletScreen() {
         }
       >
         <View style={styles.passCard}>
-          <View style={styles.passNotch} />
-          <Text style={styles.passTitle}>UCSC Dining Services</Text>
-          <View style={styles.passBand}>
-            <View style={styles.passAvatarShell}>
+          <View style={styles.passHeader}>
+            <View style={styles.passIdentity}>
+              <Text style={styles.passTitle}>UCSC · GET</Text>
+              <Text style={styles.passName}>{displayName}</Text>
+            </View>
+            <View style={styles.passIcon}>
               <CrossPlatformSymbol
                 name={isGetLinked ? 'person.crop.circle.badge.checkmark' : 'wallet.pass'}
-                tintColor="rgba(255,255,255,0.88)"
-                size={112}
+                tintColor={colors.gold}
+                size={28}
               />
             </View>
           </View>
           <View style={styles.passContent}>
-            <Text style={styles.passName}>{displayName}</Text>
-
             <View style={styles.barcodeDock}>
               {isGetLinked && barcodeCode ? (
                 <PDF417Barcode value={barcodeCode} width={300} height={100} />
@@ -331,14 +321,15 @@ export default function WalletScreen() {
                 </View>
               )}
             </View>
-            {isGetLinked ? (
+            {isGetLinked && barcodeRefreshError ? (
               <View style={styles.codeMetaPanel}>
-                <Text style={styles.codeMeta}>{barcodeUpdatedLabel}</Text>
-                {barcodeRefreshError ? (
-                  <Text accessibilityLiveRegion="polite" style={styles.codeRefreshWarning}>
-                    Scan code refresh delayed. Check your connection before scanning.
-                  </Text>
-                ) : null}
+                <View style={styles.codeMetaStatus}>
+                  <View style={styles.warningDot} />
+                  <Text style={styles.codeMeta}>Scan code refresh delayed</Text>
+                </View>
+                <Text accessibilityLiveRegion="polite" style={styles.codeRefreshWarning}>
+                  Check your connection before scanning.
+                </Text>
               </View>
             ) : null}
           </View>
@@ -365,7 +356,7 @@ export default function WalletScreen() {
             <View style={styles.sectionHeaderText}>
               <Text style={styles.sectionTitle}>Balance</Text>
               <Text style={styles.sectionDetail}>
-                {isGetLinked ? 'Live GET account balances' : 'Connect GET from Home to sync balances'}
+                {isGetLinked ? 'Live GET account balances' : 'Connect GET from Point sharing to sync balances'}
               </Text>
             </View>
           </View>
@@ -420,17 +411,17 @@ export default function WalletScreen() {
           ) : (
             <View style={styles.connectBlock}>
               <Text style={styles.connectCopy}>
-                Link your GET account from the Home tab, then come back here to see your balance and scan your own code.
+                Link your GET account from Point sharing, then come back here to see your balance and scan your own code.
               </Text>
               <Pressable
-                onPress={() => router.push('/(tabs)/(share)')}
+                onPress={() => router.push('/point-sharing')}
                 style={({ pressed }) => [
                   styles.primaryButton,
                   { opacity: buttonOpacity(pressed) },
                 ]}
               >
-                <CrossPlatformSymbol name="arrow.left" tintColor="#ffffff" size={16} />
-                <Text style={styles.primaryButtonLabel}>Go to Home</Text>
+                <CrossPlatformSymbol name="arrow.up.right" tintColor="#ffffff" size={16} />
+                <Text style={styles.primaryButtonLabel}>Open Point sharing</Text>
               </Pressable>
             </View>
           )}
@@ -459,62 +450,53 @@ const styles = StyleSheet.create({
     paddingBottom: 36,
   },
   passCard: {
-    borderRadius: 26,
+    borderRadius: 22,
+    borderCurve: 'continuous',
     overflow: 'hidden',
     backgroundColor: colors.brand,
     borderWidth: 1,
     borderColor: colors.brandDark,
     ...cardShadow('hero'),
   },
-  passNotch: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 92,
-    height: 92,
-    backgroundColor: colors.brandDark,
-  },
-  passTitle: {
-    paddingTop: 26,
+  passHeader: {
+    minHeight: 94,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
     paddingHorizontal: 20,
-    paddingBottom: 18,
-    textAlign: 'center',
-    color: '#ffffff',
-    fontSize: 19,
-    lineHeight: 24,
-    fontWeight: '500',
+    paddingTop: 18,
+    paddingBottom: 16,
   },
-  passBand: {
-    height: 136,
-    backgroundColor: colors.brandDark,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.brandDeeper,
+  passIdentity: { flex: 1, gap: 3 },
+  passTitle: {
+    color: 'rgba(255,253,247,0.7)',
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.7,
+  },
+  passIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  passAvatarShell: {
-    width: 156,
-    height: 156,
-    borderRadius: 78,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: 'rgba(255,253,247,0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.94)',
-    marginTop: 48,
+    borderColor: 'rgba(255,253,247,0.16)',
   },
   passContent: {
     paddingHorizontal: 20,
-    paddingTop: 92,
+    paddingTop: 0,
     paddingBottom: 20,
     gap: 10,
   },
   passName: {
-    color: '#ffffff',
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '600',
+    color: colors.softWhite,
+    fontFamily: campusFonts.serifSemibold,
+    fontSize: 28,
+    lineHeight: 31,
   },
   barcodeDock: {
     minHeight: 126,
@@ -537,19 +519,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   codeMetaPanel: {
-    borderRadius: 16,
-    padding: 12,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
+    minHeight: 34,
+    gap: 4,
+    paddingHorizontal: 4,
   },
+  codeMetaStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  warningDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.coral },
   codeMeta: {
-    marginTop: 6,
+    flex: 1,
     ...typeScale.caption,
-    color: 'rgba(255,255,255,0.72)',
+    color: 'rgba(255,253,247,0.76)',
   },
   codeRefreshWarning: {
-    marginTop: 6,
+    paddingLeft: 14,
     ...typeScale.caption,
     color: '#ffe0b2',
   },

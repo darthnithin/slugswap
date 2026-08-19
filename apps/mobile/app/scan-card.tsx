@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 import { PDF417Barcode } from '../components/PDF417Barcode';
-import { CrossPlatformSymbol } from '../components/cross-platform-symbol';
 import { supabase } from '@/lib/supabase';
 import {
   checkRedemption,
@@ -13,7 +13,7 @@ import {
   type CheckoutRail,
   type ClaimGenerationFailureReason,
 } from '@/lib/api';
-import { cardShadow, monoFontFamily, stealthTheme, typeScale } from '../lib/stealth-theme';
+import { campusFonts, monoFontFamily, stealthTheme, typeScale } from '../lib/stealth-theme';
 
 interface ClaimCode {
   id: string;
@@ -358,18 +358,43 @@ export default function ScanCardScreen() {
   const claimAmountLabel = currentCode
     ? `${Number.isInteger(currentCode.amount) ? currentCode.amount : currentCode.amount.toFixed(2)} points`
     : null;
+  const claimHeading = loading
+    ? 'Preparing claim'
+    : currentCode
+      ? claimAmountLabel
+      : redemptionMessage
+        ? 'Claim complete'
+        : 'Claim unavailable';
+  const claimEyebrow = loading
+    ? 'Getting things ready'
+    : currentCode
+      ? 'Your meal is ready'
+      : redemptionMessage
+        ? 'All set'
+        : 'Try again in a moment';
+  const claimInstructions = loading
+    ? 'Creating a secure, short-lived checkout code.'
+    : currentCode
+      ? 'Show this barcode at checkout.'
+      : redemptionMessage
+        ? redemptionMessage
+        : 'We could not create a checkout code just yet.';
 
   return (
     <View style={styles.screen}>
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
         <Pressable
-          onPress={() => router.back()}
+          accessibilityLabel="Close meal claim"
+          onPress={() => {
+            if (router.canGoBack()) router.back();
+            else router.replace('/(tabs)/home');
+          }}
           style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.6 : 1 }]}
         >
-          <CrossPlatformSymbol name="chevron.left" tintColor={colors.text} size={18} />
-          <Text style={styles.backLabel}>Back</Text>
+          <Ionicons name="close" color={colors.text} size={20} />
+          <Text style={styles.backLabel}>Close</Text>
         </Pressable>
-        <Text style={styles.topBarTitle}>Scan Card</Text>
+        <Text style={styles.topBarTitle}>Meal claim</Text>
         <View style={styles.topBarSpacer} />
       </View>
 
@@ -378,22 +403,11 @@ export default function ScanCardScreen() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="never"
       >
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>UCSC Dining Services</Text>
-          <View style={styles.cardNotch} />
-          <View style={styles.cardBand} />
+        <Text style={styles.eyebrow}>{claimEyebrow}</Text>
+        <Text accessibilityLiveRegion="polite" style={styles.amount}>{claimHeading}</Text>
+        <Text style={styles.instructions}>{claimInstructions}</Text>
 
-          <View style={styles.profilePanel}>
-            <CrossPlatformSymbol
-              name="person.crop.circle.badge.questionmark"
-              tintColor="rgba(255,255,255,0.92)"
-              size={118}
-            />
-            <View style={styles.profileNameBar}>
-              <Text style={styles.profileName}>{displayName}</Text>
-            </View>
-          </View>
-
+        <View style={styles.barcodeCard}>
           <View style={styles.barcodeDock}>
             {loading ? (
               <View style={styles.barcodePlaceholder}>
@@ -403,33 +417,64 @@ export default function ScanCardScreen() {
               <PDF417Barcode value={currentCode.code} width={300} height={100} />
             ) : (
               <View style={styles.barcodePlaceholder}>
-                <Text style={styles.placeholderText}>{message ?? redemptionMessage ?? 'No active scan card'}</Text>
+                <Text accessibilityLiveRegion="polite" style={styles.placeholderText}>
+                  {message ?? redemptionMessage ?? 'No active scan card'}
+                </Text>
               </View>
             )}
           </View>
+          {currentCode ? <Text style={styles.codeLabel}>{currentCode.code}</Text> : null}
         </View>
 
+        {!loading && !currentCode && message ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Try generating a meal claim again"
+            onPress={() => void loadAndGenerateCode()}
+            style={({ pressed }) => [styles.retryButton, pressed && styles.retryButtonPressed]}
+          >
+            <Ionicons name="refresh" size={18} color={colors.softWhite} />
+            <Text style={styles.retryButtonLabel}>Try again</Text>
+          </Pressable>
+        ) : null}
+
         {currentCode ? (
-          <View style={styles.metaPanel}>
-            <Text selectable style={styles.codeLabel}>
-              {currentCode.code}
-            </Text>
-            <Text style={styles.metaText}>Claim amount: {claimAmountLabel}</Text>
-            <Text style={styles.metaText}>Using {checkoutLabel}</Text>
-            <Text style={styles.metaText}>
-              {currentCode.donorDisplayName
-                ? `Courtesy of ${currentCode.donorDisplayName}`
-                : 'Courtesy of a SlugSwap donor'}
-            </Text>
-            <Text style={styles.metaText}>
-              Expires in {timeRemaining || '0:00'}{refreshingCode ? ' · refreshing' : ''}
-            </Text>
+          <>
+            <View style={styles.railCard}>
+              <View style={styles.railIcon}>
+                <Ionicons name="card-outline" size={22} color={colors.ink} />
+              </View>
+              <View style={styles.railCopy}>
+                <Text style={styles.railLabel}>At checkout, choose</Text>
+                <Text style={styles.railValue}>{checkoutLabel}</Text>
+              </View>
+              <Ionicons name="checkmark-circle" size={24} color={colors.gold} />
+            </View>
+
+            <View style={styles.countdownCard}>
+              <View>
+                <Text style={styles.countdownLabel}>Expires in</Text>
+                <Text style={styles.countdownValue}>
+                  {timeRemaining || '0:00'}{refreshingCode ? ' · refreshing' : ''}
+                </Text>
+              </View>
+              <Ionicons name="time-outline" size={26} color={colors.brand} />
+            </View>
+
+            <View style={styles.donorNote}>
+              <Ionicons name="heart" size={18} color={colors.coral} />
+              <Text style={styles.donorText}>
+                {currentCode.donorDisplayName
+                  ? `Courtesy of ${currentCode.donorDisplayName}`
+                  : `Courtesy of a SlugSwap donor for ${displayName}`}
+              </Text>
+            </View>
             {isBarcodeStale ? (
               <Text accessibilityLiveRegion="polite" style={styles.refreshWarning}>
                 Scan code refresh delayed. Check your connection before scanning.
               </Text>
             ) : null}
-          </View>
+          </>
         ) : null}
       </ScrollView>
     </View>
@@ -441,112 +486,110 @@ const colors = stealthTheme.colors;
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#d4d4d4',
+    backgroundColor: colors.canvas,
   },
   topBar: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.canvas,
     paddingHorizontal: 12,
-    paddingBottom: 12,
+    paddingBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   backButton: {
-    minWidth: 68,
+    minWidth: 76,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
   },
   backLabel: {
     color: colors.text,
     fontSize: 14,
     lineHeight: 18,
+    fontFamily: campusFonts.sansMedium,
   },
   topBarTitle: {
     color: colors.text,
-    fontSize: 18,
+    fontSize: 17,
     lineHeight: 24,
-    fontWeight: '600',
+    fontFamily: campusFonts.sansSemibold,
   },
   topBarSpacer: {
-    width: 68,
+    width: 76,
   },
   scroll: {
     flex: 1,
   },
   content: {
-    paddingHorizontal: 12,
-    paddingTop: 22,
-    paddingBottom: 36,
+    paddingHorizontal: 20,
+    paddingTop: 28,
+    paddingBottom: 44,
   },
-  card: {
-    borderRadius: 22,
-    backgroundColor: colors.brand,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.brandDark,
-    ...cardShadow('hero'),
-  },
-  cardTitle: {
-    paddingTop: 18,
-    paddingBottom: 14,
+  eyebrow: {
+    color: colors.brand,
     textAlign: 'center',
-    color: '#ffffff',
-    fontSize: 19,
-    lineHeight: 24,
-    fontWeight: '500',
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 13,
+    lineHeight: 18,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
-  cardNotch: {
-    position: 'absolute',
-    top: 58,
-    alignSelf: 'center',
-    width: 82,
-    height: 82,
-    backgroundColor: colors.brandDark,
+  amount: {
+    marginTop: 6,
+    textAlign: 'center',
+    color: colors.ink,
+    fontFamily: campusFonts.serifSemibold,
+    fontSize: 48,
+    lineHeight: 54,
   },
-  cardBand: {
-    height: 118,
-    backgroundColor: colors.brandDark,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.brandDeeper,
+  instructions: {
+    marginTop: 4,
+    textAlign: 'center',
+    color: colors.textMuted,
+    fontFamily: campusFonts.sans,
+    fontSize: 15,
+    lineHeight: 21,
   },
-  profilePanel: {
-    marginHorizontal: 18,
-    marginTop: 14,
-    height: 360,
-    borderRadius: 24,
-    backgroundColor: '#d7d7d7',
+  barcodeCard: {
+    marginTop: 28,
+    padding: 14,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  retryButton: {
+    minHeight: 52,
+    marginTop: 16,
+    borderRadius: 14,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
+    gap: 8,
+    backgroundColor: colors.brand,
   },
-  profileNameBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(135, 135, 135, 0.78)',
-    paddingHorizontal: 22,
-    paddingVertical: 16,
+  retryButtonPressed: {
+    opacity: 0.82,
   },
-  profileName: {
-    color: '#ffffff',
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '400',
+  retryButtonLabel: {
+    color: colors.softWhite,
+    fontSize: 16,
+    lineHeight: 21,
+    fontFamily: campusFonts.sansSemibold,
   },
   barcodeDock: {
-    marginHorizontal: 22,
-    marginTop: 16,
-    marginBottom: 20,
-    minHeight: 126,
-    borderRadius: 16,
+    minHeight: 138,
+    borderRadius: 12,
     backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 14,
   },
   barcodePlaceholder: {
     minHeight: 110,
@@ -560,29 +603,95 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
   },
-  metaPanel: {
-    marginTop: 12,
-    borderRadius: 16,
-    padding: 14,
-    backgroundColor: 'rgba(255,255,255,0.88)',
-  },
   codeLabel: {
-    color: colors.text,
+    marginTop: 10,
+    color: colors.textSoft,
+    textAlign: 'center',
+    fontSize: 11,
+    lineHeight: 15,
+    letterSpacing: 1.2,
+    fontFamily: monoFontFamily,
+  },
+  railCard: {
+    marginTop: 16,
+    minHeight: 76,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    backgroundColor: colors.brand,
+  },
+  railIcon: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 13,
+    backgroundColor: colors.gold,
+  },
+  railCopy: {
+    flex: 1,
+    gap: 1,
+  },
+  railLabel: {
+    color: 'rgba(255,253,247,0.72)',
+    fontFamily: campusFonts.sans,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  railValue: {
+    color: colors.softWhite,
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 16,
+    lineHeight: 21,
+  },
+  countdownCard: {
+    marginTop: 12,
+    minHeight: 78,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  countdownLabel: {
+    color: colors.textMuted,
+    fontFamily: campusFonts.sans,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  countdownValue: {
+    color: colors.ink,
+    fontFamily: campusFonts.serifSemibold,
+    fontSize: 30,
+    lineHeight: 34,
+  },
+  donorNote: {
+    marginTop: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+  },
+  donorText: {
+    flexShrink: 1,
+    color: colors.textMuted,
+    textAlign: 'center',
+    fontFamily: campusFonts.sansMedium,
     fontSize: 13,
     lineHeight: 18,
-    letterSpacing: 1.8,
-    fontFamily: monoFontFamily,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  metaText: {
-    ...typeScale.caption,
-    color: colors.textMuted,
-    marginBottom: 4,
   },
   refreshWarning: {
     ...typeScale.caption,
     color: colors.danger,
-    marginTop: 4,
+    marginTop: 12,
+    textAlign: 'center',
   },
 });

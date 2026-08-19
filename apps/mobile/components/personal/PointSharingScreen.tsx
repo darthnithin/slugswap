@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 
-import { useAuth } from '@/lib/auth-context';
 import {
   CrossPlatformSymbol,
   type CrossPlatformSymbolName,
@@ -33,6 +32,7 @@ import {
   type DonorImpact,
   type RequesterPoolStatus,
 } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import {
   useTabCache,
   type GetAccountBalance,
@@ -42,17 +42,16 @@ import {
   enablePushNotificationsAsync,
   scheduleNotificationPreviewAsync,
   syncExistingPushRegistrationAsync,
-  unregisterStoredPushTokenAsync,
 } from '@/lib/notifications';
 import {
   buttonOpacity,
+  campusFonts,
   cardShadow,
   stealthTheme,
   typeScale,
-} from '../../../lib/stealth-theme';
+} from '@/lib/stealth-theme';
 import { useFocusEffect, useRouter } from 'expo-router';
 
-const UCSC_TRACKED_BALANCE_ACCOUNTS = new Set(['flexi dollars', 'banana bucks', 'slug points']);
 const POOL_EMPTY_TITLE = 'No points available';
 const POOL_EMPTY_MESSAGE = 'The shared donor pool is empty right now. Check back later.';
 
@@ -98,17 +97,6 @@ function normalizeDonorImpact(raw: Partial<DonorImpact> | null | undefined): Don
   };
 }
 
-function formatNameFromEmail(email: string | null): string {
-  if (!email) return 'SlugSwap Donor';
-
-  return email
-    .split('@')[0]
-    .split(/[._-]/)
-    .filter(Boolean)
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-    .join(' ');
-}
-
 function SectionCard({
   children,
   style,
@@ -143,21 +131,24 @@ function SectionHeader({
   );
 }
 
-function MetricTile({
+function ImpactMetric({
+  icon,
   label,
   value,
-  emphasized = false,
-  style,
 }: {
+  icon: CrossPlatformSymbolName;
   label: string;
   value: string;
-  emphasized?: boolean;
-  style?: StyleProp<ViewStyle>;
 }) {
   return (
-    <View style={[styles.metricTile, emphasized ? styles.metricTileAccent : null, style]}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={[styles.metricValue, emphasized ? styles.metricValueAccent : null]}>{value}</Text>
+    <View style={styles.impactMetric}>
+      <View style={styles.impactMetricIcon}>
+        <CrossPlatformSymbol name={icon} tintColor={colors.softWhite} size={17} />
+      </View>
+      <View style={styles.impactMetricCopy}>
+        <Text style={styles.impactMetricValue}>{value}</Text>
+        <Text style={styles.impactMetricLabel}>{label}</Text>
+      </View>
     </View>
   );
 }
@@ -181,6 +172,9 @@ function SecondaryButton({
 
   return (
     <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: disabled || loading, busy: loading }}
       onPress={onPress}
       disabled={disabled || loading}
       style={({ pressed }) => [
@@ -215,6 +209,9 @@ function PrimaryButton({
 }) {
   return (
     <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: disabled || loading, busy: loading }}
       onPress={onPress}
       disabled={disabled || loading}
       style={({ pressed }) => [
@@ -232,9 +229,10 @@ function PrimaryButton({
 }
 
 export default function DonorScreen() {
-  const { signOut } = useAuth();
   const router = useRouter();
-  const { shareSnapshot, setShareSnapshot } = useTabCache();
+  const { user } = useAuth();
+  const { shareSnapshot: cachedShareSnapshot, setShareSnapshot } = useTabCache();
+  const shareSnapshot = cachedShareSnapshot?.userId === user?.id ? cachedShareSnapshot : null;
   const hasShareSnapshot = !!shareSnapshot;
 
   const [weeklyAmount, setWeeklyAmount] = useState(shareSnapshot?.weeklyAmount ?? '');
@@ -244,9 +242,6 @@ export default function DonorScreen() {
   const [impact, setImpact] = useState<DonorImpact>(shareSnapshot?.impact ?? EMPTY_IMPACT);
   const [userId, setUserId] = useState<string | null>(shareSnapshot?.userId ?? null);
   const [userEmail, setUserEmail] = useState<string | null>(shareSnapshot?.userEmail ?? null);
-  const [userDisplayName, setUserDisplayName] = useState(
-    formatNameFromEmail(shareSnapshot?.userEmail ?? null)
-  );
   const [isGetLinked, setIsGetLinked] = useState(shareSnapshot?.isGetLinked ?? false);
   const [getLinkedAt, setGetLinkedAt] = useState<string | null>(shareSnapshot?.getLinkedAt ?? null);
   const [getLoginUrlInput, setGetLoginUrlInput] = useState('');
@@ -254,7 +249,6 @@ export default function DonorScreen() {
   const [unlinkingGet, setUnlinkingGet] = useState(false);
   const [refreshingBalance, setRefreshingBalance] = useState(false);
   const [getAccounts, setGetAccounts] = useState<GetAccountBalance[]>(shareSnapshot?.getAccounts ?? []);
-  const [isSigningOut, setIsSigningOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationsSyncing, setNotificationsSyncing] = useState(false);
@@ -264,6 +258,7 @@ export default function DonorScreen() {
   const [requesterPoolStatus, setRequesterPoolStatus] = useState<RequesterPoolStatus>(
     shareSnapshot?.requesterPoolStatus ?? 'unavailable'
   );
+  const [isEditingAmount, setIsEditingAmount] = useState(false);
   const shareSnapshotRef = useRef<ShareTabSnapshot | null>(shareSnapshot);
   const getAccountsRequestIdRef = useRef(0);
   const homeRequestIdRef = useRef(0);
@@ -355,9 +350,6 @@ export default function DonorScreen() {
 
       setUserId(nextSnapshot.userId);
       setUserEmail(nextSnapshot.userEmail);
-      setUserDisplayName(
-        home.user.fullName ?? formatNameFromEmail(home.user.email)
-      );
       setWeeklyAmount(nextSnapshot.weeklyAmount);
       setIsActive(nextSnapshot.isActive);
       setImpact(nextSnapshot.impact);
@@ -426,17 +418,6 @@ export default function DonorScreen() {
     weeklyAmount,
   ]);
 
-  const ucscTrackedAccounts = getAccounts.filter((account) =>
-    UCSC_TRACKED_BALANCE_ACCOUNTS.has(account.accountDisplayName.trim().toLowerCase())
-  );
-  const numericTrackedBalances = ucscTrackedAccounts
-    .map((account) => account.balance)
-    .filter((balance): balance is number => typeof balance === 'number' && !Number.isNaN(balance));
-  const totalAvailableBalance =
-    numericTrackedBalances.length > 0
-      ? numericTrackedBalances.reduce((sum, balance) => sum + balance, 0)
-      : null;
-
   useEffect(() => {
     if (hasShareSnapshot) return;
     void loadUserAndImpact({ showBlockingLoader: true });
@@ -493,19 +474,21 @@ export default function DonorScreen() {
 
   const setLocalNotificationPreference = useCallback(
     (enabled: boolean) => {
-      setImpact((currentImpact) => {
-        const nextImpact = { ...currentImpact, notifyOnSpend: enabled };
-        const currentSnapshot = shareSnapshotRef.current;
-        if (currentSnapshot) {
-          updateShareSnapshot({ ...currentSnapshot, impact: nextImpact });
-        }
-        return nextImpact;
-      });
+      setImpact((currentImpact) => ({ ...currentImpact, notifyOnSpend: enabled }));
+
+      const currentSnapshot = shareSnapshotRef.current;
+      if (currentSnapshot) {
+        updateShareSnapshot({
+          ...currentSnapshot,
+          impact: { ...currentSnapshot.impact, notifyOnSpend: enabled },
+        });
+      }
     },
     [updateShareSnapshot]
   );
 
-  const enableSpendNotifications = useCallback(async () => {
+  const enableSpendNotifications = useCallback(async (options?: { alertOnFailure?: boolean }) => {
+    const alertOnFailure = options?.alertOnFailure ?? true;
     setNotificationsSyncing(true);
     try {
       const result = await enablePushNotificationsAsync();
@@ -517,6 +500,8 @@ export default function DonorScreen() {
       }
 
       setNotificationsEnabled(false);
+      if (!alertOnFailure) return false;
+
       if (result.status === 'denied') {
         Alert.alert(
           'Notifications are off',
@@ -531,7 +516,9 @@ export default function DonorScreen() {
     } catch (error) {
       console.error('Failed to enable spend notifications:', error);
       setNotificationsEnabled(false);
-      Alert.alert('Could not enable notifications', 'Please try again in a moment.');
+      if (alertOnFailure) {
+        Alert.alert('Could not enable notifications', 'Please try again in a moment.');
+      }
       return false;
     } finally {
       setNotificationsSyncing(false);
@@ -571,34 +558,24 @@ export default function DonorScreen() {
 
     invalidateHomeRequests();
     setSaving(true);
+    const wasActive = isActive;
     try {
       await setDonation(amount);
       invalidateHomeRequests();
       setIsActive(true);
+      setIsEditingAmount(false);
       await loadUserAndImpact({ showBlockingLoader: false });
-      if (Platform.OS === 'web') {
+      if (wasActive) {
+        Alert.alert('Contribution updated', `You are now sharing up to ${amount} points each week.`);
+      } else if (Platform.OS === 'web') {
         Alert.alert('Success', 'Your contribution has been set!');
       } else {
+        const notificationsReady = await enableSpendNotifications({ alertOnFailure: false });
         Alert.alert(
           'Sharing started',
-          'Would you like a notification whenever someone spends your donated SlugPoints?',
-          [
-            {
-              text: 'Not now',
-              style: 'cancel',
-              onPress: () => {
-                void updateDonorSpendNotificationPreference(false)
-                  .then(() => setLocalNotificationPreference(false))
-                  .catch((error) => console.warn('Failed to disable notification preference:', error));
-              },
-            },
-            {
-              text: 'Enable',
-              onPress: () => {
-                void enableSpendNotifications();
-              },
-            },
-          ]
+          notificationsReady
+            ? 'Your contribution is active. Spend notifications are on by default.'
+            : 'Your contribution is active. Spend notifications could not be enabled, but you can try again below.'
         );
       }
     } catch (error) {
@@ -679,12 +656,21 @@ export default function DonorScreen() {
       try {
         await unlinkGetAccount();
         invalidateHomeRequests();
+        const pausedImpact: DonorImpact = {
+          ...impact,
+          isActive: false,
+          status: 'paused',
+        };
+        setIsActive(false);
+        setImpact(pausedImpact);
         setIsGetLinked(false);
         setGetLinkedAt(null);
         setGetAccounts([]);
         getAccountsRequestIdRef.current += 1;
         setRefreshingBalance(false);
         cacheShareSnapshot({
+          isActive: false,
+          impact: pausedImpact,
           isGetLinked: false,
           getLinkedAt: null,
           getAccounts: [],
@@ -727,34 +713,28 @@ export default function DonorScreen() {
     await loadGetAccountsInBackground({ alertOnError: true });
   };
 
-  const handleSignOut = async () => {
-    if (isSigningOut) return;
-
-    invalidateHomeRequests();
-    getAccountsRequestIdRef.current += 1;
-    setIsSigningOut(true);
-    try {
-      try {
-        await unregisterStoredPushTokenAsync();
-      } catch (error) {
-        console.warn('Failed to disconnect push notifications during sign out:', error);
-        Alert.alert(
-          'Could not sign out',
-          'SlugSwap could not disconnect notifications from this device. Check your connection and try again.'
-        );
-        return;
-      }
-
-      try {
-        await signOut();
-      } catch (error) {
-        console.warn('Failed to sign out:', error);
-        Alert.alert('Could not sign out', 'Check your connection and try again.');
-      }
-    } finally {
-      setIsSigningOut(false);
-    }
-  };
+  const parsedWeeklyAmount = toSafeNumber(weeklyAmount);
+  const savedWeeklyCap =
+    impact.capAmount > 0
+      ? impact.capAmount
+      : impact.weeklyAmount > 0
+        ? impact.weeklyAmount
+        : 0;
+  const weeklyCap = savedWeeklyCap > 0 ? savedWeeklyCap : parsedWeeklyAmount;
+  const weeklyUsed = Math.max(
+    0,
+    Math.min(weeklyCap, impact.redeemedThisWeek + impact.reservedThisWeek)
+  );
+  const weeklyProgress = weeklyCap > 0 ? Math.min(1, weeklyUsed / weeklyCap) : 0;
+  const hasSavedContribution = savedWeeklyCap > 0;
+  const formattedWeekEnd = requesterWeekEnd
+    ? new Date(requesterWeekEnd).toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        timeZone: impact.timezone,
+      })
+    : null;
 
   if (loading) {
     return (
@@ -769,6 +749,7 @@ export default function DonorScreen() {
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -778,271 +759,309 @@ export default function DonorScreen() {
           />
         }
       >
-        <View style={styles.passCard}>
-          <View style={styles.passNotch} />
-          <Text style={styles.passTitle}>UCSC Dining Services</Text>
-          <View style={styles.passBand}>
-            <View style={styles.passAvatarShell}>
-              <CrossPlatformSymbol
-                name="person.crop.circle.badge.checkmark"
-                tintColor="rgba(255,255,255,0.88)"
-                size={112}
-              />
-            </View>
-          </View>
-          <View style={styles.passContent}>
-            <Text style={styles.passName}>{userDisplayName}</Text>
-
-            {requesterPoolStatus === 'empty' ? (
-              <View style={styles.poolDisabledCard}>
-                <View style={styles.poolDisabledHeader}>
-                  <CrossPlatformSymbol
-                    name="barcode.viewfinder"
-                    tintColor={colors.textSoft}
-                    size={20}
-                  />
-                  <Text style={styles.poolDisabledTitle}>{POOL_EMPTY_TITLE}</Text>
-                </View>
-                <Text style={styles.poolDisabledCopy}>{POOL_EMPTY_MESSAGE}</Text>
-              </View>
-            ) : (
-              <Pressable
-                onPress={() => router.push('/scan-card')}
-                style={({ pressed }) => [
-                  styles.passActionPill,
-                  { opacity: buttonOpacity(pressed, false) },
-                ]}
-              >
-                <CrossPlatformSymbol
-                  name="barcode.viewfinder"
-                  tintColor="#ffffff"
-                  size={22}
-                />
-                <Text style={styles.passActionText}>Scan Card</Text>
-              </Pressable>
-            )}
-          </View>
-        </View>
-        <SectionCard>
-          <SectionHeader
-          icon={{ios: 'chart.pie', android: 'clock_loader_40', web: 'clock_loader_40'}}
-            title="Allowance"
-
-          />
-          <View style={styles.balanceHero}>
-            <Text style={styles.balanceHeroLabel}>Weekly allowance</Text>
-            <Text style={styles.balanceHeroValue}>{requesterWeeklyLimit} pts</Text>
-            <Text style={styles.balanceHeroMeta}>
-              Resets in {requesterDaysUntilReset} {requesterDaysUntilReset === 1 ? 'day' : 'days'} on{' '}
-              {requesterWeekEnd ? new Date(requesterWeekEnd).toLocaleDateString('en-US', {
-                weekday: 'short',
-                month: 'short',
-                day: 'numeric',
-                timeZone: impact.timezone
-              }) : null}
-
+        <View style={styles.intro}>
+          <Text style={styles.pageEyebrow}>Student to student</Text>
+          <Text style={styles.pageTitle}>Point sharing</Text>
+          <Text style={styles.pageIntro}>
+            Set aside a few dining points each week. SlugSwap quietly puts them to work when another student needs a meal.
+          </Text>
+          <View style={[styles.statusPill, !isActive && styles.statusPillPaused]}>
+            <CrossPlatformSymbol
+              name={isActive ? 'person.crop.circle.badge.checkmark' : 'pause.fill'}
+              tintColor={colors.forest}
+              size={17}
+            />
+            <Text style={styles.statusPillText}>
+              {isActive ? 'Sharing is active' : hasSavedContribution ? 'Sharing is paused' : 'Ready when you are'}
             </Text>
           </View>
-        </SectionCard>
-        <SectionCard>
-          <SectionHeader
-            icon={{ios: 'wallet.pass', android: 'account_balance_wallet', web: 'account_balance_wallet'}}
-            title="GET Balances"
-            detail={isGetLinked ? 'Your live GET balances' : 'Connect GET to sync campus balances'}
-          />
+        </View>
 
-          {isGetLinked ? (
-            <>
-              <View style={styles.balanceHero}>
-                <Text style={styles.balanceHeroLabel}>Total available</Text>
-                <Text style={styles.balanceHeroValue}>
-                  {totalAvailableBalance === null ? 'n/a' : `${totalAvailableBalance.toFixed(2)} pts`}
-                </Text>
-                <Text style={styles.balanceHeroMeta}>
-                  {refreshingBalance
-                    ? 'Refreshing balances...'
-                    : getLinkedAt
-                      ? `Linked ${new Date(getLinkedAt).toLocaleDateString()}`
-                      : 'Linked'}
-                </Text>
-              </View>
-
-              {ucscTrackedAccounts.length > 0 ? (
-                <View style={styles.metricGrid}>
-                  {ucscTrackedAccounts.map((account) => (
-                    <MetricTile
-                      key={account.id}
-                      label={account.accountDisplayName}
-                      value={`${typeof account.balance === 'number' ? account.balance.toFixed(2) : 'n/a'} pts`}
-                    />
-                  ))}
-                </View>
-              ) : (
-                <View style={styles.emptyState}>
-                  {refreshingBalance ? <ActivityIndicator size="small" color={colors.brand} /> : null}
-                  <Text style={styles.emptyCopy}>
-                    {refreshingBalance
-                      ? 'Refreshing campus balances...'
-                      : 'Linked successfully, but GET did not return the tracked UCSC account balances yet.'}
-                  </Text>
-                </View>
-              )}
-
-              <View style={styles.buttonRow}>
-                <SecondaryButton
-                  label="Refresh Balance"
-                  onPress={() => {
-                    void handleRefreshBalance();
-                  }}
-                  icon="arrow.clockwise"
-                  loading={refreshingBalance}
-                />
-                <SecondaryButton
-                  label="Unlink GET"
-                  onPress={handleUnlinkGet}
-                  destructive
-                  loading={unlinkingGet}
-                />
-              </View>
-            </>
-          ) : (
+        {!isGetLinked ? (
+          <SectionCard style={styles.getRequiredCard}>
+            <SectionHeader
+              icon="wallet.pass"
+              title="Connect GET to share"
+              detail="SlugSwap needs a linked campus account before your points can fund a claim."
+            />
             <View style={styles.connectBlock}>
-              <Text style={styles.connectCopy}>
-                Continue to GET, sign in, then paste the validated URL back here to finish linking your donor pass.
-              </Text>
-
+              <View style={styles.connectSteps}>
+                <Text style={styles.connectStep}>1. Open GET and sign in.</Text>
+                <Text style={styles.connectStep}>2. Paste the validated URL below.</Text>
+              </View>
               <View style={styles.buttonRow}>
                 <SecondaryButton
-                  label="Open GET Login"
+                  label="Open GET login"
                   onPress={() => {
                     void handleOpenGetLogin();
                   }}
                   icon="arrow.up.right"
                 />
               </View>
-
               <TextInput
                 style={styles.input}
                 value={getLoginUrlInput}
                 onChangeText={setGetLoginUrlInput}
-                placeholder="Paste validated GET URL here"
+                placeholder="Paste validated GET URL"
                 placeholderTextColor={colors.textSoft}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-
               <PrimaryButton
-                label="Link from Pasted URL"
+                label="Finish connecting"
                 onPress={() => {
                   void handleLinkGet();
                 }}
                 loading={linkingGet}
               />
             </View>
-          )}
+          </SectionCard>
+        ) : null}
+
+        <SectionCard style={styles.impactCard}>
+          <Text style={styles.cardEyebrow}>Your weekly impact</Text>
+          <View style={styles.impactHero}>
+            <Text style={styles.impactNumber}>{impact.peopleHelped}</Text>
+            <Text style={styles.impactPhrase}>
+              {impact.peopleHelped === 1 ? 'person helped' : 'people helped'}
+            </Text>
+          </View>
+          <View style={styles.impactMetrics}>
+            <ImpactMetric
+              icon="heart.text.square"
+              value={`${weeklyCap.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts`}
+              label="each week"
+            />
+            <View style={styles.metricDivider} />
+            <ImpactMetric
+              icon="person.crop.circle"
+              value={`${impact.remainingThisWeek.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts`}
+              label="remaining"
+            />
+          </View>
+          <View style={styles.progressBlock}>
+            <View style={styles.progressLabels}>
+              <Text style={styles.progressLabel}>This week</Text>
+              <Text style={styles.progressValue}>
+                {weeklyUsed.toLocaleString('en-US', { maximumFractionDigits: 2 })} of{' '}
+                {weeklyCap.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts in use
+              </Text>
+            </View>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${weeklyProgress * 100}%` }]} />
+            </View>
+            <Text style={styles.progressFootnote}>
+              Includes redeemed and currently reserved points.
+            </Text>
+          </View>
         </SectionCard>
+
+        <Pressable
+          accessibilityLabel={
+            requesterPoolStatus === 'empty' ? POOL_EMPTY_TITLE : 'Request a meal'
+          }
+          accessibilityRole="button"
+          accessibilityState={{ disabled: requesterPoolStatus === 'empty' }}
+          disabled={requesterPoolStatus === 'empty'}
+          onPress={() => router.push('/scan-card')}
+          style={({ pressed }) => [
+            styles.requestMealCard,
+            requesterPoolStatus === 'empty' && styles.requestMealCardDisabled,
+            { opacity: buttonOpacity(pressed, requesterPoolStatus === 'empty') },
+          ]}
+        >
+          <View style={styles.requestMealIcon}>
+            <CrossPlatformSymbol name="barcode.viewfinder" tintColor={colors.ink} size={23} />
+          </View>
+          <View style={styles.requestMealCopy}>
+            <Text style={styles.requestMealTitle}>
+              {requesterPoolStatus === 'empty' ? POOL_EMPTY_TITLE : 'Request a meal'}
+            </Text>
+            <Text style={styles.requestMealDetail}>
+              {requesterPoolStatus === 'empty'
+                ? POOL_EMPTY_MESSAGE
+                : requesterWeeklyLimit > 0
+                  ? `Claim up to ${requesterWeeklyLimit} points · resets${formattedWeekEnd ? ` ${formattedWeekEnd}` : ` in ${requesterDaysUntilReset} days`}`
+                  : 'Generate a short-lived claim code for checkout.'}
+            </Text>
+          </View>
+          {requesterPoolStatus !== 'empty' ? (
+            <CrossPlatformSymbol name="arrow.up.right" tintColor={colors.ink} size={18} />
+          ) : null}
+        </Pressable>
 
         {isGetLinked ? (
           <SectionCard>
             <SectionHeader
               icon="heart.text.square"
-              title={isActive ? 'Sharing Settings' : 'Start Sharing'}
-              detail={
-                isActive
-                  ? 'Control your weekly contribution and donor status'
-                  : 'Set the weekly amount you want to contribute'
-              }
+              title="Weekly contribution"
+              detail="Choose a limit that feels comfortable. You stay in control."
             />
 
-            {!isActive ? (
-              <>
-                <Text style={styles.formLabel}>Weekly amount (points)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={weeklyAmount}
-                  onChangeText={setWeeklyAmount}
-                  keyboardType="numeric"
-                  placeholder="e.g. 100"
-                  placeholderTextColor={colors.textSoft}
-                />
+            {hasSavedContribution ? (
+              <View style={styles.currentContribution}>
+                <Text style={styles.currentContributionLabel}>Current amount</Text>
+                <Text style={styles.currentContributionValue}>
+                  {weeklyCap.toLocaleString('en-US', { maximumFractionDigits: 2 })}{' '}
+                  <Text style={styles.currentContributionUnit}>pts / week</Text>
+                </Text>
+              </View>
+            ) : null}
+
+            {isEditingAmount || !hasSavedContribution ? (
+              <View style={styles.amountEditor}>
+                <Text style={styles.formLabel}>Weekly amount</Text>
+                <View style={styles.amountInputRow}>
+                  <TextInput
+                    accessibilityLabel="Weekly contribution amount"
+                    style={styles.amountInput}
+                    value={weeklyAmount}
+                    onChangeText={setWeeklyAmount}
+                    keyboardType="decimal-pad"
+                    placeholder="100"
+                    placeholderTextColor={colors.textSoft}
+                    selectTextOnFocus
+                  />
+                  <Text style={styles.amountSuffix}>points</Text>
+                </View>
                 <PrimaryButton
-                  label="Start Sharing"
+                  label={isActive ? 'Save amount' : 'Start sharing'}
                   onPress={() => {
                     void handleSetContribution();
                   }}
                   loading={saving}
                 />
-              </>
+                {hasSavedContribution ? (
+                  <Pressable
+                    accessibilityLabel="Cancel editing weekly amount"
+                    accessibilityRole="button"
+                    onPress={() => setIsEditingAmount(false)}
+                    style={({ pressed }) => [{ opacity: buttonOpacity(pressed) }]}
+                  >
+                    <Text style={styles.cancelEditText}>Cancel</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             ) : (
-              <>
-                <View style={styles.metricGrid}>
-                  <MetricTile label="People helped" value={String(impact.peopleHelped)} emphasized />
-                  <MetricTile label="Points / week" value={`${weeklyAmount || '0'} pts`} />
-                  <MetricTile label="Redeemed" value={`${impact.redeemedThisWeek.toFixed(2)} pts`} />
-                  <MetricTile label="Reserved" value={`${impact.reservedThisWeek.toFixed(2)} pts`} />
-                </View>
+              <View style={styles.contributionActions}>
+                <PrimaryButton
+                  label={isActive ? 'Change amount' : 'Resume sharing'}
+                  onPress={() => {
+                    if (isActive) setIsEditingAmount(true);
+                    else void handlePause();
+                  }}
+                  loading={saving}
+                />
+                {!isActive ? (
+                  <Pressable
+                    accessibilityLabel="Change weekly amount before resuming"
+                    accessibilityRole="button"
+                    onPress={() => setIsEditingAmount(true)}
+                    style={({ pressed }) => [{ opacity: buttonOpacity(pressed) }]}
+                  >
+                    <Text style={styles.editAmountText}>Change amount first</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            )}
 
-                <View style={styles.capCard}>
-                  <View style={styles.capRow}>
-                    <Text style={styles.capLabel}>Weekly cap</Text>
-                    <Text style={styles.capValue}>{impact.capAmount.toFixed(2)} pts</Text>
-                  </View>
-                  <View style={styles.capRow}>
-                    <Text style={styles.capLabel}>Remaining</Text>
-                    <Text style={[styles.capValue, impact.capReached ? styles.negativeValue : styles.positiveValue]}>
-                      {impact.remainingThisWeek.toFixed(2)} pts
-                    </Text>
-                  </View>
-                  <Text style={styles.capFootnote}>Tracking week in {impact.timezone}</Text>
-                </View>
+            {hasSavedContribution ? (
+              <>
+                <View style={styles.rule} />
 
                 <View style={styles.notificationRow}>
+                  <View style={styles.notificationIcon}>
+                    <CrossPlatformSymbol name="bell.fill" tintColor={colors.ink} size={20} />
+                  </View>
                   <View style={styles.notificationCopy}>
                     <Text style={styles.notificationTitle}>Spend notifications</Text>
                     <Text style={styles.notificationDetail}>
-                      {notificationsEnabled
-                        ? 'You will know when your donated points help someone.'
-                        : 'Enable alerts when someone spends your donated points.'}
+                      Get a quiet heads-up when your points help someone.
                     </Text>
                   </View>
                   {notificationsSyncing ? (
-                    <ActivityIndicator size="small" color={colors.brand} />
+                    <ActivityIndicator size="small" color={colors.forest} />
                   ) : (
                     <Switch
+                      accessibilityLabel="Spend notifications"
                       value={notificationsEnabled}
                       onValueChange={(enabled) => {
                         void handleNotificationToggle(enabled);
                       }}
-                      trackColor={{ false: colors.borderStrong, true: colors.brand }}
+                      trackColor={{ false: colors.borderStrong, true: colors.forest }}
+                      thumbColor={colors.softWhite}
                     />
                   )}
                 </View>
-
-                <View style={styles.buttonRow}>
-                  <SecondaryButton
-                    label={isActive ? 'Pause Sharing' : 'Resume Sharing'}
-                    onPress={() => {
-                      void handlePause();
-                    }}
-                    icon={isActive ? 'pause.fill' : 'play.fill'}
-                    loading={saving}
-                  />
-                </View>
               </>
-            )}
+            ) : null}
+
+            {hasSavedContribution ? (
+              <View style={styles.buttonRow}>
+                <SecondaryButton
+                  label={isActive ? 'Pause sharing' : 'Resume sharing'}
+                  onPress={() => {
+                    void handlePause();
+                  }}
+                  icon={isActive ? 'pause.fill' : 'play.fill'}
+                  destructive={isActive}
+                  loading={saving}
+                />
+              </View>
+            ) : null}
+          </SectionCard>
+        ) : null}
+
+        {isGetLinked ? (
+          <SectionCard style={styles.getConnectionCard}>
+            <View style={styles.getConnectionRow}>
+              <View style={styles.getConnectedIcon}>
+                <CrossPlatformSymbol
+                  name="person.crop.circle.badge.checkmark"
+                  tintColor={colors.softWhite}
+                  size={22}
+                />
+              </View>
+              <View style={styles.getConnectionCopy}>
+                <Text style={styles.getConnectionTitle}>GET connected</Text>
+                <Text style={styles.getConnectionDetail}>
+                  {refreshingBalance
+                    ? 'Checking your connection…'
+                    : getLinkedAt
+                      ? `Linked ${new Date(getLinkedAt).toLocaleDateString()}`
+                      : 'Ready to fund meal claims'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.buttonRow}>
+              <SecondaryButton
+                label="Refresh connection"
+                onPress={() => {
+                  void handleRefreshBalance();
+                }}
+                icon="arrow.clockwise"
+                loading={refreshingBalance}
+              />
+              <SecondaryButton
+                label="Unlink GET"
+                onPress={handleUnlinkGet}
+                destructive
+                loading={unlinkingGet}
+              />
+            </View>
           </SectionCard>
         ) : null}
 
         {__DEV__ && Platform.OS !== 'web' ? (
-          <SectionCard>
+          <SectionCard style={styles.devCard}>
             <SectionHeader
               icon="bell.fill"
-              title="Notification Test"
-              detail="Development builds only"
+              title="Notification preview"
+              detail="Only shown in development builds"
             />
             <View style={styles.buttonRow}>
               <SecondaryButton
-                label="Send Test Notification"
+                label="Send test notification"
                 icon="bell.fill"
                 onPress={() => {
                   void scheduleNotificationPreviewAsync(
@@ -1059,16 +1078,6 @@ export default function DonorScreen() {
             </View>
           </SectionCard>
         ) : null}
-
-        <Pressable
-          onPress={() => {
-            void handleSignOut();
-          }}
-          disabled={isSigningOut}
-          style={({ pressed }) => [{ opacity: buttonOpacity(pressed, isSigningOut) }]}
-        >
-          <Text style={styles.logoutText}>{isSigningOut ? 'Signing out...' : 'Log out'}</Text>
-        </Pressable>
       </ScrollView>
     </View>
   );
@@ -1082,9 +1091,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
   },
   content: {
-    padding: 18,
-    gap: 18,
-    paddingBottom: 36,
+    width: '100%',
+    maxWidth: 620,
+    alignSelf: 'center',
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    gap: 16,
+    paddingBottom: 40,
   },
   loadingScreen: {
     flex: 1,
@@ -1092,133 +1105,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.canvas,
   },
-  passCard: {
-    borderRadius: 26,
-    overflow: 'hidden',
-    backgroundColor: colors.brand,
-    borderWidth: 1,
-    borderColor: colors.brandDark,
-    ...cardShadow('hero'),
-  },
-  passNotch: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 92,
-    height: 92,
-    backgroundColor: colors.brandDark,
-  },
-  passTitle: {
-    paddingTop: 26,
-    paddingHorizontal: 20,
-    paddingBottom: 18,
-    textAlign: 'center',
-    color: '#ffffff',
-    fontSize: 19,
-    lineHeight: 24,
-    fontWeight: '500',
-  },
-  passBand: {
-    height: 136,
-    backgroundColor: colors.brandDark,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.brandDeeper,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  passAvatarShell: {
-    width: 156,
-    height: 156,
-    borderRadius: 78,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.94)',
-    marginTop: 48,
-  },
-  passContent: {
-    paddingHorizontal: 20,
-    paddingTop: 94,
-    paddingBottom: 20,
-    gap: 12,
-  },
-  passName: {
-    color: '#ffffff',
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '500',
-  },
-  poolDisabledCard: {
-    minHeight: 62,
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: '#edf1f4',
-    borderWidth: 1,
-    borderColor: '#d5dde5',
-    gap: 8,
-    justifyContent: 'center',
-  },
-  poolDisabledHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  poolDisabledTitle: {
-    color: colors.textMuted,
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: '700',
-  },
-  poolDisabledCopy: {
-    color: colors.textSoft,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  passActionPill: {
-    marginTop: 2,
-    minHeight: 62,
-    borderRadius: 18,
-    backgroundColor: colors.brandDark,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingHorizontal: 16,
-  },
-  passActionText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '500',
-  },
   sectionCard: {
-    borderRadius: 24,
-    paddingTop: 14,
-    paddingBottom: 18,
+    borderRadius: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     ...cardShadow(),
   },
   sectionHeader: {
-    paddingHorizontal: 18,
-    paddingBottom: 14,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.surfaceStrong,
   },
   sectionHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 11,
   },
   sectionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.sage,
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -1227,82 +1140,21 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   sectionTitle: {
-    fontSize: 19,
-    lineHeight: 24,
-    fontWeight: '700',
-    color: colors.text,
+    fontSize: 18,
+    lineHeight: 23,
+    fontFamily: campusFonts.sansSemibold,
+    color: colors.ink,
   },
   sectionDetail: {
     ...typeScale.caption,
     color: colors.textMuted,
   },
-  balanceHero: {
-    marginHorizontal: 18,
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 18,
-    backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  balanceHeroLabel: {
-    ...typeScale.caption,
-    color: colors.textMuted,
-  },
-  balanceHeroValue: {
-    marginTop: 4,
-    color: colors.brand,
-    fontSize: 30,
-    lineHeight: 34,
-    fontWeight: '700',
-  },
-  balanceHeroMeta: {
-    marginTop: 4,
-    ...typeScale.caption,
-    color: colors.textSoft,
-  },
-  metricGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    paddingHorizontal: 18,
-    paddingTop: 16,
-  },
-  metricTile: {
-    minWidth: '47%',
-    flexGrow: 1,
-    borderRadius: 16,
-    padding: 14,
-    backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 8,
-  },
-  metricTileAccent: {
-    backgroundColor: colors.accentMuted,
-    borderColor: '#c5d6ff',
-  },
-  metricLabel: {
-    ...typeScale.caption,
-    color: colors.textMuted,
-    textTransform: 'none',
-    letterSpacing: 0,
-  },
-  metricValue: {
-    color: colors.text,
-    fontSize: 24,
-    lineHeight: 28,
-    fontWeight: '700',
-  },
-  metricValueAccent: {
-    color: colors.brand,
-  },
   buttonRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-    paddingHorizontal: 18,
-    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingTop: 14,
   },
   secondaryButton: {
     minHeight: 48,
@@ -1311,16 +1163,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     paddingHorizontal: 16,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceMuted,
+    borderRadius: 14,
+    backgroundColor: colors.softWhite,
     borderWidth: 1,
     borderColor: colors.border,
     flexGrow: 1,
   },
   secondaryButtonLabel: {
-    color: colors.brand,
-    fontSize: 15,
-    fontWeight: '700',
+    color: colors.forest,
+    fontSize: 14,
+    fontFamily: campusFonts.sansSemibold,
   },
   destructiveLabel: {
     color: colors.danger,
@@ -1329,124 +1181,408 @@ const styles = StyleSheet.create({
     minHeight: 52,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
-    backgroundColor: colors.brand,
-    marginHorizontal: 18,
-    marginTop: 16,
+    borderRadius: 14,
+    backgroundColor: colors.forest,
+    marginHorizontal: 16,
+    marginTop: 14,
   },
   primaryButtonLabel: {
-    color: '#ffffff',
+    color: colors.softWhite,
     fontSize: 16,
-    fontWeight: '700',
+    fontFamily: campusFonts.sansSemibold,
   },
   connectBlock: {
-    paddingTop: 16,
-    gap: 12,
-  },
-  connectCopy: {
-    paddingHorizontal: 18,
-    ...typeScale.body,
-    color: colors.textMuted,
+    paddingTop: 14,
+    gap: 10,
   },
   input: {
-    marginHorizontal: 18,
+    marginHorizontal: 16,
     minHeight: 50,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceMuted,
+    borderRadius: 14,
+    backgroundColor: colors.softWhite,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    color: colors.text,
+    color: colors.ink,
     fontSize: 15,
+    fontFamily: campusFonts.sans,
   },
   formLabel: {
-    paddingHorizontal: 18,
-    paddingTop: 16,
+    paddingHorizontal: 16,
     ...typeScale.caption,
     color: colors.textMuted,
   },
-  emptyState: {
-    marginHorizontal: 18,
-    marginTop: 16,
-    borderRadius: 18,
-    padding: 16,
-    backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 8,
-  },
-  emptyCopy: {
-    ...typeScale.body,
-    color: colors.textMuted,
-  },
-  capCard: {
-    marginHorizontal: 18,
-    marginTop: 16,
-    borderRadius: 18,
-    padding: 16,
-    backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 10,
-  },
   notificationRow: {
-    marginHorizontal: 18,
-    marginTop: 16,
-    minHeight: 72,
-    padding: 14,
-    borderRadius: 18,
-    backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
+    marginHorizontal: 16,
+    minHeight: 76,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
   },
   notificationCopy: {
     flex: 1,
     gap: 3,
   },
   notificationTitle: {
-    color: colors.text,
+    color: colors.ink,
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: '700',
+    fontFamily: campusFonts.sansSemibold,
   },
   notificationDetail: {
     ...typeScale.caption,
     color: colors.textMuted,
   },
-  capRow: {
+  intro: {
+    paddingHorizontal: 2,
+    paddingTop: 4,
+    paddingBottom: 2,
+    gap: 7,
+  },
+  pageEyebrow: {
+    color: colors.forest,
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+  pageTitle: {
+    color: colors.ink,
+    fontFamily: campusFonts.serifSemibold,
+    fontSize: 43,
+    lineHeight: 47,
+    letterSpacing: -0.8,
+  },
+  pageIntro: {
+    maxWidth: 500,
+    color: colors.textMuted,
+    fontFamily: campusFonts.sans,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  statusPill: {
+    alignSelf: 'flex-start',
+    minHeight: 40,
+    marginTop: 5,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    backgroundColor: colors.sage,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statusPillPaused: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  statusPillText: {
+    color: colors.ink,
+    fontFamily: campusFonts.sansMedium,
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  getRequiredCard: {
+    borderColor: '#DDB32D',
+    backgroundColor: '#FFFAE9',
+  },
+  connectSteps: {
+    paddingHorizontal: 16,
+    gap: 5,
+  },
+  connectStep: {
+    color: colors.textMuted,
+    fontFamily: campusFonts.sans,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  impactCard: {
+    paddingTop: 20,
+    paddingBottom: 20,
+  },
+  cardEyebrow: {
+    paddingHorizontal: 20,
+    color: colors.textMuted,
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  impactHero: {
+    paddingHorizontal: 20,
+    paddingTop: 5,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexWrap: 'wrap',
+    gap: 9,
+  },
+  impactNumber: {
+    color: colors.forest,
+    fontFamily: campusFonts.serif,
+    fontSize: 62,
+    lineHeight: 68,
+    letterSpacing: -1.4,
+    fontVariant: ['tabular-nums'],
+  },
+  impactPhrase: {
+    color: colors.forest,
+    fontFamily: campusFonts.serif,
+    fontSize: 29,
+    lineHeight: 35,
+    letterSpacing: -0.4,
+  },
+  impactMetrics: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  impactMetric: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  impactMetricIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.forest,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  impactMetricCopy: {
+    flex: 1,
+  },
+  impactMetricValue: {
+    color: colors.ink,
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 16,
+    lineHeight: 21,
+    fontVariant: ['tabular-nums'],
+  },
+  impactMetricLabel: {
+    color: colors.textMuted,
+    fontFamily: campusFonts.sans,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  metricDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 38,
+    marginHorizontal: 14,
+    backgroundColor: colors.borderStrong,
+  },
+  progressBlock: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    gap: 8,
+  },
+  progressLabels: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
   },
-  capLabel: {
-    ...typeScale.caption,
+  progressLabel: {
+    color: colors.ink,
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 13,
+  },
+  progressValue: {
+    flex: 1,
+    textAlign: 'right',
     color: colors.textMuted,
-  },
-  capValue: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '700',
+    fontFamily: campusFonts.sans,
+    fontSize: 12,
     fontVariant: ['tabular-nums'],
   },
-  positiveValue: {
-    color: colors.success,
+  progressTrack: {
+    height: 13,
+    overflow: 'hidden',
+    borderRadius: 999,
+    backgroundColor: colors.sage,
   },
-  negativeValue: {
-    color: colors.danger,
+  progressFill: {
+    height: '100%',
+    minWidth: 4,
+    borderRadius: 999,
+    backgroundColor: colors.forest,
   },
-  capFootnote: {
-    ...typeScale.caption,
+  progressFootnote: {
     color: colors.textSoft,
+    fontFamily: campusFonts.sans,
+    fontSize: 11,
+    lineHeight: 15,
   },
-  logoutText: {
+  requestMealCard: {
+    minHeight: 92,
+    padding: 15,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+    backgroundColor: colors.gold,
+    borderWidth: 1,
+    borderColor: '#DDAE16',
+    ...cardShadow(),
+  },
+  requestMealCardDisabled: {
+    backgroundColor: colors.surfaceStrong,
+    borderColor: colors.border,
+  },
+  requestMealIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 253, 247, 0.72)',
+  },
+  requestMealCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  requestMealTitle: {
+    color: colors.ink,
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 17,
+    lineHeight: 22,
+  },
+  requestMealDetail: {
+    color: colors.ink,
+    fontFamily: campusFonts.sans,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  currentContribution: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 3,
+  },
+  currentContributionLabel: {
+    color: colors.textMuted,
+    fontFamily: campusFonts.sansMedium,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  currentContributionValue: {
+    color: colors.forest,
+    fontFamily: campusFonts.serifSemibold,
+    fontSize: 34,
+    lineHeight: 39,
+    fontVariant: ['tabular-nums'],
+  },
+  currentContributionUnit: {
+    fontFamily: campusFonts.sansMedium,
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  amountEditor: {
+    paddingTop: 15,
+    paddingBottom: 2,
+  },
+  amountInputRow: {
+    minHeight: 56,
+    marginHorizontal: 16,
+    marginTop: 7,
+    paddingHorizontal: 15,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.softWhite,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  amountInput: {
+    flex: 1,
+    paddingVertical: 10,
+    color: colors.ink,
+    fontFamily: campusFonts.serifSemibold,
+    fontSize: 27,
+    fontVariant: ['tabular-nums'],
+  },
+  amountSuffix: {
+    color: colors.textMuted,
+    fontFamily: campusFonts.sansMedium,
+    fontSize: 14,
+  },
+  cancelEditText: {
+    paddingTop: 12,
+    paddingBottom: 2,
     textAlign: 'center',
-    color: colors.danger,
-    fontSize: 15,
-    fontWeight: '600',
-    paddingVertical: 6,
+    color: colors.textMuted,
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 14,
+  },
+  contributionActions: {
+    paddingTop: 2,
+  },
+  editAmountText: {
+    paddingTop: 12,
+    textAlign: 'center',
+    color: colors.forest,
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 14,
+  },
+  rule: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 16,
+    marginVertical: 16,
+    backgroundColor: colors.border,
+  },
+  notificationIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.sage,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  getConnectionCard: {
+    paddingTop: 16,
+  },
+  getConnectionRow: {
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  getConnectedIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.forest,
+  },
+  getConnectionCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  getConnectionTitle: {
+    color: colors.ink,
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 16,
+    lineHeight: 21,
+  },
+  getConnectionDetail: {
+    color: colors.textMuted,
+    fontFamily: campusFonts.sans,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  devCard: {
+    opacity: 0.82,
   },
 });

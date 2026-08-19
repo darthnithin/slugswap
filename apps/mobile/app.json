@@ -2,35 +2,35 @@
   "expo": {
     "name": "SlugSwap",
     "slug": "slugswap",
-    "version": "1.2.2",
+    "version": "2.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/src/brand/slug-swap-app-icon-1024.png",
     "userInterfaceStyle": "light",
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/src/brand/slug-swap-mark-1024.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#F6F1E5"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.slugswap",
-      "buildNumber": "55",
+      "buildNumber": "56",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#111217"
+        "foregroundImage": "./assets/src/brand/slug-swap-mark-1024.png",
+        "backgroundColor": "#F6F1E5"
       },
       "package": "com.anonymous.slugswap"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/src/brand/slug-swap-app-icon-1024.png"
     },
     "experiments": {
       "baseUrl": "/app",

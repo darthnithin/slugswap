@@ -2,15 +2,22 @@ import { View, ActivityIndicator, Text, StyleSheet, Pressable } from 'react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { getSafePostAuthRoute } from '@/lib/auth-navigation';
 import { supabase } from '@/lib/supabase';
+import { campusFonts, stealthTheme } from '@/lib/stealth-theme';
 
 export default function AuthCallback() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ error?: string | string[]; error_description?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    error?: string | string[];
+    error_description?: string | string[];
+    next?: string | string[];
+  }>();
   const [message, setMessage] = useState('Completing sign in...');
   const [showRetry, setShowRetry] = useState(false);
   const redirectedRef = useRef(false);
+  const postAuthRoute = getSafePostAuthRoute(params.next);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,7 +35,7 @@ export default function AuthCallback() {
       fallbackTimer = setTimeout(() => {
         if (cancelled || redirectedRef.current) return;
         redirectedRef.current = true;
-        router.replace('/auth/sign-in');
+        router.replace({ pathname: '/auth/sign-in', params: { next: postAuthRoute } });
       }, delayMs);
     };
 
@@ -59,7 +66,7 @@ export default function AuthCallback() {
         hardStopTimer = setTimeout(() => {
           if (cancelled || redirectedRef.current) return;
           redirectedRef.current = true;
-          router.replace('/auth/sign-in');
+          router.replace({ pathname: '/auth/sign-in', params: { next: postAuthRoute } });
         }, maxCallbackMs);
 
         if (typeof window !== 'undefined') {
@@ -97,7 +104,7 @@ export default function AuthCallback() {
             if (redirectedRef.current) return;
             redirectedRef.current = true;
             if (hardStopTimer) clearTimeout(hardStopTimer);
-            router.replace('/(tabs)/(share)');
+            router.replace(postAuthRoute);
             return;
           }
           await new Promise((resolve) => setTimeout(resolve, 250));
@@ -116,7 +123,7 @@ export default function AuthCallback() {
       if (fallbackTimer) clearTimeout(fallbackTimer);
       if (hardStopTimer) clearTimeout(hardStopTimer);
     };
-  }, [params.error, params.error_description, router]);
+  }, [params.error, params.error_description, postAuthRoute, router]);
 
   return (
     <View
@@ -126,10 +133,14 @@ export default function AuthCallback() {
       ]}
     >
       <View style={styles.content}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color={colors.brand} />
         <Text style={styles.text}>{message}</Text>
         {showRetry ? (
-          <Pressable onPress={() => router.replace('/auth/sign-in')} style={styles.retryButton}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.replace({ pathname: '/auth/sign-in', params: { next: postAuthRoute } })}
+            style={styles.retryButton}
+          >
             <Text style={styles.retryText}>Back to Sign In</Text>
           </Pressable>
         ) : null}
@@ -141,7 +152,7 @@ export default function AuthCallback() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: stealthTheme.colors.canvas,
   },
   content: {
     flex: 1,
@@ -151,18 +162,21 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 16,
-    color: '#666',
+    fontFamily: campusFonts.sansMedium,
+    color: stealthTheme.colors.textMuted,
   },
   retryButton: {
     marginTop: 8,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: '#007AFF',
+    backgroundColor: stealthTheme.colors.brand,
   },
   retryText: {
     color: '#fff',
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: campusFonts.sansSemibold,
   },
 });
+
+const colors = stealthTheme.colors;

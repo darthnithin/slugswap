@@ -1,7 +1,7 @@
-import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { TabCacheProvider } from '@/lib/tab-cache-context';
-import { GetMobileTabBar } from '../../components/GetMobileTabBar';
+import { Tabs } from 'expo-router';
+
+import { GetMobileTabBar } from '@/components/GetMobileTabBar';
 
 function TabIcon({
   focused,
@@ -21,89 +21,71 @@ function TabIcon({
 
 export default function TabLayout() {
   return (
-    <TabCacheProvider>
-      <Tabs
-        screenOptions={{
-          headerShown: false,
+    <Tabs
+      initialRouteName="home"
+      screenOptions={{ headerShown: false }}
+      tabBar={(props) => <GetMobileTabBar {...props} />}
+    >
+      <Tabs.Screen
+        name="home"
+        options={{
+          tabBarLabel: 'Home',
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon
+              focused={focused}
+              color={color}
+              size={size}
+              name="home-outline"
+              activeName="home"
+            />
+          ),
         }}
-        tabBar={(props) => <GetMobileTabBar {...props} />}
-      >
-        <Tabs.Screen
-          name="(share)"
-          options={{
-            tabBarLabel: 'Home',
-            tabBarIcon: ({ focused, color, size }) => (
-              <TabIcon
-                focused={focused}
-                color={color}
-                size={size}
-                name="home-outline"
-                activeName="home"
-              />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="menu"
-          options={{
-            tabBarLabel: 'Menu',
-            tabBarIcon: ({ focused, color, size }) => (
-              <TabIcon
-                focused={focused}
-                color={color}
-                size={size}
-                name="fast-food-outline"
-                activeName="fast-food"
-              />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="(wallet)"
-          options={{
-            tabBarLabel: 'My GET',
-            tabBarIcon: ({ focused, color, size }) => (
-              <TabIcon
-                focused={focused}
-                color={color}
-                size={size}
-                name="wallet-outline"
-                activeName="wallet"
-              />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="explore"
-          options={{
-            tabBarLabel: 'Explore',
-            tabBarIcon: ({ focused, color, size }) => (
-              <TabIcon
-                focused={focused}
-                color={color}
-                size={size}
-                name="map-outline"
-                activeName="map"
-              />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="rooms"
-          options={{
-            tabBarLabel: 'Rooms',
-            tabBarIcon: ({ focused, color, size }) => (
-              <TabIcon
-                focused={focused}
-                color={color}
-                size={size}
-                name="business-outline"
-                activeName="business"
-              />
-            ),
-          }}
-        />
-      </Tabs>
-    </TabCacheProvider>
+      />
+      <Tabs.Screen
+        name="menu"
+        options={{
+          tabBarLabel: 'Dining',
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon
+              focused={focused}
+              color={color}
+              size={size}
+              name="restaurant-outline"
+              activeName="restaurant"
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
+          tabBarLabel: 'Map',
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon
+              focused={focused}
+              color={color}
+              size={size}
+              name="location-outline"
+              activeName="location"
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="more"
+        options={{
+          tabBarLabel: 'More',
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon
+              focused={focused}
+              color={color}
+              size={size}
+              name="ellipsis-horizontal-outline"
+              activeName="ellipsis-horizontal"
+            />
+          ),
+        }}
+      />
+    </Tabs>
   );
 }

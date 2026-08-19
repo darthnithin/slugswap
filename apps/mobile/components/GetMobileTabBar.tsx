@@ -1,9 +1,11 @@
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { stealthTheme } from '../lib/stealth-theme';
+import { campusFonts, stealthTheme } from '@/lib/stealth-theme';
 
 const colors = stealthTheme.colors;
+
+const VISIBLE_TAB_ROUTES = new Set(['home', 'menu', 'explore', 'more']);
 
 function getTabLabel(label: unknown, title: unknown, fallback: string): string {
   if (typeof label === 'string') return label;
@@ -12,16 +14,17 @@ function getTabLabel(label: unknown, title: unknown, fallback: string): string {
 }
 
 export function GetMobileTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
-  const bottomInset = Math.max(insets.bottom, 8);
-  const barHeight = 78 + bottomInset;
+  const bottomInset = Math.max(insets.bottom, 7);
+  const focusedRouteKey = state.routes[state.index]?.key;
+  const visibleRoutes = state.routes.filter((route) => VISIBLE_TAB_ROUTES.has(route.name));
 
   return (
     <View style={styles.shell}>
-      <View style={[styles.bar, { minHeight: barHeight, paddingBottom: bottomInset }]}>
-        {state.routes.map((route, index) => {
+      <View style={[styles.bar, { paddingBottom: bottomInset }]}>
+        {visibleRoutes.map((route) => {
           const { options } = descriptors[route.key];
-          const isFocused = state.index === index;
-          const color = isFocused ? colors.accent : colors.textMuted;
+          const isFocused = focusedRouteKey === route.key;
+          const color = isFocused ? colors.forest : colors.textMuted;
           const label = getTabLabel(options.tabBarLabel, options.title, route.name);
 
           const onPress = () => {
@@ -36,31 +39,22 @@ export function GetMobileTabBar({ state, descriptors, navigation, insets }: Bott
             }
           };
 
-          const onLongPress = () => {
-            navigation.emit({
-              type: 'tabLongPress',
-              target: route.key,
-            });
-          };
-
           return (
             <Pressable
               key={route.key}
+              accessibilityLabel={options.tabBarAccessibilityLabel}
               accessibilityRole="button"
               accessibilityState={isFocused ? { selected: true } : {}}
-              accessibilityLabel={options.tabBarAccessibilityLabel}
-              testID={options.tabBarButtonTestID}
+              onLongPress={() => navigation.emit({ type: 'tabLongPress', target: route.key })}
               onPress={onPress}
-              onLongPress={onLongPress}
-              style={styles.pressable}
+              testID={options.tabBarButtonTestID}
+              style={({ pressed }) => [styles.pressable, pressed && styles.pressed]}
             >
-              <View style={[styles.item, isFocused ? styles.itemActive : null]}>
-                {options.tabBarIcon?.({
-                  focused: isFocused,
-                  color,
-                  size: 26,
-                })}
-                <Text style={[styles.label, isFocused ? styles.labelActive : null]}>{label}</Text>
+              <View style={styles.item}>
+                <View style={styles.iconWrap}>
+                  {options.tabBarIcon?.({ focused: isFocused, color, size: 24 })}
+                </View>
+                <Text style={[styles.label, isFocused && styles.labelActive]}>{label}</Text>
               </View>
             </Pressable>
           );
@@ -72,37 +66,46 @@ export function GetMobileTabBar({ state, descriptors, navigation, insets }: Bott
 
 const styles = StyleSheet.create({
   shell: {
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderStrong,
+    backgroundColor: colors.softWhite,
   },
   bar: {
+    width: '100%',
+    maxWidth: 620,
+    minHeight: 65,
     flexDirection: 'row',
     alignItems: 'stretch',
+    alignSelf: 'center',
     justifyContent: 'space-between',
-    minHeight: 78,
+    paddingTop: 6,
   },
   pressable: {
     flex: 1,
+    minHeight: 58,
+  },
+  pressed: {
+    opacity: 0.58,
   },
   item: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
-    paddingTop: 8,
-    paddingBottom: 9,
+    gap: 2,
   },
-  itemActive: {
-    backgroundColor: colors.accentMuted,
+  iconWrap: {
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   label: {
+    color: colors.textMuted,
+    fontFamily: campusFonts.sansMedium,
     fontSize: 11,
     lineHeight: 14,
-    color: colors.textMuted,
-    fontWeight: '500',
   },
   labelActive: {
-    color: colors.accent,
+    color: colors.forest,
+    fontFamily: campusFonts.sansSemibold,
   },
 });

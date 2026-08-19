@@ -55,8 +55,18 @@ interface TabCacheState {
 
 const TabCacheContext = createContext<TabCacheState | null>(null);
 
-export function TabCacheProvider({ children }: { children: ReactNode }) {
-  const [shareSnapshot, setShareSnapshotState] = useState<ShareTabSnapshot | null>(null);
+export function TabCacheProvider({
+  children,
+  sessionUserId,
+}: {
+  children: ReactNode;
+  sessionUserId: string | null;
+}) {
+  const [cachedShareSnapshot, setShareSnapshotState] = useState<ShareTabSnapshot | null>(null);
+  const shareSnapshot =
+    sessionUserId !== null && cachedShareSnapshot?.userId === sessionUserId
+      ? cachedShareSnapshot
+      : null;
 
   useEffect(() => {
     const warmDiningMenus = () => {
@@ -74,9 +84,16 @@ export function TabCacheProvider({ children }: { children: ReactNode }) {
     return () => appStateSubscription.remove();
   }, []);
 
+  useEffect(() => {
+    setShareSnapshotState((snapshot) =>
+      snapshot && snapshot.userId !== sessionUserId ? null : snapshot
+    );
+  }, [sessionUserId]);
+
   const setShareSnapshot = useCallback((snapshot: ShareTabSnapshot) => {
+    if (!sessionUserId || snapshot.userId !== sessionUserId) return;
     setShareSnapshotState(snapshot);
-  }, []);
+  }, [sessionUserId]);
 
   const value = useMemo(
     () => ({
