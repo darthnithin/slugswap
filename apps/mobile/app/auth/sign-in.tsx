@@ -158,10 +158,13 @@ export default function SignIn() {
 
             <Link href="/(tabs)/home" asChild>
               <Pressable
+                accessibilityLabel="Continue without signing in"
                 accessibilityRole="link"
                 style={({ pressed }) => [styles.guestLink, pressed && styles.pressedLink]}
               >
-                <Text style={styles.guestLabel}>Explore without signing in</Text>
+                <Text numberOfLines={1} style={styles.guestLabel}>
+                  Continue without signing in
+                </Text>
                 <Ionicons name="arrow-forward" size={16} color={colors.ink} />
               </Pressable>
             </Link>
