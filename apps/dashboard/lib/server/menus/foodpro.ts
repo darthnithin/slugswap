@@ -1,10 +1,13 @@
 import * as cheerio from "cheerio";
+import { rootCertificates } from "node:tls";
+import { Agent } from "undici";
 import {
   resolveDiningSchedule,
   type DiningServiceSchedule,
 } from "@/lib/server/menus/schedule";
 
 const FOODPRO_BASE_URL = "https://nutrition.sa.ucsc.edu/";
+const FOODPRO_ORIGIN = new URL(FOODPRO_BASE_URL).origin;
 const FOODPRO_COOKIE_HEADER =
   "WebInaCartLocation=; WebInaCartDates=; WebInaCartMeals=; WebInaCartRecipes=; WebInaCartQtys=";
 const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
@@ -12,6 +15,38 @@ const CACHE_REVALIDATE_SECONDS = 1800;
 const CACHE_TAG = "ucsc-menus";
 const COLLEGE_NINE_LOCATION_ID = "40";
 const FOODPRO_REQUEST_TIMEOUT_MS = 10_000;
+const FOODPRO_CERTIFICATE_ERROR_CODES = new Set([
+  "CERT_UNTRUSTED",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+]);
+
+// UCSC currently serves an unrelated RSA intermediate after an ECC leaf certificate.
+// This is the leaf's actual issuer, pinned from its AIA record. It expires in 2035.
+// SHA-256: 22:7B:61:E5:3F:13:1C:EF:CB:81:E8:89:9E:D9:82:9F:7E:78:05:86:64:7F:3F:98:DF:2A:BE:C2:16:7F:40:5B
+const FOODPRO_INTERMEDIATE_CA = `-----BEGIN CERTIFICATE-----
+MIIDNjCCArygAwIBAgIQOHk0l89NJv2948rV3tVF/zAKBggqhkjOPQQDAzBfMQsw
+CQYDVQQGEwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTYwNAYDVQQDEy1T
+ZWN0aWdvIFB1YmxpYyBTZXJ2ZXIgQXV0aGVudGljYXRpb24gUm9vdCBFNDYwHhcN
+MjUxMTA2MDAwMDAwWhcNMzUxMTA1MjM1OTU5WjBIMQswCQYDVQQGEwJVUzEWMBQG
+A1UEChMNSW5Db21tb24sIExMQzEhMB8GA1UEAxMYSW5Db21tb24gRUNDIE9WIFNT
+TCBDQSAzMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEI+ejNeQ1LxNI1+tUq8zJ
+qYGVjJtq0ehfh/urxTAnMdocLMkAYGW4bc3hUgnDq2P2bpAnt8kvEHsSms9+eZ9C
+NKOCAW8wggFrMB8GA1UdIwQYMBaAFNEi2kxZ8UtfJjiqndbu6w3D+6lhMB0GA1Ud
+DgQWBBTOcO80VCw+mDhxIld7K0RZkFG+GTAOBgNVHQ8BAf8EBAMCAYYwEgYDVR0T
+AQH/BAgwBgEB/wIBADATBgNVHSUEDDAKBggrBgEFBQcDATATBgNVHSAEDDAKMAgG
+BmeBDAECAjBUBgNVHR8ETTBLMEmgR6BFhkNodHRwOi8vY3JsLnNlY3RpZ28uY29t
+L1NlY3RpZ29QdWJsaWNTZXJ2ZXJBdXRoZW50aWNhdGlvblJvb3RFNDYuY3JsMIGE
+BggrBgEFBQcBAQR4MHYwTwYIKwYBBQUHMAKGQ2h0dHA6Ly9jcnQuc2VjdGlnby5j
+b20vU2VjdGlnb1B1YmxpY1NlcnZlckF1dGhlbnRpY2F0aW9uUm9vdEU0Ni5wN2Mw
+IwYIKwYBBQUHMAGGF2h0dHA6Ly9vY3NwLnNlY3RpZ28uY29tMAoGCCqGSM49BAMD
+A2gAMGUCMQCgENV+enAFTkpPIXg6u7yCsAq+bkjiJvBsVonfnqY0hVAftb8D39Bt
+5Wf8NlBZRF4CMF/znj8ZRYNUgxY2o0/nzEiJ3hJBuYuUmfpbYc5BcBsy+vItNAQ7
+mHOhDI5rvYg6LA==
+-----END CERTIFICATE-----`;
+
+let foodProCertificateDispatcher: Agent | null = null;
 
 export type DiningLocation = {
   id: string;
@@ -71,6 +106,31 @@ export function describeFoodProError(error: unknown): FoodProErrorDiagnostic[] {
   }
 
   return diagnostics;
+}
+
+export function isFoodProCertificateError(error: unknown): boolean {
+  const seen = new Set<Error>();
+  let current = error;
+
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current);
+    const code = (current as Error & { code?: unknown }).code;
+    if (typeof code === "string" && FOODPRO_CERTIFICATE_ERROR_CODES.has(code)) {
+      return true;
+    }
+    current = current.cause;
+  }
+
+  return false;
+}
+
+function getFoodProCertificateDispatcher(): Agent {
+  foodProCertificateDispatcher ??= new Agent({
+    connect: {
+      ca: [...rootCertificates, FOODPRO_INTERMEDIATE_CA],
+    },
+  });
+  return foodProCertificateDispatcher;
 }
 
 const LOCATION_SLUGS: Record<string, string> = {
@@ -218,9 +278,39 @@ function sectionNameFromCategory(value: string): string {
   return normalizeText(value).replace(/^--\s*/, "").replace(/\s*--$/, "");
 }
 
+type FoodProFetchInit = RequestInit & {
+  dispatcher?: Agent;
+  next: {
+    revalidate: number;
+    tags: string[];
+  };
+};
+
+async function fetchFoodProResponse(
+  url: string,
+  init: FoodProFetchInit
+): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    if (
+      new URL(url).origin !== FOODPRO_ORIGIN ||
+      !isFoodProCertificateError(error)
+    ) {
+      throw error;
+    }
+
+    const retryInit: FoodProFetchInit = {
+      ...init,
+      dispatcher: getFoodProCertificateDispatcher(),
+    };
+    return fetch(url, retryInit);
+  }
+}
+
 async function fetchFoodProHtml(url: string): Promise<string> {
   try {
-    const response = await fetch(url, {
+    const response = await fetchFoodProResponse(url, {
       cache: "force-cache",
       headers: {
         Cookie: FOODPRO_COOKIE_HEADER,

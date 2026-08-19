@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { describeFoodProError, FoodProError } from "./foodpro";
+import {
+  describeFoodProError,
+  FoodProError,
+  isFoodProCertificateError,
+} from "./foodpro";
 
 test("describeFoodProError reports a safe chain of error causes", () => {
   const certificateError = Object.assign(
@@ -33,4 +37,19 @@ test("describeFoodProError stops when an error cause loops", () => {
   assert.deepEqual(describeFoodProError(error), [
     { name: "Error", message: "loop" },
   ]);
+});
+
+test("isFoodProCertificateError finds a nested TLS chain error", () => {
+  const certificateError = Object.assign(new Error("certificate rejected"), {
+    code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  });
+  const fetchError = new TypeError("fetch failed", { cause: certificateError });
+
+  assert.equal(isFoodProCertificateError(fetchError), true);
+  assert.equal(
+    isFoodProCertificateError(Object.assign(new Error("socket closed"), {
+      code: "ECONNRESET",
+    })),
+    false
+  );
 });

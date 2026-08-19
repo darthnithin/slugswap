@@ -16,7 +16,8 @@
     "pg": "^8.22.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "tailwindcss": "^4.3.2"
+    "tailwindcss": "^4.3.2",
+    "undici": "^7.29.0"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
