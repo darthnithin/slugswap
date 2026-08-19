@@ -2,28 +2,35 @@ import { Platform } from 'react-native';
 import type { TextStyle, ViewStyle } from 'react-native';
 
 const palette = {
-  canvas: '#eef2f5',
-  canvasAlt: '#e6edf2',
-  surface: '#ffffff',
-  surfaceMuted: '#f4f6f8',
-  surfaceStrong: '#e9eef2',
-  brand: '#0f73af',
-  brandDark: '#0a5e93',
-  brandDeeper: '#0a4d7c',
-  brandInk: '#084a78',
-  accent: '#2f70f4',
-  accentMuted: '#dfe9ff',
-  success: '#1f8f64',
-  warning: '#d4831f',
-  danger: '#c95151',
-  text: '#121821',
-  textMuted: '#5e6a76',
-  textSoft: '#86919c',
-  border: '#d6dfe6',
-  borderStrong: '#c4d1db',
-  barcode: '#ffffff',
-  shadow: '#082236',
-  overlay: 'rgba(8, 34, 54, 0.16)',
+  canvas: '#F6F1E5',
+  canvasAlt: '#EEE7D8',
+  surface: '#FFFDF7',
+  surfaceMuted: '#F2EDDF',
+  surfaceStrong: '#DDE2D1',
+  brand: '#183D32',
+  brandDark: '#102E27',
+  brandDeeper: '#0B241E',
+  brandInk: '#102E27',
+  accent: '#183D32',
+  accentMuted: '#F9E8A5',
+  success: '#34745A',
+  warning: '#A96518',
+  danger: '#F06A4F',
+  text: '#102E27',
+  textMuted: '#52665F',
+  textSoft: '#7B8A84',
+  border: '#D2D4C6',
+  borderStrong: '#AEB9AA',
+  barcode: '#FFFFFF',
+  shadow: '#183D32',
+  overlay: 'rgba(16, 46, 39, 0.28)',
+  forest: '#183D32',
+  gold: '#F4C332',
+  cream: '#F6F1E5',
+  softWhite: '#FFFDF7',
+  coral: '#F06A4F',
+  sage: '#DDE2D1',
+  ink: '#102E27',
 };
 
 const radii = {
@@ -52,6 +59,14 @@ export const monoFontFamily = Platform.select({
   default: 'monospace',
 });
 
+export const campusFonts = {
+  sans: 'Figtree_400Regular',
+  sansMedium: 'Figtree_500Medium',
+  sansSemibold: 'Figtree_600SemiBold',
+  serif: 'Newsreader_400Regular',
+  serifSemibold: 'Newsreader_600SemiBold',
+};
+
 function iosShadow(opacity: number, radius: number, height: number): ViewStyle {
   return {
     shadowColor: palette.shadow,
@@ -64,12 +79,12 @@ function iosShadow(opacity: number, radius: number, height: number): ViewStyle {
 export function cardShadow(level: 'surface' | 'hero' = 'surface'): ViewStyle {
   if (Platform.OS === 'android') {
     return {
-      elevation: level === 'hero' ? 8 : 4,
+      elevation: level === 'hero' ? 3 : 1,
       shadowColor: palette.shadow,
     };
   }
 
-  return level === 'hero' ? iosShadow(0.22, 18, 10) : iosShadow(0.12, 12, 6);
+  return level === 'hero' ? iosShadow(0.1, 16, 8) : iosShadow(0.06, 10, 4);
 }
 
 export function buttonOpacity(pressed: boolean, disabled = false): number {
@@ -84,34 +99,34 @@ export const typeScale: Record<
   eyebrow: {
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: '600',
+    fontFamily: campusFonts.sansSemibold,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
   title: {
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: '700',
+    fontFamily: campusFonts.sansSemibold,
   },
   headline: {
     fontSize: 34,
     lineHeight: 40,
-    fontWeight: '700',
+    fontFamily: campusFonts.serifSemibold,
   },
   body: {
     fontSize: 15,
     lineHeight: 21,
-    fontWeight: '500',
+    fontFamily: campusFonts.sans,
   },
   caption: {
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: '500',
+    fontFamily: campusFonts.sansMedium,
   },
   metric: {
     fontSize: 36,
     lineHeight: 40,
-    fontWeight: '700',
+    fontFamily: campusFonts.serifSemibold,
     fontVariant: ['tabular-nums'],
   },
 };

@@ -15,6 +15,8 @@
     "test": "node --import tsx --test lib/*.test.ts"
   },
   "dependencies": {
+    "@expo-google-fonts/figtree": "^0.4.1",
+    "@expo-google-fonts/newsreader": "^0.4.1",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@supabase/supabase-js": "^2.110.3",
@@ -22,6 +24,7 @@
     "expo-barcode-pdf417": "^1.0.0",
     "expo-constants": "~55.0.17",
     "expo-dev-client": "~55.0.38",
+    "expo-font": "^55.0.8",
     "expo-linking": "~55.0.17",
     "expo-maps": "~55.0.22",
     "expo-notifications": "~55.0.26",

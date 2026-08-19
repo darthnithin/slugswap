@@ -1,42 +1,61 @@
-import { View, Text, Pressable, Alert, ActivityIndicator, Platform, StyleSheet } from 'react-native';
-import { supabase } from '@/lib/supabase';
-import { CrossPlatformSymbol } from '@/components/cross-platform-symbol';
-import * as WebBrowser from 'expo-web-browser';
+import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
-import { Link } from 'expo-router';
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
-import { buttonOpacity, cardShadow, stealthTheme, typeScale } from '../../lib/stealth-theme';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { CampusArtwork } from '@/components/campus/CampusArtwork';
+import { getSafePostAuthRoute } from '@/lib/auth-navigation';
+import { supabase } from '@/lib/supabase';
+import { buttonOpacity, campusFonts, stealthTheme } from '@/lib/stealth-theme';
 
 WebBrowser.maybeCompleteAuthSession();
 
+const colors = stealthTheme.colors;
+
 export default function SignIn() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ next?: string | string[] }>();
   const [loading, setLoading] = useState(false);
-  const colors = stealthTheme.colors;
+  const postAuthRoute = getSafePostAuthRoute(params.next);
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
     try {
-      const redirectUrl =
-        Platform.OS === 'web' && typeof window !== 'undefined'
-          ? new URL('/app/auth/callback', window.location.origin).toString()
-          : Linking.createURL('auth/callback');
+      const redirectUrl = (() => {
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          const url = new URL('/app/auth/callback', window.location.origin);
+          url.searchParams.set('next', postAuthRoute);
+          return url.toString();
+        }
+
+        return Linking.createURL('auth/callback', {
+          queryParams: { next: postAuthRoute },
+        });
+      })();
 
       if (Platform.OS === 'web') {
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
             redirectTo: redirectUrl,
-            queryParams: {
-              prompt: 'select_account',
-            },
+            queryParams: { prompt: 'select_account' },
           },
         });
 
-        if (error) {
-          Alert.alert('Error', error.message);
-          return;
-        }
-
+        if (error) Alert.alert('Error', error.message);
         return;
       }
 
@@ -45,9 +64,7 @@ export default function SignIn() {
         options: {
           redirectTo: redirectUrl,
           skipBrowserRedirect: true,
-          queryParams: {
-            prompt: 'select_account',
-          },
+          queryParams: { prompt: 'select_account' },
         },
       });
 
@@ -64,8 +81,7 @@ export default function SignIn() {
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
 
       if (result.type === 'success') {
-        const { url } = result;
-        const urlParams = new URLSearchParams(url.split('#')[1] || url.split('?')[1]);
+        const urlParams = new URLSearchParams(result.url.split('#')[1] || result.url.split('?')[1]);
         const accessToken = urlParams.get('access_token');
         const refreshToken = urlParams.get('refresh_token');
 
@@ -74,9 +90,8 @@ export default function SignIn() {
             access_token: accessToken,
             refresh_token: refreshToken,
           });
-          if (sessionError) {
-            throw sessionError;
-          }
+          if (sessionError) throw sessionError;
+          router.replace(postAuthRoute);
         } else {
           Alert.alert('Sign in incomplete', 'Google did not return a usable session. Please try again.');
         }
@@ -93,211 +108,175 @@ export default function SignIn() {
   };
 
   return (
-    <View style={styles.screen}>
-      <View style={styles.heroCard}>
-        <View style={styles.heroNotch} />
-        <Text style={styles.heroTitle}>SlugSwap Sign-in</Text>
-        <View style={styles.heroBand} />
-        <View style={styles.heroBody}>
-          <View style={styles.avatarShell}>
-            <CrossPlatformSymbol
-              name="person.crop.circle"
-              tintColor="rgba(255, 255, 255, 0.92)"
-              size={90}
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <ScrollView
+        bounces={false}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.content}>
+          <View style={styles.brandBlock}>
+            <Image
+              accessibilityLabel="SlugSwap"
+              source={require('../../assets/src/brand/slug-swap-lockup-1600.png')}
+              resizeMode="contain"
+              style={styles.lockup}
             />
+            <Text style={styles.heroTitle}>Campus life,{`\n`}less scattered.</Text>
+            <Text style={styles.heroCopy}>
+              Dining, rooms, maps, GET, and more—made easier.
+            </Text>
           </View>
-          <Text style={styles.appName}>SlugSwap</Text>
-          <Text style={styles.appSubtitle}>
-            Let's eat!
-          </Text>
+
+          <View style={styles.artworkWrap}>
+            <CampusArtwork height={188} />
+          </View>
+
+          <View style={styles.actions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Continue with Google"
+              disabled={loading}
+              onPress={handleGoogleSignIn}
+              style={({ pressed }) => [
+                styles.googleButton,
+                { opacity: buttonOpacity(pressed, loading) },
+              ]}
+            >
+              {loading ? (
+                <ActivityIndicator color={colors.forest} />
+              ) : (
+                <>
+                  <View style={styles.googleIcon}>
+                    <Text style={styles.googleLetter}>G</Text>
+                  </View>
+                  <Text style={styles.googleLabel}>Continue with Google</Text>
+                  <Ionicons name="arrow-forward" size={19} color={colors.ink} />
+                </>
+              )}
+            </Pressable>
+
+            <Link href="/(tabs)/home" asChild>
+              <Pressable
+                accessibilityRole="link"
+                style={({ pressed }) => [styles.guestLink, pressed && styles.pressedLink]}
+              >
+                <Text style={styles.guestLabel}>Explore without signing in</Text>
+                <Ionicons name="arrow-forward" size={16} color={colors.ink} />
+              </Pressable>
+            </Link>
+          </View>
         </View>
-      </View>
-
-      <View style={styles.panel}>
-        <Text style={styles.panelTitle}>Sign in to continue</Text>
-        <Text style={styles.panelCopy}>
-          Use your UCSC Google account to sign in.
-        </Text>
-
-        <Pressable
-          onPress={handleGoogleSignIn}
-          disabled={loading}
-          style={({ pressed }) => [styles.signInButton, { opacity: buttonOpacity(pressed, loading) }]}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <CrossPlatformSymbol name="person.crop.circle" tintColor="#fff" size={20} />
-              <Text style={styles.signInLabel}>Sign in with Google</Text>
-            </>
-          )}
-        </Pressable>
-
-        <View style={styles.dividerRow}>
-          <View style={styles.dividerLine} />
-          <Text selectable style={styles.dividerText}>No sign-in needed</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
-        <Link href="/(tabs)/rooms" asChild>
-          <Pressable
-            accessibilityRole="link"
-            style={({ pressed }) => [
-              styles.roomsButton,
-              { opacity: buttonOpacity(pressed) },
-            ]}
-          >
-            <CrossPlatformSymbol
-              name="building.2"
-              fallbackName="business-outline"
-              tintColor={colors.brand}
-              size={20}
-            />
-            <Text selectable style={styles.roomsButtonLabel}>Reserve a library room</Text>
-          </Pressable>
-        </Link>
-      </View>
-    </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-const colors = stealthTheme.colors;
-
 const styles = StyleSheet.create({
-  screen: {
+  safeArea: {
     flex: 1,
+    backgroundColor: colors.cream,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
-    padding: 20,
-    gap: 18,
-    backgroundColor: colors.canvas,
+    paddingHorizontal: 24,
+    paddingVertical: 18,
   },
-  heroCard: {
-    borderRadius: stealthTheme.radii.lg,
-    overflow: 'hidden',
-    backgroundColor: colors.brand,
-    borderWidth: 1,
-    borderColor: colors.brandDark,
-    ...cardShadow('hero'),
+  content: {
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
   },
-  heroNotch: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 92,
-    height: 90,
-    backgroundColor: colors.brandDark,
+  brandBlock: {
+    alignItems: 'center',
+  },
+  lockup: {
+    width: 214,
+    height: 48,
+    marginBottom: 20,
   },
   heroTitle: {
-    paddingTop: 24,
-    paddingHorizontal: 20,
-    paddingBottom: 18,
-    color: '#ffffff',
+    color: colors.ink,
+    fontFamily: campusFonts.serifSemibold,
+    fontSize: 43,
+    lineHeight: 45,
+    letterSpacing: -1.1,
     textAlign: 'center',
-    fontSize: 19,
-    lineHeight: 24,
-    fontWeight: '500',
   },
-  heroBand: {
-    height: 112,
-    backgroundColor: colors.brandDark,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.brandDeeper,
-  },
-  heroBody: {
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 18,
-    paddingBottom: 24,
-    backgroundColor: colors.brand,
-  },
-  avatarShell: {
-    width: 124,
-    height: 124,
-    borderRadius: 62,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(100, 100, 100, 0.3)',
-    borderWidth: 6,
-    borderColor: 'rgba(255, 255, 255, 0)',
-    marginTop: -72,
-    marginBottom: 14,
-  },
-  appName: {
-    ...typeScale.headline,
-    color: '#ffffff',
-    fontSize: 28,
-    lineHeight: 32,
-  },
-  appSubtitle: {
-    marginTop: 8,
-    textAlign: 'center',
-    color: 'rgba(255, 255, 255, 0.84)',
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  panel: {
-    borderRadius: stealthTheme.radii.lg,
-    padding: 22,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 16,
-    ...cardShadow(),
-  },
-  panelTitle: {
-    ...typeScale.title,
-    color: colors.text,
-  },
-  panelCopy: {
-    ...typeScale.body,
+  heroCopy: {
+    maxWidth: 330,
+    marginTop: 15,
     color: colors.textMuted,
+    fontFamily: campusFonts.sans,
+    fontSize: 16,
+    lineHeight: 23,
+    textAlign: 'center',
   },
-  signInButton: {
+  artworkWrap: {
+    height: 180,
+    justifyContent: 'center',
+    marginTop: 2,
+    marginHorizontal: -4,
+    overflow: 'hidden',
+  },
+  actions: {
+    gap: 10,
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  googleButton: {
+    width: '100%',
+    minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: stealthTheme.radii.md,
-    backgroundColor: colors.brand,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.border,
-  },
-  dividerText: {
-    ...typeScale.caption,
-    color: colors.textSoft,
-  },
-  roomsButton: {
-    minHeight: 50,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-    paddingHorizontal: 18,
-    borderRadius: stealthTheme.radii.md,
+    gap: 12,
+    paddingHorizontal: 17,
+    borderRadius: 15,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.softWhite,
   },
-  roomsButtonLabel: {
-    ...typeScale.body,
-    fontWeight: '700',
-    color: colors.brand,
+  googleIcon: {
+    width: 25,
+    height: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 13,
+    backgroundColor: '#FFFFFF',
   },
-  signInLabel: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
+  googleLetter: {
+    color: '#4285F4',
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 18,
+    lineHeight: 23,
+  },
+  googleLabel: {
+    flex: 1,
+    color: colors.ink,
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 16,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  guestLink: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+  },
+  pressedLink: {
+    opacity: 0.6,
+  },
+  guestLabel: {
+    color: colors.ink,
+    fontFamily: campusFonts.sansMedium,
+    fontSize: 15,
+    lineHeight: 20,
+    textDecorationLine: 'underline',
+    textDecorationColor: colors.borderStrong,
   },
 });

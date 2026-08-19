@@ -1,7 +1,14 @@
 import { Stack } from 'expo-router/stack';
 import { StatusBar } from 'expo-status-bar';
-import { AuthProvider } from '@/lib/auth-context';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { AuthProvider, useAuth } from '@/lib/auth-context';
+import { TabCacheProvider } from '@/lib/tab-cache-context';
+import { Figtree_400Regular } from '@expo-google-fonts/figtree/400Regular';
+import { Figtree_500Medium } from '@expo-google-fonts/figtree/500Medium';
+import { Figtree_600SemiBold } from '@expo-google-fonts/figtree/600SemiBold';
+import { Newsreader_400Regular } from '@expo-google-fonts/newsreader/400Regular';
+import { Newsreader_600SemiBold } from '@expo-google-fonts/newsreader/600SemiBold';
+import { useFonts } from 'expo-font';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Alert,
   AppState,
@@ -77,7 +84,28 @@ async function loadExpoUpdatesModule(): Promise<ExpoUpdatesModule | null> {
   }
 }
 
+function SessionScopedTabCache({ children }: { children: ReactNode }) {
+  const { isLoading, user } = useAuth();
+
+  if (isLoading) {
+    return <View style={{ flex: 1, backgroundColor: stealthTheme.colors.canvas }} />;
+  }
+
+  return (
+    <TabCacheProvider sessionUserId={user?.id ?? null}>
+      {children}
+    </TabCacheProvider>
+  );
+}
+
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    Figtree_400Regular,
+    Figtree_500Medium,
+    Figtree_600SemiBold,
+    Newsreader_400Regular,
+    Newsreader_600SemiBold,
+  });
   const [requiredUpdateGate, setRequiredUpdateGate] = useState<RequiredUpdateGate | null>(null);
   const updateCheckInFlightRef = useRef(false);
   const otaPromptShownRef = useRef(false);
@@ -232,81 +260,90 @@ export default function RootLayout() {
 
   const colors = stealthTheme.colors;
 
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
+
   return (
     <AuthProvider>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="auth/sign-in" />
-        <Stack.Screen name="auth/callback" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen
-          name="scan-card"
-          options={{
-            headerShown: false,
-            presentation: 'fullScreenModal',
-          }}
-        />
-      </Stack>
+      <SessionScopedTabCache>
+        <StatusBar style="dark" />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="auth/sign-in" />
+          <Stack.Screen name="auth/callback" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="rooms" />
+          <Stack.Screen name="my-get" />
+          <Stack.Screen name="point-sharing" />
+          <Stack.Screen
+            name="scan-card"
+            options={{
+              headerShown: false,
+              presentation: 'fullScreenModal',
+            }}
+          />
+        </Stack>
 
-      <Modal
-        animationType="fade"
-        transparent
-        statusBarTranslucent
-        visible={!!requiredUpdateGate}
-        onRequestClose={() => undefined}
-      >
-        <View
-          style={{
-            flex: 1,
-            justifyContent: 'center',
-            padding: 24,
-            backgroundColor: colors.overlay,
-          }}
+        <Modal
+          animationType="fade"
+          transparent
+          statusBarTranslucent
+          visible={!!requiredUpdateGate}
+          onRequestClose={() => undefined}
         >
           <View
             style={{
-              backgroundColor: colors.surface,
-              borderRadius: stealthTheme.radii.md,
-              padding: 22,
-              gap: 12,
-              borderWidth: 1,
-              borderColor: colors.border,
-              ...cardShadow('hero'),
+              flex: 1,
+              justifyContent: 'center',
+              padding: 24,
+              backgroundColor: colors.overlay,
             }}
           >
-            <Text selectable style={{ fontSize: 22, fontWeight: '700', color: colors.text }}>
-              Update required
-            </Text>
-            <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
-              Your app version is no longer supported.
-            </Text>
-            <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
-              Installed: {requiredUpdateGate?.installedVersion ?? 'unknown'}
-            </Text>
-            <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
-              Required: {requiredUpdateGate?.requiredVersion ?? 'unknown'}+
-            </Text>
-
-            <Pressable
-              onPress={() => {
-                void openStoreLink();
-              }}
+            <View
               style={{
-                marginTop: 8,
-                borderRadius: stealthTheme.radii.sm,
-                backgroundColor: colors.brand,
-                paddingVertical: 13,
-                alignItems: 'center',
+                backgroundColor: colors.surface,
+                borderRadius: stealthTheme.radii.md,
+                padding: 22,
+                gap: 12,
+                borderWidth: 1,
+                borderColor: colors.border,
+                ...cardShadow('hero'),
               }}
             >
-              <Text selectable style={{ color: '#ffffff', fontSize: 15, fontWeight: '600' }}>
-                Update now
+              <Text selectable style={{ fontSize: 22, fontWeight: '700', color: colors.text }}>
+                Update required
               </Text>
-            </Pressable>
+              <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
+                Your app version is no longer supported.
+              </Text>
+              <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
+                Installed: {requiredUpdateGate?.installedVersion ?? 'unknown'}
+              </Text>
+              <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
+                Required: {requiredUpdateGate?.requiredVersion ?? 'unknown'}+
+              </Text>
+
+              <Pressable
+                onPress={() => {
+                  void openStoreLink();
+                }}
+                style={{
+                  marginTop: 8,
+                  borderRadius: stealthTheme.radii.sm,
+                  backgroundColor: colors.brand,
+                  paddingVertical: 13,
+                  alignItems: 'center',
+                }}
+              >
+                <Text selectable style={{ color: '#ffffff', fontSize: 15, fontWeight: '600' }}>
+                  Update now
+                </Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      </SessionScopedTabCache>
     </AuthProvider>
   );
 }

@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { useGlobalSearchParams, usePathname, useRouter, useSegments } from 'expo-router';
+import { getSafePostAuthRoute } from './auth-navigation';
+import { unregisterStoredPushTokenAsync } from './notifications';
 import { supabase } from './supabase';
-import { useRouter, useSegments, usePathname } from 'expo-router';
 
 type AuthContextType = {
   session: Session | null;
@@ -27,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
   const pathname = usePathname();
+  const searchParams = useGlobalSearchParams<{ next?: string | string[] }>();
 
   useEffect(() => {
     let active = true;
@@ -64,23 +67,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === 'auth';
-    const isPublicUtilityRoute =
-      pathname === '/menu' ||
-      pathname === '/rooms' ||
-      segments.includes('menu') ||
-      segments.includes('rooms');
-
     const isRootRoute = pathname === '/' && segments.join('/') === '';
+    const isPublicTab = ['/home', '/menu', '/explore', '/more'].includes(pathname);
+    const isPublicUtilityRoute = pathname === '/rooms' || segments[0] === 'rooms';
+    const isPublicRoute = inAuthGroup || isPublicTab || isPublicUtilityRoute;
 
-    // Prevent redirect loops
-    if (!session && !inAuthGroup && !isPublicUtilityRoute && pathname !== '/auth/sign-in') {
-      router.replace('/auth/sign-in');
+    if (!session && !isPublicRoute && !isRootRoute) {
+      router.replace({ pathname: '/auth/sign-in', params: { next: pathname } });
     } else if (session && (inAuthGroup || isRootRoute)) {
-      router.replace('/(tabs)/(share)');
+      router.replace(getSafePostAuthRoute(searchParams.next));
+    } else if (!session && isRootRoute) {
+      router.replace('/auth/sign-in');
     }
-  }, [session, segments, isLoading, pathname, router]);
+  }, [session, segments, isLoading, pathname, router, searchParams.next]);
 
   const signOut = async () => {
+    await unregisterStoredPushTokenAsync();
     await supabase.auth.signOut();
     router.replace('/auth/sign-in');
   };
