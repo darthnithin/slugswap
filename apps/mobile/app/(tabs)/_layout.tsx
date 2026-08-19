@@ -89,16 +89,16 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="more"
+          name="rooms"
           options={{
-            tabBarLabel: 'More',
+            tabBarLabel: 'Rooms',
             tabBarIcon: ({ focused, color, size }) => (
               <TabIcon
                 focused={focused}
                 color={color}
                 size={size}
-                name="menu-outline"
-                activeName="menu"
+                name="business-outline"
+                activeName="business"
               />
             ),
           }}

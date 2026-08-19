@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { CrossPlatformSymbol } from '@/components/cross-platform-symbol';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
+import { Link } from 'expo-router';
 import { useState } from 'react';
 import { buttonOpacity, cardShadow, stealthTheme, typeScale } from '../../lib/stealth-theme';
 
@@ -133,6 +134,29 @@ export default function SignIn() {
           )}
         </Pressable>
 
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text selectable style={styles.dividerText}>No sign-in needed</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <Link href="/(tabs)/rooms" asChild>
+          <Pressable
+            accessibilityRole="link"
+            style={({ pressed }) => [
+              styles.roomsButton,
+              { opacity: buttonOpacity(pressed) },
+            ]}
+          >
+            <CrossPlatformSymbol
+              name="building.2"
+              fallbackName="business-outline"
+              tintColor={colors.brand}
+              size={20}
+            />
+            <Text selectable style={styles.roomsButtonLabel}>Reserve a library room</Text>
+          </Pressable>
+        </Link>
       </View>
     </View>
   );
@@ -239,6 +263,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: stealthTheme.radii.md,
     backgroundColor: colors.brand,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  dividerText: {
+    ...typeScale.caption,
+    color: colors.textSoft,
+  },
+  roomsButton: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+    paddingHorizontal: 18,
+    borderRadius: stealthTheme.radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfaceMuted,
+  },
+  roomsButtonLabel: {
+    ...typeScale.body,
+    fontWeight: '700',
+    color: colors.brand,
   },
   signInLabel: {
     color: '#fff',

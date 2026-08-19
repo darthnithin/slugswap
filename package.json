@@ -30,6 +30,7 @@
     "mobile:web:deploy": "npm run dashboard:deploy",
     "mobile:web:deploy:prod": "npm run dashboard:deploy:prod",
     "mobile:typecheck": "npm run typecheck -w @slugswap/mobile",
+    "test": "npm run test -w @slugswap/dashboard && npm run test -w @slugswap/mobile",
     "typecheck": "npm run root:typecheck && npm run dashboard:typecheck && npm run mobile:typecheck",
     "root:typecheck": "tsc --noEmit -p tsconfig.json",
     "story:generate": "bash scripts/instagram-stories/export-ig-stories.sh",

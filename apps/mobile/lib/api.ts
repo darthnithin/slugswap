@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import type { LibraryAvailability, LibraryLocationId } from './library-reservations';
 
 const FALLBACK_LOCAL_API_URL = 'http://localhost:3000';
 const FALLBACK_REMOTE_API_URL = 'https://slugswap.vercel.app';
@@ -316,6 +317,11 @@ async function readApiErrorPayload(
 ): Promise<{ message: string; reason?: ClaimGenerationFailureReason }> {
   const { bodyText } = response;
   if (!bodyText) return { message: fallback };
+
+  const normalizedBody = bodyText.trimStart().toLowerCase();
+  if (normalizedBody.startsWith('<!doctype html') || normalizedBody.startsWith('<html')) {
+    return { message: fallback };
+  }
 
   try {
     const parsed = JSON.parse(bodyText) as {
@@ -641,4 +647,27 @@ export async function getDiningMenu(
   }
 
   return readApiJson<DiningMenu>(response, 'Failed to read dining menu');
+}
+
+export async function getLibraryRoomAvailability(
+  params: { library: LibraryLocationId; date: string },
+  options?: { signal?: AbortSignal }
+) {
+  const searchParams = new URLSearchParams({
+    library: params.library,
+    date: params.date,
+  });
+  const response = await fetchWithFallback(
+    `${API_BASE_URL}/api/library/rooms?${searchParams.toString()}`,
+    { cache: 'no-store', signal: options?.signal },
+  );
+
+  if (!response.ok) {
+    const errorMessage = await readApiError(response, 'Failed to fetch room availability');
+    throw new Error(errorMessage);
+  }
+  return readApiJson<LibraryAvailability>(
+    response,
+    'Failed to read room availability',
+  );
 }

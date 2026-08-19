@@ -64,12 +64,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === 'auth';
-    const isPublicMenuRoute = pathname === '/menu' || segments.includes('menu');
+    const isPublicUtilityRoute =
+      pathname === '/menu' ||
+      pathname === '/rooms' ||
+      segments.includes('menu') ||
+      segments.includes('rooms');
 
     const isRootRoute = pathname === '/' && segments.join('/') === '';
 
     // Prevent redirect loops
-    if (!session && !inAuthGroup && !isPublicMenuRoute && pathname !== '/auth/sign-in') {
+    if (!session && !inAuthGroup && !isPublicUtilityRoute && pathname !== '/auth/sign-in') {
       router.replace('/auth/sign-in');
     } else if (session && (inAuthGroup || isRootRoute)) {
       router.replace('/(tabs)/(share)');
