@@ -11,6 +11,7 @@ const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) Apple
 const CACHE_REVALIDATE_SECONDS = 1800;
 const CACHE_TAG = "ucsc-menus";
 const COLLEGE_NINE_LOCATION_ID = "40";
+const FOODPRO_REQUEST_TIMEOUT_MS = 10_000;
 
 export type DiningLocation = {
   id: string;
@@ -192,23 +193,37 @@ function sectionNameFromCategory(value: string): string {
 }
 
 async function fetchFoodProHtml(url: string): Promise<string> {
-  const response = await fetch(url, {
-    cache: "force-cache",
-    headers: {
-      Cookie: FOODPRO_COOKIE_HEADER,
-      "User-Agent": USER_AGENT,
-    },
-    next: {
-      revalidate: CACHE_REVALIDATE_SECONDS,
-      tags: [CACHE_TAG],
-    },
-  });
+  try {
+    const response = await fetch(url, {
+      cache: "force-cache",
+      headers: {
+        Cookie: FOODPRO_COOKIE_HEADER,
+        "User-Agent": USER_AGENT,
+      },
+      next: {
+        revalidate: CACHE_REVALIDATE_SECONDS,
+        tags: [CACHE_TAG],
+      },
+      signal: AbortSignal.timeout(FOODPRO_REQUEST_TIMEOUT_MS),
+    });
 
-  if (!response.ok) {
-    throw new FoodProError(`UCSC menu source returned ${response.status}.`, 503);
+    if (!response.ok) {
+      throw new FoodProError(`UCSC menu source returned ${response.status}.`, 503);
+    }
+
+    return await response.text();
+  } catch (error) {
+    if (error instanceof FoodProError) {
+      throw error;
+    }
+    if (
+      error instanceof Error &&
+      (error.name === "AbortError" || error.name === "TimeoutError")
+    ) {
+      throw new FoodProError("UCSC menu source timed out.", 503);
+    }
+    throw new FoodProError("Unable to reach the UCSC menu source.", 503);
   }
-
-  return response.text();
 }
 
 export async function getDiningLocations(): Promise<DiningLocation[]> {

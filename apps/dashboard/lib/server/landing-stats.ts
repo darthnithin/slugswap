@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/server/db";
-import { claimCodes, donations, users } from "@/lib/server/schema";
+import { claimCodes, donations, getCredentials, users } from "@/lib/server/schema";
 import { getActiveDonorRemainingTotal } from "@/lib/server/claims/donor-usage";
 
 export type LandingStats = {
@@ -30,6 +30,7 @@ export async function getLandingStats(): Promise<LandingStats> {
         db
           .select({ count: sql<number>`count(distinct ${donations.userId})` })
           .from(donations)
+          .innerJoin(getCredentials, eq(getCredentials.userId, donations.userId))
           .where(eq(donations.status, "active")),
         db
           .select({ count: sql<number>`coalesce(count(*), 0)` })

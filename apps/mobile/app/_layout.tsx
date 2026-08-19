@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router/stack';
 import { StatusBar } from 'expo-status-bar';
-import { AuthProvider } from '../../../lib/auth-context';
+import { AuthProvider } from '@/lib/auth-context';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import Constants from 'expo-constants';
-import { getMobileAppConfig } from '../../../lib/api';
+import { getMobileAppConfig } from '@/lib/api';
 import { cardShadow, stealthTheme } from '../lib/stealth-theme';
 
 type RequiredUpdateGate = {
@@ -83,6 +83,11 @@ export default function RootLayout() {
   const updatesModuleMissingLoggedRef = useRef(false);
 
   const checkRequiredNativeUpdate = useCallback(async (): Promise<boolean> => {
+    if (Platform.OS === 'web') {
+      setRequiredUpdateGate(null);
+      return false;
+    }
+
     try {
       const installedVersion = getInstalledAppVersion();
       const config = await getMobileAppConfig();
@@ -125,7 +130,7 @@ export default function RootLayout() {
   }, []);
 
   const checkOtaUpdate = useCallback(async () => {
-    if (__DEV__) return;
+    if (__DEV__ || Platform.OS === 'web') return;
 
     const updates = await loadExpoUpdatesModule();
     if (!updates) {
@@ -165,7 +170,10 @@ export default function RootLayout() {
       {
         text: 'Restart',
         onPress: () => {
-          void updates.reloadAsync!();
+          void updates.reloadAsync!().catch((error) => {
+            console.warn('Failed to restart for OTA update:', error);
+            Alert.alert('Restart failed', 'Close and reopen the app to apply the update.');
+          });
         },
       },
     ]);
@@ -180,17 +188,14 @@ export default function RootLayout() {
       if (!isBlocked) {
         await checkOtaUpdate();
       }
+    } catch (error) {
+      console.warn('Failed to check for app updates:', error);
     } finally {
       updateCheckInFlightRef.current = false;
     }
   }, [checkRequiredNativeUpdate, checkOtaUpdate]);
 
   useEffect(() => {
-    console.log('Environment check:');
-    console.log('SUPABASE_URL:', process.env.EXPO_PUBLIC_SUPABASE_URL ? 'SET' : 'MISSING');
-    console.log('SUPABASE_KEY:', process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ? 'SET' : 'MISSING');
-    console.log('API_URL:', process.env.EXPO_PUBLIC_API_URL || 'MISSING (using fallback)');
-
     void runUpdateChecks();
 
     const appStateSub = AppState.addEventListener('change', (state) => {
@@ -220,100 +225,81 @@ export default function RootLayout() {
 
   const colors = stealthTheme.colors;
 
-  try {
-    return (
-      <AuthProvider>
-        <StatusBar style="dark" />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="auth/sign-in" />
-          <Stack.Screen name="auth/callback" />
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen
-            name="scan-card"
-            options={{
-              headerShown: false,
-              presentation: 'fullScreenModal',
-            }}
-          />
-        </Stack>
+  return (
+    <AuthProvider>
+      <StatusBar style="dark" />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="auth/sign-in" />
+        <Stack.Screen name="auth/callback" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen
+          name="scan-card"
+          options={{
+            headerShown: false,
+            presentation: 'fullScreenModal',
+          }}
+        />
+      </Stack>
 
-        <Modal
-          animationType="fade"
-          transparent
-          statusBarTranslucent
-          visible={!!requiredUpdateGate}
+      <Modal
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+        visible={!!requiredUpdateGate}
+        onRequestClose={() => undefined}
+      >
+        <View
+          style={{
+            flex: 1,
+            justifyContent: 'center',
+            padding: 24,
+            backgroundColor: colors.overlay,
+          }}
         >
           <View
             style={{
-              flex: 1,
-              justifyContent: 'center',
-              padding: 24,
-              backgroundColor: colors.overlay,
+              backgroundColor: colors.surface,
+              borderRadius: stealthTheme.radii.md,
+              padding: 22,
+              gap: 12,
+              borderWidth: 1,
+              borderColor: colors.border,
+              ...cardShadow('hero'),
             }}
           >
-            <View
+            <Text selectable style={{ fontSize: 22, fontWeight: '700', color: colors.text }}>
+              Update required
+            </Text>
+            <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
+              Your app version is no longer supported.
+            </Text>
+            <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
+              Installed: {requiredUpdateGate?.installedVersion ?? 'unknown'}
+            </Text>
+            <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
+              Required: {requiredUpdateGate?.requiredVersion ?? 'unknown'}+
+            </Text>
+
+            <Pressable
+              onPress={() => {
+                void openStoreLink();
+              }}
               style={{
-                backgroundColor: colors.surface,
-                borderRadius: stealthTheme.radii.md,
-                padding: 22,
-                gap: 12,
-                borderWidth: 1,
-                borderColor: colors.border,
-                ...cardShadow('hero'),
+                marginTop: 8,
+                borderRadius: stealthTheme.radii.sm,
+                backgroundColor: colors.brand,
+                paddingVertical: 13,
+                alignItems: 'center',
               }}
             >
-              <Text selectable style={{ fontSize: 22, fontWeight: '700', color: colors.text }}>
-                Update required
+              <Text selectable style={{ color: '#ffffff', fontSize: 15, fontWeight: '600' }}>
+                Update now
               </Text>
-              <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
-                Your app version is no longer supported.
-              </Text>
-              <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
-                Installed: {requiredUpdateGate?.installedVersion ?? 'unknown'}
-              </Text>
-              <Text selectable style={{ fontSize: 14, color: colors.textMuted }}>
-                Required: {requiredUpdateGate?.requiredVersion ?? 'unknown'}+
-              </Text>
-
-              <Pressable
-                onPress={() => {
-                  void openStoreLink();
-                }}
-                style={{
-                  marginTop: 8,
-                  borderRadius: stealthTheme.radii.sm,
-                  backgroundColor: colors.brand,
-                  paddingVertical: 13,
-                  alignItems: 'center',
-                }}
-              >
-                <Text selectable style={{ color: '#ffffff', fontSize: 15, fontWeight: '600' }}>
-                  Update now
-                </Text>
-              </Pressable>
-            </View>
+            </Pressable>
           </View>
-        </Modal>
-      </AuthProvider>
-    );
-  } catch (error) {
-    console.error('Error in RootLayout:', error);
-    return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: 20,
-          backgroundColor: colors.canvas,
-        }}
-      >
-        <Text style={{ color: colors.danger, marginBottom: 10, fontWeight: '700' }}>
-          Error loading app:
-        </Text>
-        <Text style={{ color: colors.text }}>{String(error)}</Text>
-      </View>
-    );
-  }
+        </View>
+      </Modal>
+    </AuthProvider>
+  );
 }

@@ -1,11 +1,12 @@
 import { View, ActivityIndicator, Text, StyleSheet, Pressable } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { supabase } from '../../../../lib/supabase';
+import { supabase } from '@/lib/supabase';
 
 export default function AuthCallback() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ error?: string | string[]; error_description?: string | string[] }>();
   const [message, setMessage] = useState('Completing sign in...');
   const [showRetry, setShowRetry] = useState(false);
@@ -118,7 +119,12 @@ export default function AuthCallback() {
   }, [params.error, params.error_description, router]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}
+    >
       <View style={styles.content}>
         <ActivityIndicator size="large" color="#007AFF" />
         <Text style={styles.text}>{message}</Text>
@@ -128,7 +134,7 @@ export default function AuthCallback() {
           </Pressable>
         ) : null}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

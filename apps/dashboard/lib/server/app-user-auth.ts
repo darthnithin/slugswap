@@ -52,21 +52,32 @@ export async function authenticateAppUser(
   return { user };
 }
 
+function metadataString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
 export async function syncAuthenticatedUser(user: User) {
+  const metadataName =
+    metadataString(user.user_metadata?.full_name) ??
+    metadataString(user.user_metadata?.name);
+  const metadataAvatar =
+    metadataString(user.user_metadata?.avatar_url) ??
+    metadataString(user.user_metadata?.picture);
+
   await db
     .insert(users)
     .values({
       id: user.id,
       email: user.email || `${user.id}@unknown.local`,
-      name: user.user_metadata?.name || null,
-      avatarUrl: user.user_metadata?.avatar_url || null,
+      name: metadataName,
+      avatarUrl: metadataAvatar,
     })
     .onConflictDoUpdate({
       target: users.id,
       set: {
         email: user.email || `${user.id}@unknown.local`,
-        name: user.user_metadata?.name || null,
-        avatarUrl: user.user_metadata?.avatar_url || null,
         updatedAt: new Date(),
       },
     });

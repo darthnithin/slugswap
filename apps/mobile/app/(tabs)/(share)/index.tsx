@@ -13,10 +13,13 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import * as WebBrowser from 'expo-web-browser';
 
-import { useAuth } from '../../../../../lib/auth-context';
+import { useAuth } from '@/lib/auth-context';
+import {
+  CrossPlatformSymbol,
+  type CrossPlatformSymbolName,
+} from '@/components/cross-platform-symbol';
 import {
   getGetAccounts,
   getGetLoginUrl,
@@ -27,19 +30,19 @@ import {
   unlinkGetAccount,
   type DonorImpact,
   type RequesterPoolStatus,
-} from '../../../../../lib/api';
+} from '@/lib/api';
 import {
   useTabCache,
   type GetAccountBalance,
   type ShareTabSnapshot,
-} from '../../../../../lib/tab-cache-context';
+} from '@/lib/tab-cache-context';
 import {
   buttonOpacity,
   cardShadow,
   stealthTheme,
   typeScale,
 } from '../../../lib/stealth-theme';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 const UCSC_TRACKED_BALANCE_ACCOUNTS = new Set(['flexi dollars', 'banana bucks', 'slug points']);
 const POOL_EMPTY_TITLE = 'No points available';
@@ -111,7 +114,7 @@ function SectionHeader({
   title,
   detail,
 }: {
-  icon: SymbolViewProps['name'];
+  icon: CrossPlatformSymbolName;
   title: string;
   detail?: string;
 }) {
@@ -119,7 +122,7 @@ function SectionHeader({
     <View style={styles.sectionHeader}>
       <View style={styles.sectionHeaderLeft}>
         <View style={styles.sectionIcon}>
-          <SymbolView name={icon} tintColor={colors.textSoft} size={18} />
+          <CrossPlatformSymbol name={icon} tintColor={colors.textSoft} size={18} />
         </View>
         <View style={styles.sectionHeaderText}>
           <Text style={styles.sectionTitle}>{title}</Text>
@@ -159,7 +162,7 @@ function SecondaryButton({
 }: {
   label: string;
   onPress: () => void;
-  icon?: SymbolViewProps['name'];
+  icon?: CrossPlatformSymbolName;
   destructive?: boolean;
   disabled?: boolean;
   loading?: boolean;
@@ -179,7 +182,7 @@ function SecondaryButton({
         <ActivityIndicator size="small" color={tintColor} />
       ) : (
         <>
-          {icon ? <SymbolView name={icon} tintColor={tintColor} size={14} /> : null}
+          {icon ? <CrossPlatformSymbol name={icon} tintColor={tintColor} size={14} /> : null}
           <Text style={[styles.secondaryButtonLabel, destructive ? styles.destructiveLabel : null]}>
             {label}
           </Text>
@@ -221,7 +224,7 @@ function PrimaryButton({
 export default function DonorScreen() {
   const { signOut } = useAuth();
   const router = useRouter();
-  const { markShareLoaded, shareSnapshot, setShareSnapshot } = useTabCache();
+  const { shareSnapshot, setShareSnapshot } = useTabCache();
   const hasShareSnapshot = !!shareSnapshot;
 
   const [weeklyAmount, setWeeklyAmount] = useState(shareSnapshot?.weeklyAmount ?? '');
@@ -251,6 +254,8 @@ export default function DonorScreen() {
   );
   const shareSnapshotRef = useRef<ShareTabSnapshot | null>(shareSnapshot);
   const getAccountsRequestIdRef = useRef(0);
+  const homeRequestIdRef = useRef(0);
+  const skipInitialFocusRefreshRef = useRef(!hasShareSnapshot);
 
   useEffect(() => {
     shareSnapshotRef.current = shareSnapshot;
@@ -260,6 +265,10 @@ export default function DonorScreen() {
     shareSnapshotRef.current = snapshot;
     setShareSnapshot(snapshot);
   }, [setShareSnapshot]);
+
+  const invalidateHomeRequests = useCallback(() => {
+    homeRequestIdRef.current += 1;
+  }, []);
 
   const loadGetAccountsInBackground = useCallback(async (options?: { alertOnError?: boolean }) => {
     const requestId = getAccountsRequestIdRef.current + 1;
@@ -292,13 +301,19 @@ export default function DonorScreen() {
   }, [updateShareSnapshot]);
 
   const loadUserAndImpact = useCallback(async (options?: { showBlockingLoader?: boolean }) => {
+    const requestId = homeRequestIdRef.current + 1;
+    homeRequestIdRef.current = requestId;
     const showBlockingLoader = options?.showBlockingLoader ?? false;
     if (showBlockingLoader) setLoading(true);
 
     try {
       const home = await getMobileHome();
+      if (homeRequestIdRef.current !== requestId) return;
+
       const linkState = home.linkStatus;
-      const nextGetAccounts = linkState.linked ? getAccounts : [];
+      const nextGetAccounts = linkState.linked
+        ? (shareSnapshotRef.current?.getAccounts ?? [])
+        : [];
       const impactData = home.impact;
       const allowance = home.allowance;
 
@@ -341,8 +356,6 @@ export default function DonorScreen() {
       setRequesterDaysUntilReset(nextSnapshot.requesterDaysUntilReset);
       setRequesterPoolStatus(nextSnapshot.requesterPoolStatus);
       updateShareSnapshot(nextSnapshot);
-      markShareLoaded();
-
       if (linkState.linked) {
         void loadGetAccountsInBackground();
       } else {
@@ -350,15 +363,16 @@ export default function DonorScreen() {
         setRefreshingBalance(false);
       }
     } catch (error) {
+      if (homeRequestIdRef.current !== requestId) return;
       console.error('Error loading impact:', error);
       Alert.alert('Error', 'Failed to load your donation data');
     } finally {
-      if (showBlockingLoader) setLoading(false);
+      if (showBlockingLoader && homeRequestIdRef.current === requestId) {
+        setLoading(false);
+      }
     }
   }, [
-    getAccounts,
     loadGetAccountsInBackground,
-    markShareLoaded,
     updateShareSnapshot,
   ]);
 
@@ -402,15 +416,38 @@ export default function DonorScreen() {
   const ucscTrackedAccounts = getAccounts.filter((account) =>
     UCSC_TRACKED_BALANCE_ACCOUNTS.has(account.accountDisplayName.trim().toLowerCase())
   );
-  const totalAvailableBalance = ucscTrackedAccounts.reduce((sum, account) => {
-    if (typeof account.balance !== 'number' || Number.isNaN(account.balance)) return sum;
-    return sum + account.balance;
-  }, 0);
+  const numericTrackedBalances = ucscTrackedAccounts
+    .map((account) => account.balance)
+    .filter((balance): balance is number => typeof balance === 'number' && !Number.isNaN(balance));
+  const totalAvailableBalance =
+    numericTrackedBalances.length > 0
+      ? numericTrackedBalances.reduce((sum, balance) => sum + balance, 0)
+      : null;
 
   useEffect(() => {
     if (hasShareSnapshot) return;
     void loadUserAndImpact({ showBlockingLoader: true });
   }, [hasShareSnapshot, loadUserAndImpact]);
+
+  useEffect(
+    () => () => {
+      invalidateHomeRequests();
+      getAccountsRequestIdRef.current += 1;
+    },
+    [invalidateHomeRequests]
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (skipInitialFocusRefreshRef.current) {
+        skipInitialFocusRefreshRef.current = false;
+        return undefined;
+      }
+
+      void loadUserAndImpact({ showBlockingLoader: false });
+      return undefined;
+    }, [loadUserAndImpact])
+  );
 
   const handleSetContribution = async () => {
     if (!userId) return;
@@ -421,9 +458,11 @@ export default function DonorScreen() {
       return;
     }
 
+    invalidateHomeRequests();
     setSaving(true);
     try {
       await setDonation(amount);
+      invalidateHomeRequests();
       setIsActive(true);
       Alert.alert('Success', 'Your contribution has been set!');
       await loadUserAndImpact({ showBlockingLoader: false });
@@ -441,9 +480,11 @@ export default function DonorScreen() {
     const shouldPause = isActive;
     const nextIsActive = !isActive;
 
+    invalidateHomeRequests();
     setSaving(true);
     try {
       await pauseDonation(shouldPause);
+      invalidateHomeRequests();
       setIsActive(nextIsActive);
       cacheShareSnapshot({ isActive: nextIsActive });
       Alert.alert('Success', isActive ? 'Donation paused' : 'Donation resumed');
@@ -458,7 +499,9 @@ export default function DonorScreen() {
   const completeGetLink = async (validatedUrl: string) => {
     if (!userId) return;
 
+    invalidateHomeRequests();
     await linkGetAccount(validatedUrl.trim());
+    invalidateHomeRequests();
 
     setGetLoginUrlInput('');
     Alert.alert('Success', 'Your GET account is now linked for sharing.');
@@ -496,9 +539,11 @@ export default function DonorScreen() {
     if (!userId) return;
 
     const runUnlink = async () => {
+      invalidateHomeRequests();
       setUnlinkingGet(true);
       try {
         await unlinkGetAccount();
+        invalidateHomeRequests();
         setIsGetLinked(false);
         setGetLinkedAt(null);
         setGetAccounts([]);
@@ -550,6 +595,8 @@ export default function DonorScreen() {
   const handleSignOut = async () => {
     if (isSigningOut) return;
 
+    invalidateHomeRequests();
+    getAccountsRequestIdRef.current += 1;
     setIsSigningOut(true);
     try {
       await signOut();
@@ -585,7 +632,7 @@ export default function DonorScreen() {
           <Text style={styles.passTitle}>UCSC Dining Services</Text>
           <View style={styles.passBand}>
             <View style={styles.passAvatarShell}>
-              <SymbolView
+              <CrossPlatformSymbol
                 name="person.crop.circle.badge.checkmark"
                 tintColor="rgba(255,255,255,0.88)"
                 size={112}
@@ -598,7 +645,11 @@ export default function DonorScreen() {
             {requesterPoolStatus === 'empty' ? (
               <View style={styles.poolDisabledCard}>
                 <View style={styles.poolDisabledHeader}>
-                  <SymbolView name="barcode.viewfinder" tintColor={colors.textSoft} size={20} />
+                  <CrossPlatformSymbol
+                    name="barcode.viewfinder"
+                    tintColor={colors.textSoft}
+                    size={20}
+                  />
                   <Text style={styles.poolDisabledTitle}>{POOL_EMPTY_TITLE}</Text>
                 </View>
                 <Text style={styles.poolDisabledCopy}>{POOL_EMPTY_MESSAGE}</Text>
@@ -611,7 +662,7 @@ export default function DonorScreen() {
                   { opacity: buttonOpacity(pressed, false) },
                 ]}
               >
-                <SymbolView
+                <CrossPlatformSymbol
                   name="barcode.viewfinder"
                   tintColor="#ffffff"
                   size={22}
@@ -653,7 +704,9 @@ export default function DonorScreen() {
             <>
               <View style={styles.balanceHero}>
                 <Text style={styles.balanceHeroLabel}>Total available</Text>
-                <Text style={styles.balanceHeroValue}>{totalAvailableBalance.toFixed(2)} pts</Text>
+                <Text style={styles.balanceHeroValue}>
+                  {totalAvailableBalance === null ? 'n/a' : `${totalAvailableBalance.toFixed(2)} pts`}
+                </Text>
                 <Text style={styles.balanceHeroMeta}>
                   {refreshingBalance
                     ? 'Refreshing balances...'

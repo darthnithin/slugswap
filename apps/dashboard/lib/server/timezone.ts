@@ -6,6 +6,12 @@ export type WeekWindow = {
   weekEnd: Date;
 };
 
+export type DayWindow = {
+  timezone: typeof PACIFIC_TIMEZONE;
+  dayStart: Date;
+  dayEnd: Date;
+};
+
 type TimeParts = {
   year: number;
   month: number;
@@ -113,5 +119,36 @@ export function getPacificWeekWindow(reference = new Date()): WeekWindow {
     timezone: PACIFIC_TIMEZONE,
     weekStart,
     weekEnd,
+  };
+}
+
+export function getPacificDayWindow(reference = new Date()): DayWindow {
+  const nowPt = getTimeParts(reference, PACIFIC_TIMEZONE);
+  const currentPtDateUtc = new Date(Date.UTC(nowPt.year, nowPt.month - 1, nowPt.day));
+  const nextPtDateUtc = shiftUtcDateByDays(currentPtDateUtc, 1);
+
+  const dayStart = zonedDateTimeToUtc(
+    currentPtDateUtc.getUTCFullYear(),
+    currentPtDateUtc.getUTCMonth() + 1,
+    currentPtDateUtc.getUTCDate(),
+    0,
+    0,
+    0,
+    PACIFIC_TIMEZONE
+  );
+  const dayEnd = zonedDateTimeToUtc(
+    nextPtDateUtc.getUTCFullYear(),
+    nextPtDateUtc.getUTCMonth() + 1,
+    nextPtDateUtc.getUTCDate(),
+    0,
+    0,
+    0,
+    PACIFIC_TIMEZONE
+  );
+
+  return {
+    timezone: PACIFIC_TIMEZONE,
+    dayStart,
+    dayEnd,
   };
 }

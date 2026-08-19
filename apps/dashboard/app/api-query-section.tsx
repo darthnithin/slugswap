@@ -78,9 +78,9 @@ const API_ENDPOINTS: ApiEndpoint[] = [
   {
     path: "/api/claims/generate",
     method: "POST",
-    description: "Generate claim code for user",
+    description: "Generate a claim using the configured server-side amount",
     requiresAuth: true,
-    bodyExample: JSON.stringify({ amount: 10 }, null, 2),
+    bodyExample: JSON.stringify({}, null, 2),
   },
   {
     path: "/api/claims/history",

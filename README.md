@@ -15,8 +15,8 @@ A mobile app that helps university students share dining points.
 
 ### Prerequisites
 
-- Node.js 20+
-- npm or yarn
+- Node.js 20.19–24 (24 recommended)
+- npm
 - Expo CLI
 - iOS Simulator (Mac) or Android Emulator
 
@@ -28,9 +28,9 @@ A mobile app that helps university students share dining points.
    npm install
    ```
 
-3. Copy `.env.example` to `.env.local` and fill in your credentials:
+3. Copy `.env.example` to `.env` and fill in your credentials:
    ```bash
-   cp .env.example .env.local
+   cp .env.example .env
    ```
 
 ### Development
@@ -48,7 +48,7 @@ Then press:
 Start the dashboard app:
 
 ```bash
-npm run dashboard:dev -- -p 3001
+npm run dashboard:dev
 ```
 
 Route map (dashboard app):
@@ -77,7 +77,7 @@ slugswap/
 ├── apps/
 │   ├── mobile/             # Expo mobile app
 │   └── dashboard/          # Next.js dashboard + API routes
-├── db/                     # Drizzle schema + migrations
+├── db/                     # Authoritative Drizzle schema + migrations
 ├── scripts/                # Project scripts
 └── .github/workflows/      # CI/CD workflows
 ```
@@ -86,12 +86,19 @@ slugswap/
 
 Instagram story generation now lives in `scripts/instagram-stories/` and the preview route is served from `apps/dashboard/app/ig-stories/`.
 
-## Product Releases
+### Database Integrity Audit
 
-See `slugswap-release.md` for the detailed release plan.
+Run the read-only aggregate audit before and after database work:
+
+```bash
+npm run db:audit
+```
+
+`scripts/repair-db.ts` is an exceptional, explicitly gated production repair. It does nothing unless both `--apply` and the confirmation token printed by the script are supplied. Review it and create a Neon backup or branch before authorizing it.
 
 **Current Focus**: Release 1
-- Donor onboarding with monthly preferences
+
+- Donor onboarding with weekly contribution preferences
 - Requester weekly allowance visibility
 - Claim code generation and redemption
 - Basic impact and history views
@@ -104,9 +111,6 @@ For questions, issues, or contribution guidance, contact the development team.
 
 The GET barcode flow currently **does not use a server-side session cache**. Each barcode fetch re-authenticates with GET using the stored device credentials/PIN and then requests the latest payload.
 
-For clients consuming claim/scan status:
-
-- `GET /api/get/scan-state` returns scan/status metadata only (`state`, `lastCheckedAt`, `expiresAt`).
-- Barcode payloads are returned by `GET /api/get/barcode`.
-
-Keep those endpoints separate in client logic to avoid treating scan-state responses as barcode payload responses.
+`GET /api/get/barcode` returns a fresh barcode payload. `GET /api/get/wallet`
+returns the linked account balances and a fresh barcode together for the wallet
+screen.

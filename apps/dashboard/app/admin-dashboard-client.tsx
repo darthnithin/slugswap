@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ApiQuerySection } from "./api-query-section";
 
 type NavSection = "overview" | "pool" | "claims" | "config" | "donors" | "api" | "users";
-type ClaimStatus = "redeemed" | "pending" | "active" | "expired";
+type ClaimStatus = "redeemed" | "pending" | "active" | "expired" | "cancelled";
 
 type ClaimAggregate = {
   count: number;
@@ -256,7 +256,7 @@ function formatDateTime(dateIso: string | null): string {
 }
 
 function isClaimStatus(status: string): status is ClaimStatus {
-  return ["redeemed", "pending", "active", "expired"].includes(status);
+  return ["redeemed", "pending", "active", "expired", "cancelled"].includes(status);
 }
 
 async function readApiError(response: Response): Promise<string> {
@@ -280,6 +280,10 @@ export default function DashboardHomePage() {
   const apiSectionRef = useRef<HTMLDivElement | null>(null);
   const usersSectionRef = useRef<HTMLDivElement | null>(null);
   const hasLoadedRef = useRef(false);
+  const configDirtyRef = useRef(false);
+  const latestConfigUpdatedAtRef = useRef(0);
+  const userDetailsAbortRef = useRef<AbortController | null>(null);
+  const userDetailsRequestIdRef = useRef(0);
 
   const [statsData, setStatsData] = useState<AdminStatsResponse | null>(null);
   const [configData, setConfigData] = useState<AdminConfigResponse | null>(null);
@@ -344,8 +348,19 @@ export default function DashboardHomePage() {
       ])) as [AdminStatsResponse, AdminConfigResponse];
 
       setStatsData(nextStats);
-      setConfigData(nextConfig);
-      setConfigDraft(nextConfig.config);
+      const nextConfigUpdatedAt = Date.parse(nextConfig.updatedAt);
+      const shouldAcceptConfig =
+        !Number.isFinite(nextConfigUpdatedAt) ||
+        nextConfigUpdatedAt >= latestConfigUpdatedAtRef.current;
+      if (shouldAcceptConfig) {
+        if (Number.isFinite(nextConfigUpdatedAt)) {
+          latestConfigUpdatedAtRef.current = nextConfigUpdatedAt;
+        }
+        setConfigData(nextConfig);
+        if (!configDirtyRef.current) {
+          setConfigDraft(nextConfig.config);
+        }
+      }
       hasLoadedRef.current = true;
 
       const time = new Date().toLocaleTimeString("en-US", {
@@ -422,12 +437,21 @@ export default function DashboardHomePage() {
 
   const fetchUserDetails = useCallback(
     async (userId: string) => {
+      userDetailsAbortRef.current?.abort();
+      const controller = new AbortController();
+      const requestId = ++userDetailsRequestIdRef.current;
+      userDetailsAbortRef.current = controller;
       setIsLoadingUserDetails(true);
       setUserDetailsError(null);
+      setSelectedUserDetails((current) =>
+        current?.user.id === userId ? current : null
+      );
       try {
         const res = await fetch(`/api/admin/user-balance?userId=${encodeURIComponent(userId)}`, {
           cache: "no-store",
+          signal: controller.signal,
         });
+        if (requestId !== userDetailsRequestIdRef.current) return;
         if (res.status === 401) {
           router.replace("/admin/login");
           return;
@@ -436,12 +460,21 @@ export default function DashboardHomePage() {
           throw new Error(await readApiError(res));
         }
         const data = (await res.json()) as AdminUserBalanceResponse;
+        if (requestId !== userDetailsRequestIdRef.current) return;
+        if (data.user.id !== userId) {
+          throw new Error("Received details for a different user");
+        }
         setSelectedUserDetails(data);
       } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        if (requestId !== userDetailsRequestIdRef.current) return;
         const message = err instanceof Error ? err.message : "Failed to fetch user details";
         setUserDetailsError(message);
       } finally {
-        setIsLoadingUserDetails(false);
+        if (requestId === userDetailsRequestIdRef.current) {
+          userDetailsAbortRef.current = null;
+          setIsLoadingUserDetails(false);
+        }
       }
     },
     [router]
@@ -473,12 +506,19 @@ export default function DashboardHomePage() {
 
   useEffect(() => {
     if (!selectedUserId) {
+      userDetailsAbortRef.current?.abort();
+      userDetailsAbortRef.current = null;
+      userDetailsRequestIdRef.current += 1;
       setSelectedUserDetails(null);
       setUserDetailsError(null);
+      setIsLoadingUserDetails(false);
       setDonorLimit("");
       return;
     }
     void fetchUserDetails(selectedUserId);
+    return () => {
+      userDetailsAbortRef.current?.abort();
+    };
   }, [selectedUserId, fetchUserDetails]);
 
   useEffect(() => {
@@ -534,6 +574,7 @@ export default function DashboardHomePage() {
 
   const handleConfigNumberChange = useCallback(
     (field: NumericConfigField, value: string) => {
+      configDirtyRef.current = true;
       setConfigDraft((prev) => {
         if (!prev) return prev;
         return {
@@ -547,6 +588,7 @@ export default function DashboardHomePage() {
 
   const handleConfigTextChange = useCallback(
     (field: TextConfigField, value: string) => {
+      configDirtyRef.current = true;
       setConfigDraft((prev) => {
         if (!prev) return prev;
         return {
@@ -560,6 +602,7 @@ export default function DashboardHomePage() {
 
   const loadConfig = useCallback(() => {
     if (!configData) return;
+    configDirtyRef.current = false;
     setConfigDraft(configData.config);
   }, [configData]);
 
@@ -600,6 +643,14 @@ export default function DashboardHomePage() {
       }
 
       const nextConfig = (await res.json()) as AdminConfigResponse;
+      const nextConfigUpdatedAt = Date.parse(nextConfig.updatedAt);
+      if (Number.isFinite(nextConfigUpdatedAt)) {
+        latestConfigUpdatedAtRef.current = Math.max(
+          latestConfigUpdatedAtRef.current,
+          nextConfigUpdatedAt
+        );
+      }
+      configDirtyRef.current = false;
       setConfigData(nextConfig);
       setConfigDraft(nextConfig.config);
       setToast("Configuration saved");
@@ -944,17 +995,17 @@ export default function DashboardHomePage() {
     }
   }, [selectedUserId, selectedUserDetails, router, fetchData, fetchUserDetails]);
 
-  const handleDeleteClaim = useCallback(async (claimId: string, userId: string) => {
-    if (!window.confirm("Are you sure you want to delete this claim? If it hasn't been redeemed, the points will be refunded.")) {
+  const handleDeleteClaim = useCallback(async (claimId: string) => {
+    if (!window.confirm("Delete this expired or cancelled claim? Redeemed and live claims are protected.")) {
       return;
     }
 
     setDeletingClaimId(claimId);
     try {
-      const res = await fetch("/api/claims/delete", {
+      const res = await fetch("/api/admin/delete-claim", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, claimCodeId: claimId }),
+        body: JSON.stringify({ claimCodeId: claimId }),
       });
 
       if (res.status === 401) {
@@ -1718,6 +1769,7 @@ export default function DashboardHomePage() {
                         value={configDraft?.poolCalculationMethod ?? "equal"}
                         onChange={(event) => {
                           const nextMethod = event.target.value;
+                          configDirtyRef.current = true;
                           setConfigDraft((prev) => {
                             if (!prev) return prev;
                             return {
@@ -1743,6 +1795,7 @@ export default function DashboardHomePage() {
                         value={configDraft?.donorSelectionPolicy ?? "least_utilized"}
                         onChange={(event) => {
                           const nextPolicy = event.target.value as DonorSelectionPolicy;
+                          configDirtyRef.current = true;
                           setConfigDraft((prev) => {
                             if (!prev) return prev;
                             return {
@@ -2321,6 +2374,13 @@ export default function DashboardHomePage() {
                             const statusClass = isClaimStatus(claim.status)
                               ? claim.status
                               : "active";
+                            const expiresAtMs = new Date(claim.expiresAt).getTime();
+                            const claimCanBeDeleted =
+                              claim.status === "expired" ||
+                              claim.status === "cancelled" ||
+                              ((claim.status === "active" || claim.status === "pending") &&
+                                Number.isFinite(expiresAtMs) &&
+                                expiresAtMs <= Date.now());
 
                             return (
                               <tr key={claim.id}>
@@ -2339,9 +2399,13 @@ export default function DashboardHomePage() {
                                   <button
                                     type="button"
                                     className="btn-icon btn-danger"
-                                    onClick={() => handleDeleteClaim(claim.id, claim.userId)}
-                                    disabled={deletingClaimId === claim.id}
-                                    title="Delete claim"
+                                    onClick={() => handleDeleteClaim(claim.id)}
+                                    disabled={deletingClaimId === claim.id || !claimCanBeDeleted}
+                                    title={
+                                      claimCanBeDeleted
+                                        ? "Delete expired or cancelled claim"
+                                        : "Live and redeemed claims cannot be deleted"
+                                    }
                                   >
                                     {deletingClaimId === claim.id ? "..." : "🗑️"}
                                   </button>

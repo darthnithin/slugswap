@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, gt, gte, lt, lte, sql as sqlOp } from "drizzle-orm";
+import { and, eq, gte, lt, sql as sqlOp } from "drizzle-orm";
 import {
   authenticateAppUser,
   syncAuthenticatedUser,
 } from "@/lib/server/app-user-auth";
-import { getAdminConfig, type AdminConfig } from "@/lib/server/config";
+import {
+  getAdminConfig,
+  getEffectiveClaimAmount,
+  type AdminConfig,
+} from "@/lib/server/config";
 import { db } from "@/lib/server/db";
 import { fetchLiveTrackedBalance } from "@/lib/server/get/tracked-balance";
 import * as schema from "@/lib/server/schema";
 import { getPacificWeekWindow } from "@/lib/server/timezone";
+import { getOrCreateCurrentWeeklyPool } from "@/lib/server/weekly-pool";
 
 export const runtime = "nodejs";
 
@@ -68,7 +73,8 @@ async function getRequesterPoolStatus(
   weekStart: Date,
   weekEnd: Date
 ): Promise<RequesterPoolStatus> {
-  const [activeLinkedCap, redeemedThisWeek] = await Promise.all([
+  const now = new Date();
+  const [activeLinkedCap, redeemedThisWeek, reservedThisWeek] = await Promise.all([
     db
       .select({ total: sqlOp<string>`coalesce(sum(${schema.donations.amount}), '0')` })
       .from(schema.donations)
@@ -96,10 +102,32 @@ async function getRequesterPoolStatus(
           lt(schema.claimCodes.redeemedAt, weekEnd)
         )
       ),
+    db
+      .select({ total: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')` })
+      .from(schema.claimCodes)
+      .innerJoin(
+        schema.donations,
+        eq(schema.claimCodes.donorUserId, schema.donations.userId)
+      )
+      .innerJoin(
+        schema.getCredentials,
+        eq(schema.getCredentials.userId, schema.donations.userId)
+      )
+      .where(
+        and(
+          eq(schema.donations.status, "active"),
+          eq(schema.claimCodes.status, "active"),
+          gte(schema.claimCodes.createdAt, weekStart),
+          lt(schema.claimCodes.createdAt, weekEnd),
+          gte(schema.claimCodes.expiresAt, now)
+        )
+      ),
   ]);
 
   const availablePoints =
-    parsePoints(activeLinkedCap[0]?.total) - parsePoints(redeemedThisWeek[0]?.total);
+    parsePoints(activeLinkedCap[0]?.total) -
+    parsePoints(redeemedThisWeek[0]?.total) -
+    parsePoints(reservedThisWeek[0]?.total);
 
   return availablePoints >= claimAmount ? "available" : "empty";
 }
@@ -110,37 +138,7 @@ async function getAllowanceForUser(
   ensureUserExists?: () => Promise<void>
 ) {
   const now = new Date();
-  const weeklyPool = await db
-    .select()
-    .from(schema.weeklyPools)
-    .where(
-      and(
-        lte(schema.weeklyPools.weekStart, now),
-        gt(schema.weeklyPools.weekEnd, now)
-      )
-    )
-    .limit(1);
-
-  if (weeklyPool.length === 0) {
-    const weekWindow = getPacificWeekWindow(now);
-    const poolStatus = await getRequesterPoolStatus(
-      config.defaultClaimAmount,
-      weekWindow.weekStart,
-      weekWindow.weekEnd
-    );
-
-    return {
-      weeklyLimit: 0,
-      usedAmount: 0,
-      remainingAmount: 0,
-      weekStart: null,
-      weekEnd: null,
-      daysUntilReset: 0,
-      poolStatus,
-    };
-  }
-
-  const pool = weeklyPool[0];
+  const pool = await getOrCreateCurrentWeeklyPool(now);
   let userAllowance = await db
     .select()
     .from(schema.userAllowances)
@@ -164,21 +162,47 @@ async function getAllowanceForUser(
         usedAmount: "0",
         remainingAmount: defaultWeeklyLimit.toString(),
       })
+      .onConflictDoNothing({
+        target: [
+          schema.userAllowances.userId,
+          schema.userAllowances.weeklyPoolId,
+        ],
+      })
       .returning();
-    userAllowance = [newAllowance];
+    if (newAllowance) {
+      userAllowance = [newAllowance];
+    } else {
+      userAllowance = await db
+        .select()
+        .from(schema.userAllowances)
+        .where(
+          and(
+            eq(schema.userAllowances.userId, userId),
+            eq(schema.userAllowances.weeklyPoolId, pool.id)
+          )
+        )
+        .limit(1);
+    }
   }
 
   const allowance = userAllowance[0];
+  if (!allowance) {
+    throw new Error("Failed to load requester allowance");
+  }
   const timeUntilReset = pool.weekEnd.getTime() - now.getTime();
   const daysUntilReset = Math.ceil(timeUntilReset / (1000 * 60 * 60 * 24));
-  const poolStatus = await getRequesterPoolStatus(
-    config.defaultClaimAmount,
-    pool.weekStart,
-    pool.weekEnd
-  );
+  const weeklyLimit = parsePoints(allowance.weeklyLimit);
+  const poolStatus =
+    weeklyLimit < 1
+      ? "empty"
+      : await getRequesterPoolStatus(
+          getEffectiveClaimAmount(config, weeklyLimit),
+          pool.weekStart,
+          pool.weekEnd
+        );
 
   return {
-    weeklyLimit: parseFloat(allowance.weeklyLimit),
+    weeklyLimit,
     usedAmount: parseFloat(allowance.usedAmount),
     remainingAmount: parseFloat(allowance.remainingAmount),
     weekStart: pool.weekStart.toISOString(),
@@ -251,7 +275,10 @@ async function getImpactForUser(userId: string) {
 
   const redeemedWeekAmount = parseFloat(redeemedThisWeek[0]?.total || "0");
   const reservedWeekAmount = parseFloat(reservedThisWeek[0]?.total || "0");
-  const capRemainingThisWeek = weeklyAmount - (redeemedWeekAmount + reservedWeekAmount);
+  const capRemainingThisWeek = Math.max(
+    0,
+    weeklyAmount - (redeemedWeekAmount + reservedWeekAmount)
+  );
 
   let remainingThisWeek = capRemainingThisWeek;
   if (donation.status === "active") {
@@ -271,7 +298,7 @@ async function getImpactForUser(userId: string) {
     isActive: donation.status === "active",
     weeklyAmount,
     status: donation.status,
-    peopleHelped: peopleHelped[0]?.count || 0,
+    peopleHelped: Number(peopleHelped[0]?.count ?? 0),
     pointsContributed: parseFloat(allTimeContributed[0]?.total || "0"),
     capAmount: weeklyAmount,
     redeemedThisWeek: redeemedWeekAmount,

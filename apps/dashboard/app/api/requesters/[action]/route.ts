@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, gt, gte, lt, lte, sql as sqlOp } from "drizzle-orm";
+import { and, eq, gte, lt, sql as sqlOp } from "drizzle-orm";
 import {
   authenticateAppUser,
   syncAuthenticatedUser,
 } from "@/lib/server/app-user-auth";
 import { db } from "@/lib/server/db";
 import * as schema from "@/lib/server/schema";
-import { getAdminConfig } from "@/lib/server/config";
-import { getPacificWeekWindow } from "@/lib/server/timezone";
+import { getAdminConfig, getEffectiveClaimAmount } from "@/lib/server/config";
+import { getOrCreateCurrentWeeklyPool } from "@/lib/server/weekly-pool";
 
 export const runtime = "nodejs";
 
@@ -33,7 +33,8 @@ async function getRequesterPoolStatus(
   weekStart: Date,
   weekEnd: Date
 ): Promise<RequesterPoolStatus> {
-  const [activeLinkedCap, redeemedThisWeek] = await Promise.all([
+  const now = new Date();
+  const [activeLinkedCap, redeemedThisWeek, reservedThisWeek] = await Promise.all([
     db
       .select({ total: sqlOp<string>`coalesce(sum(${schema.donations.amount}), '0')` })
       .from(schema.donations)
@@ -61,10 +62,32 @@ async function getRequesterPoolStatus(
           lt(schema.claimCodes.redeemedAt, weekEnd)
         )
       ),
+    db
+      .select({ total: sqlOp<string>`coalesce(sum(${schema.claimCodes.amount}), '0')` })
+      .from(schema.claimCodes)
+      .innerJoin(
+        schema.donations,
+        eq(schema.claimCodes.donorUserId, schema.donations.userId)
+      )
+      .innerJoin(
+        schema.getCredentials,
+        eq(schema.getCredentials.userId, schema.donations.userId)
+      )
+      .where(
+        and(
+          eq(schema.donations.status, "active"),
+          eq(schema.claimCodes.status, "active"),
+          gte(schema.claimCodes.createdAt, weekStart),
+          lt(schema.claimCodes.createdAt, weekEnd),
+          gte(schema.claimCodes.expiresAt, now)
+        )
+      ),
   ]);
 
   const availablePoints =
-    parsePoints(activeLinkedCap[0]?.total) - parsePoints(redeemedThisWeek[0]?.total);
+    parsePoints(activeLinkedCap[0]?.total) -
+    parsePoints(redeemedThisWeek[0]?.total) -
+    parsePoints(reservedThisWeek[0]?.total);
 
   return availablePoints >= claimAmount ? "available" : "empty";
 }
@@ -104,81 +127,11 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     const { config } = await getAdminConfig();
     configMs = durationMs(configStartedAt);
 
-    // const user = auth.user;
-
-    // const { weekStart, weekEnd } = getCurrentWeek();
-
-    // let weeklyPool = await db
-    //   .select()
-    //   .from(schema.weeklyPools)
-    //   .where(eq(schema.weeklyPools.weekStart, weekStart))
-    //   .limit(1);
-
-    // if (weeklyPool.length === 0) {
-    //   const [newPool] = await db
-    //     .insert(schema.weeklyPools)
-    //     .values({
-    //       weekStart,
-    //       weekEnd,
-    //       totalAmount: "0",
-    //       allocatedAmount: "0",
-    //       remainingAmount: "0",
-    //     })
-    //     .returning();
-    //   weeklyPool = [newPool];
-    // }
-
     const user = auth.user;
     const now = new Date();
-    // Find the actual pool instead of creating one
     const poolStartedAt = Date.now();
-    const weeklyPool = await db
-      .select()
-      .from(schema.weeklyPools)
-      .where(
-        and(
-          lte(schema.weeklyPools.weekStart, now),
-          gt(schema.weeklyPools.weekEnd, now)
-        )
-      )
-      .limit(1);
+    const pool = await getOrCreateCurrentWeeklyPool(now);
     poolMs = durationMs(poolStartedAt);
-
-    if (weeklyPool.length === 0) {
-      const weekWindow = getPacificWeekWindow(now);
-      const poolStatusStartedAt = Date.now();
-      const poolStatus = await getRequesterPoolStatus(
-        config.defaultClaimAmount,
-        weekWindow.weekStart,
-        weekWindow.weekEnd
-      );
-      poolStatusMs = durationMs(poolStatusStartedAt);
-      logApiTiming("[api.requesters.allowance.timing]", {
-        userId: user.id,
-        authMs,
-        syncUserMs,
-        configMs,
-        poolMs,
-        allowanceReadMs,
-        allowanceCreateMs,
-        poolStatusMs,
-        hasPool: false,
-        totalMs: durationMs(startedAt),
-      });
-      return NextResponse.json(
-        {
-          weeklyLimit: 0,
-          usedAmount: 0,
-          remainingAmount: 0,
-          weekStart: null,
-          weekEnd: null,
-          daysUntilReset: 0,
-          poolStatus,
-        },
-        { status: 200 }
-      );
-    }
-    const pool = weeklyPool[0];
 
     const allowanceReadStartedAt = Date.now();
     let userAllowance = await db
@@ -205,20 +158,46 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
           usedAmount: "0",
           remainingAmount: defaultWeeklyLimit.toString(),
         })
+        .onConflictDoNothing({
+          target: [
+            schema.userAllowances.userId,
+            schema.userAllowances.weeklyPoolId,
+          ],
+        })
         .returning();
       allowanceCreateMs = durationMs(allowanceCreateStartedAt);
-      userAllowance = [newAllowance];
+      if (newAllowance) {
+        userAllowance = [newAllowance];
+      } else {
+        userAllowance = await db
+          .select()
+          .from(schema.userAllowances)
+          .where(
+            and(
+              eq(schema.userAllowances.userId, user.id),
+              eq(schema.userAllowances.weeklyPoolId, pool.id)
+            )
+          )
+          .limit(1);
+      }
     }
 
     const allowance = userAllowance[0];
+    if (!allowance) {
+      throw new Error("Failed to load requester allowance");
+    }
     const timeUntilReset = pool.weekEnd.getTime() - now.getTime();
     const daysUntilReset = Math.ceil(timeUntilReset / (1000 * 60 * 60 * 24));
     const poolStatusStartedAt = Date.now();
-    const poolStatus = await getRequesterPoolStatus(
-      config.defaultClaimAmount,
-      pool.weekStart,
-      pool.weekEnd
-    );
+    const weeklyLimit = parsePoints(allowance.weeklyLimit);
+    const poolStatus =
+      weeklyLimit < 1
+        ? "empty"
+        : await getRequesterPoolStatus(
+            getEffectiveClaimAmount(config, weeklyLimit),
+            pool.weekStart,
+            pool.weekEnd
+          );
     poolStatusMs = durationMs(poolStatusStartedAt);
 
     logApiTiming("[api.requesters.allowance.timing]", {
@@ -236,7 +215,7 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
 
     return NextResponse.json(
       {
-        weeklyLimit: parseFloat(allowance.weeklyLimit),
+        weeklyLimit,
         usedAmount: parseFloat(allowance.usedAmount),
         remainingAmount: parseFloat(allowance.remainingAmount),
         weekStart: pool.weekStart.toISOString(),

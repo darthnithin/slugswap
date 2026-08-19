@@ -1028,7 +1028,8 @@ body {
   color: var(--info);
 }
 
-.admin-root .status-pill.expired {
+.admin-root .status-pill.expired,
+.admin-root .status-pill.cancelled {
   background: var(--danger-dim);
   color: var(--danger);
 }
