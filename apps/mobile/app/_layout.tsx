@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import Constants from 'expo-constants';
 import { getMobileAppConfig } from '@/lib/api';
+import { configureNotificationHandlingAsync } from '@/lib/notifications';
 import { cardShadow, stealthTheme } from '../lib/stealth-theme';
 
 type RequiredUpdateGate = {
@@ -194,6 +195,12 @@ export default function RootLayout() {
       updateCheckInFlightRef.current = false;
     }
   }, [checkRequiredNativeUpdate, checkOtaUpdate]);
+
+  useEffect(() => {
+    void configureNotificationHandlingAsync().catch((error) => {
+      console.warn('Failed to configure notification handling:', error);
+    });
+  }, []);
 
   useEffect(() => {
     void runUpdateChecks();

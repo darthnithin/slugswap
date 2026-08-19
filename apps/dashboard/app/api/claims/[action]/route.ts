@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, asc, desc, eq, gte, lt, lte, sql as sqlOp } from "drizzle-orm";
+import { waitUntil } from "@vercel/functions";
 import {
   authenticateAppUser,
   syncAuthenticatedUser,
@@ -21,8 +22,10 @@ import {
   getPacificDayWindow,
 } from "@/lib/server/timezone";
 import { getOrCreateCurrentWeeklyPool } from "@/lib/server/weekly-pool";
+import { runDonorSpendDeliveryPipeline } from "@/lib/server/notifications/donor-spend";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 type Ctx = { params: Promise<{ action: string }> };
 type CheckoutRail = "points-or-bucks" | "flexi-dollars";
@@ -31,6 +34,14 @@ type ClaimGenerationFailureReason =
   | "allowance_exhausted"
   | "pool_exhausted"
   | "pool_unavailable";
+
+function scheduleDonorSpendNotification(claimCodeId: string) {
+  waitUntil(
+    runDonorSpendDeliveryPipeline(claimCodeId).catch((error) => {
+      console.error("Donor spend notification pipeline failed", { claimCodeId, error });
+    })
+  );
+}
 
 const FLEXI_ACCOUNT_NAME = "flexi dollars";
 const POINTS_OR_BUCKS_ACCOUNT_NAMES = new Set(["banana bucks", "slug points"]);
@@ -891,6 +902,16 @@ async function detectRedemption(
         .join(",")}`,
     });
 
+    await tx
+      .insert(schema.notificationDeliveries)
+      .values({
+        claimCodeId: claim.id,
+        donorUserId: claim.donorUserId!,
+        kind: "donor_spend",
+        status: "pending",
+      })
+      .onConflictDoNothing({ target: schema.notificationDeliveries.claimCodeId });
+
     const userAllowance = await tx
       .select({ id: schema.userAllowances.id })
       .from(schema.userAllowances)
@@ -917,6 +938,10 @@ async function detectRedemption(
 
     return true;
   });
+
+  if (didRedeem) {
+    scheduleDonorSpendNotification(claim.id);
+  }
 
   return didRedeem
     ? {
@@ -971,6 +996,7 @@ async function handleCheckRedemption(req: NextRequest) {
     const currentClaim = claim[0];
 
     if (currentClaim.status === "redeemed") {
+      scheduleDonorSpendNotification(currentClaim.id);
       return NextResponse.json(
         { redeemed: true, amount: parseFloat(currentClaim.amount) },
         { status: 200 }

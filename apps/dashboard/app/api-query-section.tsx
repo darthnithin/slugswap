@@ -63,6 +63,9 @@ const API_ENDPOINTS: ApiEndpoint[] = [
         androidRequiredVersion: "1.0.0",
         iosStoreUrl: "https://testflight.apple.com/join/<code>",
         androidStoreUrl: "https://play.google.com/store/apps/details?id=<package>",
+        donorSpendNotificationTitle: "Your SlugPoints helped someone",
+        donorSpendNotificationBody:
+          "Someone just spent {{amount}} of your donated SlugPoints. Thank you for sharing!",
       },
       null,
       2
@@ -115,6 +118,24 @@ const API_ENDPOINTS: ApiEndpoint[] = [
     description: "Pause or resume donor",
     requiresAuth: true,
     bodyExample: JSON.stringify({ paused: true }, null, 2),
+  },
+  {
+    path: "/api/notifications/register",
+    method: "POST",
+    description: "Register an Expo push token for the authenticated app user",
+    requiresAuth: true,
+    bodyExample: JSON.stringify(
+      { token: "ExponentPushToken[...]", platform: "ios" },
+      null,
+      2
+    ),
+  },
+  {
+    path: "/api/notifications/preference",
+    method: "PATCH",
+    description: "Enable or disable donor spend notifications",
+    requiresAuth: true,
+    bodyExample: JSON.stringify({ enabled: true }, null, 2),
   },
   // GET (school point system)
   { path: "/api/get/login-url", method: "GET", description: "GET Tools login URL", requiresAuth: false },

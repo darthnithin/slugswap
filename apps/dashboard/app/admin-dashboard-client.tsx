@@ -33,6 +33,8 @@ type PoolConfig = {
   androidRequiredVersion: string;
   iosStoreUrl: string | null;
   androidStoreUrl: string | null;
+  donorSpendNotificationTitle: string;
+  donorSpendNotificationBody: string;
 };
 
 type NumericConfigField =
@@ -47,7 +49,9 @@ type TextConfigField =
   | "iosRequiredVersion"
   | "androidRequiredVersion"
   | "iosStoreUrl"
-  | "androidStoreUrl";
+  | "androidStoreUrl"
+  | "donorSpendNotificationTitle"
+  | "donorSpendNotificationBody";
 
 type AdminStatsResponse = {
   timestamp: string;
@@ -622,6 +626,8 @@ export default function DashboardHomePage() {
       androidRequiredVersion: configDraft.androidRequiredVersion.trim(),
       iosStoreUrl: configDraft.iosStoreUrl?.trim() || null,
       androidStoreUrl: configDraft.androidStoreUrl?.trim() || null,
+      donorSpendNotificationTitle: configDraft.donorSpendNotificationTitle.trim(),
+      donorSpendNotificationBody: configDraft.donorSpendNotificationBody.trim(),
     };
 
     setIsSaving(true);
@@ -1882,6 +1888,53 @@ export default function DashboardHomePage() {
                           placeholder="https://play.google.com/store/apps/details?id=..."
                         />
                       </div>
+                    </div>
+
+                    <div className="config-item">
+                      <label className="config-label" htmlFor="cfg-donor-notification-title">
+                        Donor Spend Notification Title
+                      </label>
+                      <div className="config-input-wrap">
+                        <input
+                          id="cfg-donor-notification-title"
+                          className="config-input"
+                          type="text"
+                          maxLength={100}
+                          value={configDraft?.donorSpendNotificationTitle ?? ""}
+                          onChange={(event) =>
+                            handleConfigTextChange(
+                              "donorSpendNotificationTitle",
+                              event.target.value
+                            )
+                          }
+                          placeholder="Your SlugPoints helped someone"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="config-item" style={{ gridColumn: "1 / -1" }}>
+                      <label className="config-label" htmlFor="cfg-donor-notification-body">
+                        Donor Spend Notification Message
+                      </label>
+                      <textarea
+                        id="cfg-donor-notification-body"
+                        className="config-input"
+                        maxLength={500}
+                        rows={3}
+                        value={configDraft?.donorSpendNotificationBody ?? ""}
+                        onChange={(event) =>
+                          handleConfigTextChange(
+                            "donorSpendNotificationBody",
+                            event.target.value
+                          )
+                        }
+                        placeholder="Someone just spent {{amount}} of the SlugPoints you donated."
+                        style={{ minHeight: 92, resize: "vertical" }}
+                      />
+                      <span className="config-label" style={{ marginTop: 8 }}>
+                        Use {"{{amount}}"} to insert the exact number of points spent. Without it,
+                        the message is sent exactly as written.
+                      </span>
                     </div>
                   </div>
                   <p

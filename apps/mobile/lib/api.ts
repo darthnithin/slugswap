@@ -187,6 +187,7 @@ if (__DEV__) {
 
 export type DonorImpact = {
   isActive: boolean;
+  notifyOnSpend: boolean;
   weeklyAmount: number;
   status: string;
   peopleHelped: number;
@@ -401,6 +402,52 @@ export async function pauseDonation(paused: boolean) {
   }
 
   return readApiJson(response, 'Failed to read donation status response');
+}
+
+export async function registerPushToken(token: string, platform: 'ios' | 'android') {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/notifications/register`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ token, platform }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to register this device'));
+  }
+
+  return readApiJson<{ success: boolean }>(response, 'Failed to read device registration');
+}
+
+export async function unregisterPushToken(token: string) {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/notifications/unregister`, {
+    method: 'DELETE',
+    headers,
+    body: JSON.stringify({ token }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to unregister this device'));
+  }
+}
+
+export async function updateDonorSpendNotificationPreference(enabled: boolean) {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/notifications/preference`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ enabled }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to update notification preference'));
+  }
+
+  return readApiJson<{ success: boolean; notifyOnSpend: boolean }>(
+    response,
+    'Failed to read notification preference'
+  );
 }
 
 export async function generateClaimCode(amount?: number) {

@@ -41,6 +41,7 @@ function emptyImpact() {
   const weekWindow = getPacificWeekWindow();
   return {
     isActive: false,
+    notifyOnSpend: false,
     weeklyAmount: 0,
     status: "paused",
     peopleHelped: 0,
@@ -296,6 +297,7 @@ async function getImpactForUser(userId: string) {
 
   return {
     isActive: donation.status === "active",
+    notifyOnSpend: donation.notifyOnSpend,
     weeklyAmount,
     status: donation.status,
     peopleHelped: Number(peopleHelped[0]?.count ?? 0),

@@ -140,6 +140,7 @@ async function handleImpact(req: NextRequest) {
       return NextResponse.json(
         {
           isActive: false,
+          notifyOnSpend: false,
           weeklyAmount: 0,
           status: "paused",
           peopleHelped: 0,
@@ -249,6 +250,7 @@ async function handleImpact(req: NextRequest) {
     return NextResponse.json(
       {
         isActive: donation.status === "active",
+        notifyOnSpend: donation.notifyOnSpend,
         weeklyAmount,
         status: donation.status,
         peopleHelped: Number(peopleHelped[0]?.count ?? 0),
