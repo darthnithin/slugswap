@@ -123,7 +123,7 @@ export default function RootLayout() {
       return false;
     } catch (error) {
       // Fail open if policy endpoint is unavailable.
-      console.error('Failed to load native update policy:', error);
+      console.warn('Failed to load native update policy:', error);
       setRequiredUpdateGate(null);
       return false;
     }

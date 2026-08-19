@@ -364,7 +364,7 @@ export default function DonorScreen() {
       }
     } catch (error) {
       if (homeRequestIdRef.current !== requestId) return;
-      console.error('Error loading impact:', error);
+      console.warn('Error loading impact:', error);
       Alert.alert('Error', 'Failed to load your donation data');
     } finally {
       if (showBlockingLoader && homeRequestIdRef.current === requestId) {

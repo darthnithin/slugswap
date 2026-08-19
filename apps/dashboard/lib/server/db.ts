@@ -1,7 +1,14 @@
 import { attachDatabasePool } from "@vercel/functions";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Pool as NeonPool } from "@neondatabase/serverless";
+import { drizzle as drizzleNeonServerless } from "drizzle-orm/neon-serverless";
+import {
+  drizzle as drizzleNodePostgres,
+  type NodePgDatabase,
+} from "drizzle-orm/node-postgres";
+import { Pool as NodePostgresPool } from "pg";
 import * as schema from "./schema";
+
+type Database = NodePgDatabase<typeof schema>;
 
 function preserveStrictTlsSemantics(connectionString: string): string {
   try {
@@ -26,14 +33,28 @@ function preserveStrictTlsSemantics(connectionString: string): string {
   }
 }
 
-function createDatabase() {
+function createDatabase(): Database {
   const configuredConnectionString = process.env.DATABASE_URL;
   if (!configuredConnectionString) {
     throw new Error("DATABASE_URL is not configured");
   }
   const connectionString = preserveStrictTlsSemantics(configuredConnectionString);
 
-  const pool = new Pool({
+  // Vercel Fluid Compute supports persistent TCP pools. Local development can
+  // run on networks that allow HTTPS/WebSockets but block PostgreSQL traffic,
+  // so use Neon's node-postgres-compatible WebSocket pool outside Vercel.
+  if (process.env.VERCEL !== "1") {
+    const pool = new NeonPool({
+      connectionString,
+      max: 10,
+      idleTimeoutMillis: 10_000,
+      connectionTimeoutMillis: 10_000,
+    });
+
+    return drizzleNeonServerless(pool, { schema }) as unknown as Database;
+  }
+
+  const pool = new NodePostgresPool({
     connectionString,
     max: 10,
     idleTimeoutMillis: 10_000,
@@ -44,10 +65,8 @@ function createDatabase() {
   // idle connections before the function instance is suspended.
   attachDatabasePool(pool);
 
-  return drizzle(pool, { schema });
+  return drizzleNodePostgres(pool, { schema });
 }
-
-type Database = ReturnType<typeof createDatabase>;
 
 let database: Database | null = null;
 
