@@ -259,6 +259,7 @@ export type DiningLocation = {
   id: string;
   slug: string;
   name: string;
+  closed?: boolean;
 };
 
 export type DiningMenu = {
@@ -611,10 +612,12 @@ export async function getMobileHome() {
   return readApiJson<MobileHomeResponse>(response, 'Failed to read mobile home');
 }
 
-export async function getDiningLocations() {
-  const response = await fetchWithFallback(`${API_BASE_URL}/api/menus/locations`, {
-    cache: 'no-store',
-  });
+export async function getDiningLocations(date: string) {
+  const searchParams = new URLSearchParams({ date });
+  const response = await fetchWithFallback(
+    `${API_BASE_URL}/api/menus/locations?${searchParams.toString()}`,
+    { cache: 'no-store' }
+  );
 
   if (!response.ok) {
     const errorMessage = await readApiError(response, 'Failed to fetch dining locations');

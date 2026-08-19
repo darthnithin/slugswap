@@ -76,3 +76,17 @@ test("recognizes FoodPro's explicit no-data page as a valid empty menu", () => {
     noDataAvailable: true,
   });
 });
+
+test("recognizes FoodPro's empty market-menu shell as no published menu", () => {
+  const parsed = parseFoodProMenuPage(
+    `
+      <div class="shortmenutitle">Menus for Wednesday, August 19, 2026</div>
+      <div class="shortmenuinstructs">&nbsp;&nbsp;</div>
+      <div class="shortmenumeals">Menu</div>
+    `,
+    "2026-08-19"
+  );
+
+  assert.equal(parsed.noDataAvailable, true);
+  assert.deepEqual(parsed.meals, []);
+});

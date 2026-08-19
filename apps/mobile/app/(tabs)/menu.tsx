@@ -19,6 +19,10 @@ import {
   type DiningMenu,
 } from '@/lib/api';
 import {
+  chooseAvailableLocationId,
+  sortDiningLocations,
+} from '@/lib/dining-locations';
+import {
   buttonOpacity,
   cardShadow,
   stealthTheme,
@@ -112,24 +116,34 @@ function formatSpecialHoursRange(hours: { opensAt: string | null; closesAt: stri
 function Chip({
   label,
   selected,
+  disabled = false,
   onPress,
 }: {
   label: string;
   selected: boolean;
+  disabled?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
-      accessibilityState={selected ? { selected: true } : undefined}
+      accessibilityState={{ selected, disabled }}
       style={({ pressed }) => [
         styles.chip,
         selected ? styles.chipSelected : null,
-        { opacity: buttonOpacity(pressed) },
+        disabled ? styles.chipDisabled : null,
+        { opacity: buttonOpacity(pressed, disabled) },
       ]}
     >
-      <Text style={[styles.chipLabel, selected ? styles.chipLabelSelected : null]}>
+      <Text
+        style={[
+          styles.chipLabel,
+          selected ? styles.chipLabelSelected : null,
+          disabled ? styles.chipLabelDisabled : null,
+        ]}
+      >
         {label}
       </Text>
     </Pressable>
@@ -199,9 +213,11 @@ export default function MenuScreen() {
     }
   }, []);
 
-  const loadLocations = useCallback(async () => {
-    const result = await getDiningLocations();
-    setLocations(result.locations);
+  const loadLocations = useCallback(async (date: string) => {
+    const result = await getDiningLocations(date);
+    const sortedLocations = sortDiningLocations(result.locations);
+    setLocations(sortedLocations);
+    return sortedLocations;
   }, []);
 
   const applyMenu = useCallback((nextMenu: DiningMenu, staleAt: string | null = null) => {
@@ -283,17 +299,28 @@ export default function MenuScreen() {
     async function loadInitialState() {
       setLoading(true);
       const storedLocationId = await AsyncStorage.getItem(LAST_LOCATION_KEY).catch(() => null);
-      const initialLocationId = requestedLocationId || storedLocationId || DEFAULT_LOCATION_ID;
+      const preferredLocationId = requestedLocationId || storedLocationId || DEFAULT_LOCATION_ID;
       const initialDate = todayInPacific();
 
       if (!active) return;
       if (requestedLocationId) {
         handledRequestedLocationRef.current = requestedLocationId;
       }
+      let initialLocations: DiningLocation[] = [];
+      try {
+        initialLocations = await loadLocations(initialDate);
+      } catch (error) {
+        console.warn('Failed to load dining location availability:', error);
+      }
+      if (!active) return;
+
+      const initialLocationId =
+        chooseAvailableLocationId(initialLocations, [preferredLocationId]) ??
+        preferredLocationId;
       setSelectedLocationId(initialLocationId);
       setSelectedDate(initialDate);
 
-      await Promise.allSettled([loadLocations(), loadMenu(initialLocationId, initialDate)]);
+      await loadMenu(initialLocationId, initialDate);
 
       if (active) setLoading(false);
     }
@@ -317,7 +344,9 @@ export default function MenuScreen() {
     }
     if (loading && !menu) return;
 
-    const locationId = requestedLocationId;
+    const locationId =
+      chooseAvailableLocationId(locations, [requestedLocationId]) ??
+      requestedLocationId;
     handledRequestedLocationRef.current = locationId;
 
     async function loadRequestedLocation() {
@@ -334,6 +363,7 @@ export default function MenuScreen() {
     clearDisplayedMenu,
     loadMenu,
     loading,
+    locations,
     menu,
     requestedLocationId,
     selectedDate,
@@ -356,14 +386,32 @@ export default function MenuScreen() {
     async (date: string) => {
       setSelectedDate(date);
       clearDisplayedMenu();
-      await loadMenu(selectedLocationId, date, { showBlockingLoader: true });
+      setLoading(true);
+
+      let locationId = selectedLocationId;
+      try {
+        const nextLocations = await loadLocations(date);
+        locationId =
+          chooseAvailableLocationId(nextLocations, [selectedLocationId]) ??
+          selectedLocationId;
+      } catch (error) {
+        console.warn('Failed to refresh dining location availability:', error);
+      }
+
+      setSelectedLocationId(locationId);
+      if (locationId !== selectedLocationId) {
+        void AsyncStorage.setItem(LAST_LOCATION_KEY, locationId).catch((error) => {
+          console.warn('Failed to remember dining location:', error);
+        });
+      }
+      await loadMenu(locationId, date, { showBlockingLoader: true });
     },
-    [clearDisplayedMenu, loadMenu, selectedLocationId]
+    [clearDisplayedMenu, loadLocations, loadMenu, selectedLocationId]
   );
 
   const onRefresh = useCallback(async () => {
     await Promise.allSettled([
-      loadLocations(),
+      loadLocations(selectedDate),
       loadMenu(selectedLocationId, selectedDate, { showRefreshing: true }),
     ]);
   }, [loadLocations, loadMenu, selectedDate, selectedLocationId]);
@@ -468,8 +516,9 @@ export default function MenuScreen() {
             locations.map((location) => (
               <Chip
                 key={location.id}
-                label={location.name}
+                label={location.closed ? `${location.name} · Closed` : location.name}
                 selected={location.id === selectedLocationId}
+                disabled={Boolean(location.closed)}
                 onPress={() => void handleLocationPress(location.id)}
               />
             ))
@@ -675,12 +724,19 @@ const styles = StyleSheet.create({
     borderColor: colors.brand,
     backgroundColor: colors.accentMuted,
   },
+  chipDisabled: {
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceStrong,
+  },
   chipLabel: {
     ...typeScale.caption,
     color: colors.textMuted,
   },
   chipLabelSelected: {
     color: colors.brandInk,
+  },
+  chipLabelDisabled: {
+    color: colors.textSoft,
   },
   segmented: {
     flexDirection: 'row',

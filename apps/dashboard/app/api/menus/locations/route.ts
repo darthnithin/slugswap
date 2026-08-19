@@ -1,15 +1,16 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   describeFoodProError,
   FoodProError,
-  getDiningLocations,
+  getDiningLocationsForDate,
 } from "@/lib/server/menus/foodpro";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const locations = await getDiningLocations();
+    const date = req.nextUrl.searchParams.get("date")?.trim() || undefined;
+    const locations = await getDiningLocationsForDate(date);
     return NextResponse.json({ locations }, { status: 200 });
   } catch (error) {
     const status = error instanceof FoodProError ? error.status : 503;

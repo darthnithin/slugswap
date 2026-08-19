@@ -39,6 +39,11 @@ type ConfiguredLocation = {
   hoursPageSlug: string;
 };
 
+type OfficialHoursLocation = {
+  locationId: string;
+  hoursPageSlug: string;
+};
+
 type SpecialHoursOverride = {
   opensAt: string | null;
   closesAt: string | null;
@@ -87,6 +92,23 @@ const SCHEDULED_LOCATIONS: Record<string, ConfiguredLocation> = {
     mbhiLocationName: "Rachel Carson⁄Oakes Dining Hall",
     hoursPageSlug: "rcc-oakes",
   },
+};
+
+const OFFICIAL_HOURS_PAGE_SLUGS: Record<string, string> = {
+  "05": "cowell-stevenson",
+  "20": "crown-merrill",
+  "21": "banana-joes",
+  "22": "perk-baskin",
+  "23": "oakes-cafe",
+  "24": "owls-nest",
+  "25": "porter-kresge",
+  "26": "stevenson-coffee",
+  "30": "rcc-oakes",
+  "40": "nine-jrl",
+  "45": "ucen-bistro",
+  "46": "global-village",
+  "47": "merrill-market",
+  "50": "porter-market",
 };
 
 const WEEKDAY_INDEX: Record<string, number> = {
@@ -441,7 +463,7 @@ export function parseOfficialCurrentStatus(
 }
 
 async function getOfficialCurrentStatus(
-  configured: ConfiguredLocation
+  configured: OfficialHoursLocation
 ): Promise<{ closed: boolean; label: string } | null> {
   const pageHtml = await fetchDiningHoursPage(configured.hoursPageSlug);
   const activeOptions = parseActiveMbhiOptions(pageHtml);
@@ -623,7 +645,7 @@ function buildUnavailableSchedule(meals: PublishedMeal[]): {
 }
 
 async function buildUnpublishedMenuSchedule(
-  configured: ConfiguredLocation | null,
+  configured: OfficialHoursLocation | null,
   date: string
 ): Promise<{
   serviceSchedule: DiningServiceSchedule;
@@ -676,11 +698,15 @@ export async function resolveDiningSchedule(input: {
   recommendedPublishedMealId: string | null;
 }> {
   const configured = getConfiguredLocation(input.locationId);
-  if (input.menuPublished === false) {
-    return buildUnpublishedMenuSchedule(configured, input.date);
-  }
+  const hoursPageSlug = OFFICIAL_HOURS_PAGE_SLUGS[input.locationId];
+  const officialHoursLocation = hoursPageSlug
+    ? { locationId: input.locationId, hoursPageSlug }
+    : null;
 
   if (!configured) {
+    if (input.menuPublished === false) {
+      return buildUnpublishedMenuSchedule(officialHoursLocation, input.date);
+    }
     return buildUnavailableSchedule(input.meals);
   }
 
@@ -695,6 +721,10 @@ export async function resolveDiningSchedule(input: {
   }
   if (specialOverride) {
     return buildSpecialOverrideSchedule(input.date, specialOverride, input.meals);
+  }
+
+  if (input.menuPublished === false) {
+    return buildUnpublishedMenuSchedule(officialHoursLocation, input.date);
   }
 
   const periods = getPeriodsForDate(input.locationId, input.date);

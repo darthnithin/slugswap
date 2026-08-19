@@ -54,6 +54,10 @@ export type DiningLocation = {
   name: string;
 };
 
+export type DiningLocationAvailability = DiningLocation & {
+  closed: boolean;
+};
+
 export type DiningMenu = {
   location: DiningLocation;
   date: string;
@@ -471,9 +475,12 @@ export function parseFoodProMenuPage(
   noDataAvailable: boolean;
 } {
   const $ = cheerio.load(html);
-  const noDataAvailable = $(".shortmenuinstructs")
+  const explicitNoData = $(".shortmenuinstructs")
     .toArray()
     .some((element) => /^no data available[.!]?$/i.test(normalizeText($(element).text())));
+  const emptyMenuShell =
+    $(".shortmenumeals").length > 0 && $(".shortmenurecipes").length === 0;
+  const noDataAvailable = explicitNoData || emptyMenuShell;
 
   return {
     sourceDateLabel: normalizeText($(".shortmenutitle").first().text()),
@@ -483,6 +490,47 @@ export function parseFoodProMenuPage(
     meals: parseMeals($),
     noDataAvailable,
   };
+}
+
+export async function getDiningLocationsForDate(
+  date = todayInPacific()
+): Promise<DiningLocationAvailability[]> {
+  const { iso } = parseDateInput(date);
+  assertDateIsNotPast(iso);
+  const locations = await getDiningLocations();
+
+  const availability = await Promise.all(
+    locations.map(async (location) => {
+      try {
+        const html = await fetchFoodProHtml(buildShortMenuUrl(location, iso));
+        const { sourceDateLabel, meals, noDataAvailable } =
+          parseFoodProMenuPage(html);
+
+        if (!sourceDateLabel || (meals.length === 0 && !noDataAvailable)) {
+          throw new FoodProError("Unable to parse UCSC dining menu.", 503);
+        }
+
+        const { serviceSchedule } = await resolveDiningSchedule({
+          locationId: location.id,
+          date: iso,
+          meals: meals.map((meal) => ({ id: meal.id, name: meal.name })),
+          menuPublished: !noDataAvailable,
+        });
+
+        return { ...location, closed: serviceSchedule.closed };
+      } catch (error) {
+        console.warn("Unable to determine dining location availability", {
+          locationId: location.id,
+          errors: describeFoodProError(error),
+        });
+        return { ...location, closed: false };
+      }
+    })
+  );
+
+  return availability.sort(
+    (left, right) => Number(left.closed) - Number(right.closed)
+  );
 }
 
 export async function getDiningMenu(input: {
