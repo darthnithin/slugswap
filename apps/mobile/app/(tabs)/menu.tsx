@@ -1,9 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,15 +12,20 @@ import {
 } from 'react-native';
 
 import {
-  getDiningLocations,
-  getDiningMenu,
   type DiningLocation,
   type DiningMenu,
 } from '@/lib/api';
+import { chooseAvailableLocationId } from '@/lib/dining-locations';
 import {
-  chooseAvailableLocationId,
-  sortDiningLocations,
-} from '@/lib/dining-locations';
+  getDiningMenuWindow,
+  hydrateDiningMenuCache,
+  isDiningCacheFresh,
+  peekDiningLocations,
+  peekDiningMenu,
+  refreshDiningLocations,
+  refreshDiningMenu,
+  syncDiningMenuWindow,
+} from '@/lib/dining-menu-cache';
 import {
   buttonOpacity,
   cardShadow,
@@ -32,15 +36,6 @@ import {
 const colors = stealthTheme.colors;
 const DEFAULT_LOCATION_ID = '40';
 const LAST_LOCATION_KEY = 'slugswap:menus:last-location';
-
-type CachedMenuPayload = {
-  menu: DiningMenu;
-  savedAt: string;
-};
-
-function menuCacheKey(locationId: string, date: string): string {
-  return `slugswap:menus:${locationId}:${date}`;
-}
 
 function todayInPacific(): string {
   const formatter = new Intl.DateTimeFormat('en-US', {
@@ -169,11 +164,15 @@ export default function MenuScreen() {
   const [selectedDate, setSelectedDate] = useState(todayInPacific);
   const [selectedMealId, setSelectedMealId] = useState<string | null>(null);
   const [menu, setMenu] = useState<DiningMenu | null>(null);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [staleSavedAt, setStaleSavedAt] = useState<string | null>(null);
-  const menuRequestControllerRef = useRef<AbortController | null>(null);
+  const [initialized, setInitialized] = useState(false);
+  const menuRequestIdRef = useRef(0);
+  const selectionRef = useRef({
+    locationId: DEFAULT_LOCATION_ID,
+    date: todayInPacific(),
+  });
   const handledRequestedLocationRef = useRef<string | null>(null);
 
   const selectedLocation = useMemo(
@@ -189,37 +188,6 @@ export default function MenuScreen() {
     [menu, selectedMealId]
   );
 
-  const saveMenuCache = useCallback(async (nextMenu: DiningMenu) => {
-    const payload: CachedMenuPayload = {
-      menu: nextMenu,
-      savedAt: new Date().toISOString(),
-    };
-    await AsyncStorage.setItem(
-      menuCacheKey(nextMenu.location.id, nextMenu.date),
-      JSON.stringify(payload)
-    );
-  }, []);
-
-  const readMenuCache = useCallback(async (locationId: string, date: string) => {
-    const raw = await AsyncStorage.getItem(menuCacheKey(locationId, date));
-    if (!raw) return null;
-
-    try {
-      const parsed = JSON.parse(raw) as CachedMenuPayload;
-      if (!parsed?.menu?.location?.id || !parsed.savedAt) return null;
-      return parsed;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const loadLocations = useCallback(async (date: string) => {
-    const result = await getDiningLocations(date);
-    const sortedLocations = sortDiningLocations(result.locations);
-    setLocations(sortedLocations);
-    return sortedLocations;
-  }, []);
-
   const applyMenu = useCallback((nextMenu: DiningMenu, staleAt: string | null = null) => {
     setMenu(nextMenu);
     setSelectedDate(nextMenu.date);
@@ -233,203 +201,266 @@ export default function MenuScreen() {
     setStaleSavedAt(null);
   }, []);
 
+  const showSelection = useCallback(
+    (locationId: string, date: string) => {
+      selectionRef.current = { locationId, date };
+      setSelectedLocationId(locationId);
+      setSelectedDate(date);
+      setErrorMessage(null);
+
+      const cached = peekDiningMenu(locationId, date);
+      if (cached) {
+        applyMenu(cached.menu);
+      } else {
+        clearDisplayedMenu();
+      }
+    },
+    [applyMenu, clearDisplayedMenu]
+  );
+
+  const loadLocations = useCallback(
+    async (date: string, options?: { forceRefresh?: boolean }) => {
+      const cached = peekDiningLocations(date);
+      if (cached && selectionRef.current.date === date) {
+        setLocations(cached.locations);
+      }
+      if (!options?.forceRefresh && isDiningCacheFresh(cached?.savedAt)) {
+        return cached?.locations ?? [];
+      }
+
+      try {
+        const refreshed = await refreshDiningLocations(date);
+        if (selectionRef.current.date === date) {
+          setLocations(refreshed.locations);
+        }
+        return refreshed.locations;
+      } catch (error) {
+        if (!cached) {
+          console.warn('Failed to load dining location availability:', error);
+        }
+        return cached?.locations ?? [];
+      }
+    },
+    []
+  );
+
   const loadMenu = useCallback(
     async (
       locationId: string,
       date: string,
-      options?: { showBlockingLoader?: boolean; showRefreshing?: boolean }
+      options?: { forceRefresh?: boolean; showRefreshing?: boolean }
     ) => {
-      menuRequestControllerRef.current?.abort();
-      const requestController = new AbortController();
-      menuRequestControllerRef.current = requestController;
-      const isCurrentRequest = () =>
-        menuRequestControllerRef.current === requestController && !requestController.signal.aborted;
+      const requestId = menuRequestIdRef.current + 1;
+      menuRequestIdRef.current = requestId;
+      const isCurrentRequest = () => menuRequestIdRef.current === requestId;
+      const cached = peekDiningMenu(locationId, date);
 
-      if (options?.showBlockingLoader) setLoading(true);
       if (options?.showRefreshing) setRefreshing(true);
       setErrorMessage(null);
+
+      if (cached) {
+        applyMenu(cached.menu);
+      } else {
+        clearDisplayedMenu();
+      }
 
       if (!isTodayOrFuture(date)) {
         if (isCurrentRequest()) {
           setErrorMessage('Past dining menus are not available.');
-          menuRequestControllerRef.current = null;
-          if (options?.showBlockingLoader) setLoading(false);
           if (options?.showRefreshing) setRefreshing(false);
         }
         return;
       }
 
-      try {
-        const nextMenu = await getDiningMenu(
-          { locationId, date },
-          { signal: requestController.signal }
-        );
-        if (!isCurrentRequest()) return;
+      if (!options?.forceRefresh && isDiningCacheFresh(cached?.savedAt)) {
+        if (options?.showRefreshing) setRefreshing(false);
+        return;
+      }
 
-        applyMenu(nextMenu);
-        void saveMenuCache(nextMenu).catch((error) => {
-          console.warn('Failed to cache dining menu:', error);
-        });
+      try {
+        const refreshed = await refreshDiningMenu(locationId, date);
+        if (!isCurrentRequest()) return;
+        applyMenu(refreshed.menu);
       } catch (error: any) {
         if (!isCurrentRequest()) return;
-
-        const cached = await readMenuCache(locationId, date);
-        if (!isCurrentRequest()) return;
-
         if (cached && isTodayOrFuture(cached.menu.date)) {
           applyMenu(cached.menu, cached.savedAt);
-          setErrorMessage(error?.message || 'Showing the last loaded menu');
         } else {
           setErrorMessage(error?.message || 'Failed to load dining menu');
         }
       } finally {
-        if (menuRequestControllerRef.current === requestController) {
-          menuRequestControllerRef.current = null;
-          if (options?.showBlockingLoader) setLoading(false);
+        if (isCurrentRequest()) {
           if (options?.showRefreshing) setRefreshing(false);
         }
       }
     },
-    [applyMenu, readMenuCache, saveMenuCache]
+    [applyMenu, clearDisplayedMenu]
   );
 
   useEffect(() => {
     let active = true;
 
     async function loadInitialState() {
-      setLoading(true);
-      const storedLocationId = await AsyncStorage.getItem(LAST_LOCATION_KEY).catch(() => null);
-      const preferredLocationId = requestedLocationId || storedLocationId || DEFAULT_LOCATION_ID;
       const initialDate = todayInPacific();
+      const [, storedLocationId] = await Promise.all([
+        hydrateDiningMenuCache(initialDate),
+        AsyncStorage.getItem(LAST_LOCATION_KEY).catch(() => null),
+      ]);
+      const preferredLocationId = requestedLocationId || storedLocationId || DEFAULT_LOCATION_ID;
 
       if (!active) return;
       if (requestedLocationId) {
         handledRequestedLocationRef.current = requestedLocationId;
       }
-      let initialLocations: DiningLocation[] = [];
-      try {
-        initialLocations = await loadLocations(initialDate);
-      } catch (error) {
-        console.warn('Failed to load dining location availability:', error);
-      }
-      if (!active) return;
+
+      const cachedLocations = peekDiningLocations(initialDate)?.locations ?? [];
+      if (cachedLocations.length) setLocations(cachedLocations);
 
       const initialLocationId =
-        chooseAvailableLocationId(initialLocations, [preferredLocationId]) ??
+        chooseAvailableLocationId(cachedLocations, [preferredLocationId]) ??
         preferredLocationId;
-      setSelectedLocationId(initialLocationId);
-      setSelectedDate(initialDate);
+      showSelection(initialLocationId, initialDate);
+      setInitialized(true);
 
-      await loadMenu(initialLocationId, initialDate);
+      const freshLocations = await loadLocations(initialDate, {
+        forceRefresh: true,
+      });
+      if (!active) return;
 
-      if (active) setLoading(false);
+      const availableLocationId =
+        chooseAvailableLocationId(freshLocations, [initialLocationId]) ??
+        initialLocationId;
+      if (availableLocationId !== initialLocationId) {
+        showSelection(availableLocationId, initialDate);
+        void AsyncStorage.setItem(LAST_LOCATION_KEY, availableLocationId).catch(
+          (error) => {
+            console.warn('Failed to remember dining location:', error);
+          }
+        );
+      }
+      await loadMenu(availableLocationId, initialDate, { forceRefresh: true });
     }
 
     void loadInitialState();
 
     return () => {
       active = false;
-      const activeRequest = menuRequestControllerRef.current;
-      menuRequestControllerRef.current = null;
-      activeRequest?.abort();
+      menuRequestIdRef.current += 1;
     };
-  }, [loadLocations, loadMenu]);
+  }, [loadLocations, loadMenu, showSelection]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const windowStart = todayInPacific();
+      void syncDiningMenuWindow(windowStart).catch((error) => {
+        console.warn('Failed to refresh weekly dining menus:', error);
+      });
+    }, [])
+  );
 
   useEffect(() => {
     if (
+      !initialized ||
       !requestedLocationId ||
       handledRequestedLocationRef.current === requestedLocationId
     ) {
       return;
     }
-    if (loading && !menu) return;
 
     const locationId =
       chooseAvailableLocationId(locations, [requestedLocationId]) ??
       requestedLocationId;
-    handledRequestedLocationRef.current = locationId;
+    handledRequestedLocationRef.current = requestedLocationId;
 
     async function loadRequestedLocation() {
-      setSelectedLocationId(locationId);
-      clearDisplayedMenu();
+      showSelection(locationId, selectedDate);
       void AsyncStorage.setItem(LAST_LOCATION_KEY, locationId).catch((error) => {
         console.warn('Failed to remember dining location:', error);
       });
-      await loadMenu(locationId, selectedDate, { showBlockingLoader: true });
+      await loadMenu(locationId, selectedDate);
     }
 
     void loadRequestedLocation();
   }, [
-    clearDisplayedMenu,
+    initialized,
     loadMenu,
-    loading,
     locations,
-    menu,
     requestedLocationId,
     selectedDate,
-    selectedLocationId,
+    showSelection,
   ]);
 
   const handleLocationPress = useCallback(
-    async (locationId: string) => {
-      setSelectedLocationId(locationId);
-      clearDisplayedMenu();
+    (locationId: string) => {
+      showSelection(locationId, selectedDate);
       void AsyncStorage.setItem(LAST_LOCATION_KEY, locationId).catch((error) => {
         console.warn('Failed to remember dining location:', error);
       });
-      await loadMenu(locationId, selectedDate, { showBlockingLoader: true });
+      void loadMenu(locationId, selectedDate);
     },
-    [clearDisplayedMenu, loadMenu, selectedDate]
+    [loadMenu, selectedDate, showSelection]
   );
 
   const handleDatePress = useCallback(
-    async (date: string) => {
-      setSelectedDate(date);
-      clearDisplayedMenu();
-      setLoading(true);
-
-      let locationId = selectedLocationId;
-      try {
-        const nextLocations = await loadLocations(date);
-        locationId =
-          chooseAvailableLocationId(nextLocations, [selectedLocationId]) ??
-          selectedLocationId;
-      } catch (error) {
-        console.warn('Failed to refresh dining location availability:', error);
-      }
-
-      setSelectedLocationId(locationId);
+    (date: string) => {
+      const cachedLocations = peekDiningLocations(date)?.locations ?? [];
+      if (cachedLocations.length) setLocations(cachedLocations);
+      const locationId =
+        chooseAvailableLocationId(cachedLocations, [selectedLocationId]) ??
+        selectedLocationId;
+      showSelection(locationId, date);
       if (locationId !== selectedLocationId) {
         void AsyncStorage.setItem(LAST_LOCATION_KEY, locationId).catch((error) => {
           console.warn('Failed to remember dining location:', error);
         });
       }
-      await loadMenu(locationId, date, { showBlockingLoader: true });
+
+      void loadMenu(locationId, date);
+      void loadLocations(date, { forceRefresh: true }).then((nextLocations) => {
+        if (selectionRef.current.date !== date) return;
+        const availableLocationId =
+          chooseAvailableLocationId(nextLocations, [selectionRef.current.locationId]) ??
+          selectionRef.current.locationId;
+        if (availableLocationId === selectionRef.current.locationId) return;
+
+        showSelection(availableLocationId, date);
+        void AsyncStorage.setItem(LAST_LOCATION_KEY, availableLocationId).catch(
+          (error) => {
+            console.warn('Failed to remember dining location:', error);
+          }
+        );
+        void loadMenu(availableLocationId, date);
+      });
     },
-    [clearDisplayedMenu, loadLocations, loadMenu, selectedLocationId]
+    [loadLocations, loadMenu, selectedLocationId, showSelection]
   );
 
   const onRefresh = useCallback(async () => {
-    await Promise.allSettled([
-      loadLocations(selectedDate),
-      loadMenu(selectedLocationId, selectedDate, { showRefreshing: true }),
-    ]);
-  }, [loadLocations, loadMenu, selectedDate, selectedLocationId]);
+    setRefreshing(true);
+    try {
+      const nextLocations = await loadLocations(selectedDate, {
+        forceRefresh: true,
+      });
+      const locationId =
+        chooseAvailableLocationId(nextLocations, [selectedLocationId]) ??
+        selectedLocationId;
+      if (locationId !== selectedLocationId) {
+        showSelection(locationId, selectedDate);
+      }
+      await loadMenu(locationId, selectedDate, { forceRefresh: true });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadLocations, loadMenu, selectedDate, selectedLocationId, showSelection]);
 
   const availableDates = (
     menu?.availableDates.length
       ? menu.availableDates
-      : [{ date: selectedDate, label: formatDateLabel(selectedDate) }]
+      : getDiningMenuWindow(todayInPacific()).map((date) => ({
+          date,
+          label: formatDateLabel(date),
+        }))
   ).filter((dateOption) => isTodayOrFuture(dateOption.date));
-
-  if (loading && !menu) {
-    return (
-      <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={colors.brand} />
-        <Text style={styles.loadingText}>Loading menus</Text>
-      </View>
-    );
-  }
 
   return (
     <ScrollView
@@ -631,17 +662,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 18,
     paddingBottom: 28,
-  },
-  loadingScreen: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    backgroundColor: colors.canvas,
-  },
-  loadingText: {
-    ...typeScale.body,
-    color: colors.textMuted,
   },
   header: {
     flexDirection: 'row',

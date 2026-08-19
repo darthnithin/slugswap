@@ -2,11 +2,30 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
+import { AppState } from 'react-native';
 import type { DonorImpact, RequesterPoolStatus } from './api';
+import { syncDiningMenuWindow } from './dining-menu-cache';
+
+function todayInPacific(): string {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(new Date());
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  if (!year || !month || !day) return new Date().toISOString().slice(0, 10);
+  return `${year}-${month}-${day}`;
+}
 
 export interface GetAccountBalance {
   id: string;
@@ -38,6 +57,22 @@ const TabCacheContext = createContext<TabCacheState | null>(null);
 
 export function TabCacheProvider({ children }: { children: ReactNode }) {
   const [shareSnapshot, setShareSnapshotState] = useState<ShareTabSnapshot | null>(null);
+
+  useEffect(() => {
+    const warmDiningMenus = () => {
+      const windowStart = todayInPacific();
+      void syncDiningMenuWindow(windowStart).catch((error) => {
+        console.warn('Failed to warm weekly dining menus:', error);
+      });
+    };
+
+    warmDiningMenus();
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') warmDiningMenus();
+    });
+
+    return () => appStateSubscription.remove();
+  }, []);
 
   const setShareSnapshot = useCallback((snapshot: ShareTabSnapshot) => {
     setShareSnapshotState(snapshot);

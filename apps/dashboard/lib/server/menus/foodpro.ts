@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
+import { unstable_cache } from "next/cache";
 import { rootCertificates } from "node:tls";
-import { Agent } from "undici";
+import { Agent, fetch as undiciFetch } from "undici";
 import {
   resolveDiningSchedule,
   type DiningServiceSchedule,
@@ -12,6 +13,7 @@ const FOODPRO_COOKIE_HEADER =
   "WebInaCartLocation=; WebInaCartDates=; WebInaCartMeals=; WebInaCartRecipes=; WebInaCartQtys=";
 const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
 const CACHE_REVALIDATE_SECONDS = 1800;
+const MEMORY_CACHE_LIMIT = 128;
 const CACHE_TAG = "ucsc-menus";
 const COLLEGE_NINE_LOCATION_ID = "40";
 const FOODPRO_REQUEST_TIMEOUT_MS = 10_000;
@@ -47,6 +49,11 @@ mHOhDI5rvYg6LA==
 -----END CERTIFICATE-----`;
 
 let foodProCertificateDispatcher: Agent | null = null;
+const foodProHtmlCache = new Map<
+  string,
+  { html: string; expiresAt: number }
+>();
+const pendingFoodProHtml = new Map<string, Promise<string>>();
 
 export type DiningLocation = {
   id: string;
@@ -282,48 +289,18 @@ function sectionNameFromCategory(value: string): string {
   return normalizeText(value).replace(/^--\s*/, "").replace(/\s*--$/, "");
 }
 
-type FoodProFetchInit = RequestInit & {
-  dispatcher?: Agent;
-  next: {
-    revalidate: number;
-    tags: string[];
-  };
-};
-
-async function fetchFoodProResponse(
-  url: string,
-  init: FoodProFetchInit
-): Promise<Response> {
-  try {
-    return await fetch(url, init);
-  } catch (error) {
-    if (
-      new URL(url).origin !== FOODPRO_ORIGIN ||
-      !isFoodProCertificateError(error)
-    ) {
-      throw error;
+const fetchFoodProHtmlCached = unstable_cache(
+  async (url: string): Promise<string> => {
+    if (new URL(url).origin !== FOODPRO_ORIGIN) {
+      throw new FoodProError("Invalid UCSC menu source URL.", 503);
     }
 
-    const retryInit: FoodProFetchInit = {
-      ...init,
-      dispatcher: getFoodProCertificateDispatcher(),
-    };
-    return fetch(url, retryInit);
-  }
-}
-
-async function fetchFoodProHtml(url: string): Promise<string> {
-  try {
-    const response = await fetchFoodProResponse(url, {
-      cache: "force-cache",
+    const response = await undiciFetch(url, {
       headers: {
         Cookie: FOODPRO_COOKIE_HEADER,
         "User-Agent": USER_AGENT,
       },
-      next: {
-        revalidate: CACHE_REVALIDATE_SECONDS,
-        tags: [CACHE_TAG],
-      },
+      dispatcher: getFoodProCertificateDispatcher(),
       signal: AbortSignal.timeout(FOODPRO_REQUEST_TIMEOUT_MS),
     });
 
@@ -331,21 +308,56 @@ async function fetchFoodProHtml(url: string): Promise<string> {
       throw new FoodProError(`UCSC menu source returned ${response.status}.`, 503);
     }
 
-    return await response.text();
-  } catch (error) {
-    if (error instanceof FoodProError) {
-      throw error;
-    }
-    if (
-      error instanceof Error &&
-      (error.name === "AbortError" || error.name === "TimeoutError")
-    ) {
-      throw new FoodProError("UCSC menu source timed out.", 503, { cause: error });
-    }
-    throw new FoodProError("Unable to reach the UCSC menu source.", 503, {
-      cause: error,
-    });
+    return response.text();
+  },
+  ["ucsc-foodpro-html-v1"],
+  {
+    revalidate: CACHE_REVALIDATE_SECONDS,
+    tags: [CACHE_TAG],
   }
+);
+
+async function fetchFoodProHtml(url: string): Promise<string> {
+  const now = Date.now();
+  const cached = foodProHtmlCache.get(url);
+  if (cached && cached.expiresAt > now) return cached.html;
+  if (cached) foodProHtmlCache.delete(url);
+
+  const pending = pendingFoodProHtml.get(url);
+  if (pending) return pending;
+
+  const request = (async () => {
+    try {
+      const html = await fetchFoodProHtmlCached(url);
+      if (foodProHtmlCache.size >= MEMORY_CACHE_LIMIT) {
+        const oldestKey = foodProHtmlCache.keys().next().value;
+        if (oldestKey) foodProHtmlCache.delete(oldestKey);
+      }
+      foodProHtmlCache.set(url, {
+        html,
+        expiresAt: Date.now() + CACHE_REVALIDATE_SECONDS * 1000,
+      });
+      return html;
+    } catch (error) {
+      if (error instanceof FoodProError) {
+        throw error;
+      }
+      if (
+        error instanceof Error &&
+        (error.name === "AbortError" || error.name === "TimeoutError")
+      ) {
+        throw new FoodProError("UCSC menu source timed out.", 503, { cause: error });
+      }
+      throw new FoodProError("Unable to reach the UCSC menu source.", 503, {
+        cause: error,
+      });
+    } finally {
+      pendingFoodProHtml.delete(url);
+    }
+  })();
+
+  pendingFoodProHtml.set(url, request);
+  return request;
 }
 
 export async function getDiningLocations(): Promise<DiningLocation[]> {
