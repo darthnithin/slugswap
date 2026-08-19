@@ -461,6 +461,30 @@ function parseMeals($: cheerio.CheerioAPI): DiningMenu["meals"] {
     .filter((meal) => meal.sections.length > 0);
 }
 
+export function parseFoodProMenuPage(
+  html: string,
+  minimumDate = todayInPacific()
+): {
+  sourceDateLabel: string;
+  availableDates: Array<{ date: string; label: string }>;
+  meals: DiningMenu["meals"];
+  noDataAvailable: boolean;
+} {
+  const $ = cheerio.load(html);
+  const noDataAvailable = $(".shortmenuinstructs")
+    .toArray()
+    .some((element) => /^no data available[.!]?$/i.test(normalizeText($(element).text())));
+
+  return {
+    sourceDateLabel: normalizeText($(".shortmenutitle").first().text()),
+    availableDates: parseAvailableDates($).filter(
+      (dateOption) => dateOption.date >= minimumDate
+    ),
+    meals: parseMeals($),
+    noDataAvailable,
+  };
+}
+
 export async function getDiningMenu(input: {
   locationId: string;
   date: string;
@@ -479,15 +503,10 @@ export async function getDiningMenu(input: {
   }
 
   const html = await fetchFoodProHtml(buildShortMenuUrl(location, iso));
-  const $ = cheerio.load(html);
-  const sourceDateLabel = normalizeText($(".shortmenutitle").first().text());
-  const meals = parseMeals($);
-  const today = todayInPacific();
-  const availableDates = parseAvailableDates($).filter(
-    (dateOption) => dateOption.date >= today
-  );
+  const { sourceDateLabel, meals, availableDates, noDataAvailable } =
+    parseFoodProMenuPage(html);
 
-  if (!sourceDateLabel || meals.length === 0) {
+  if (!sourceDateLabel || (meals.length === 0 && !noDataAvailable)) {
     throw new FoodProError("Unable to parse UCSC dining menu.", 503);
   }
 
@@ -495,6 +514,7 @@ export async function getDiningMenu(input: {
     locationId,
     date: iso,
     meals: meals.map((meal) => ({ id: meal.id, name: meal.name })),
+    menuPublished: !noDataAvailable,
   });
 
   return {

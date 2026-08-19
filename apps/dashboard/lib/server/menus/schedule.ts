@@ -16,7 +16,7 @@ export type DiningServicePeriod = {
 };
 
 export type DiningServiceSchedule = {
-  source: "regular" | "special-override" | "unavailable";
+  source: "regular" | "special-override" | "official-live" | "unavailable";
   closed: boolean;
   periods: DiningServicePeriod[];
   activePeriodId: string | null;
@@ -36,6 +36,7 @@ type ScheduleRule = {
 type ConfiguredLocation = {
   locationId: string;
   mbhiLocationName: string;
+  hoursPageSlug: string;
 };
 
 type SpecialHoursOverride = {
@@ -49,6 +50,7 @@ const HOURS_DOC_CANDIDATES = [
   path.resolve(process.cwd(), "..", "..", "Hours.md"),
 ];
 const MBHI_ENDPOINT = "https://dining.wordpress.ucsc.edu/wp-admin/admin-ajax.php";
+const DINING_HOURS_BASE_URL = "https://dining.ucsc.edu/locations-hours/";
 const MBHI_ACTION = "mb-bhipro-fetch-shortcode";
 const MBHI_CACHE_REVALIDATE_SECONDS = 1800;
 const MBHI_CACHE_TAG = "ucsc-menu-schedules";
@@ -58,26 +60,32 @@ const SCHEDULED_LOCATIONS: Record<string, ConfiguredLocation> = {
   "nine-jrl": {
     locationId: "40",
     mbhiLocationName: "College Nine⁄JRL Dining Hall",
+    hoursPageSlug: "nine-jrl",
   },
   "cowell-stevenson": {
     locationId: "05",
     mbhiLocationName: "Cowell/Stevenson Dining Hall",
+    hoursPageSlug: "cowell-stevenson",
   },
   "crown-merril": {
     locationId: "20",
     mbhiLocationName: "Crown⁄Merrill Dining Hall",
+    hoursPageSlug: "crown-merrill",
   },
   "crown-merrill": {
     locationId: "20",
     mbhiLocationName: "Crown⁄Merrill Dining Hall",
+    hoursPageSlug: "crown-merrill",
   },
   "porter-kresge": {
     locationId: "25",
     mbhiLocationName: "Porter ⁄ Kresge Dining Hall",
+    hoursPageSlug: "porter-kresge",
   },
   "rcc-oakes": {
     locationId: "30",
     mbhiLocationName: "Rachel Carson⁄Oakes Dining Hall",
+    hoursPageSlug: "rcc-oakes",
   },
 };
 
@@ -335,6 +343,10 @@ function todayInPacific(): string {
 
 function buildMbhiOptions(locationName: string, code: "mbhi_specials" | "mbhi_vacations") {
   const rawOptions = `location="${locationName}" format="12" output="table"`;
+  return buildMbhiRequestUrl(rawOptions, code);
+}
+
+function buildMbhiRequestUrl(rawOptions: string, code: string): string {
   const encodedOptions = Buffer.from(rawOptions, "utf8").toString("base64");
   const url = new URL(MBHI_ENDPOINT);
   url.searchParams.set("action", MBHI_ACTION);
@@ -372,6 +384,71 @@ async function fetchMbhiHtml(url: string): Promise<string> {
     }
     throw error;
   }
+}
+
+async function fetchDiningHoursPage(slug: string): Promise<string> {
+  const url = new URL(`${slug}/`, DINING_HOURS_BASE_URL).toString();
+  const response = await fetch(url, {
+    cache: "force-cache",
+    headers: {
+      accept: "text/html,application/xhtml+xml",
+      "user-agent": "SlugSwap Menu Schedule Fetcher",
+    },
+    next: {
+      revalidate: MBHI_CACHE_REVALIDATE_SECONDS,
+      tags: [MBHI_CACHE_TAG],
+    },
+    signal: AbortSignal.timeout(MBHI_REQUEST_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    throw new Error(`UCSC dining hours page returned ${response.status}`);
+  }
+
+  return response.text();
+}
+
+export function parseActiveMbhiOptions(html: string): string | null {
+  const $ = cheerio.load(html);
+  const encoded = $("[data-fetch-shortcode][data-code='mbhi']")
+    .first()
+    .attr("data-arguments");
+  if (!encoded) return null;
+
+  try {
+    const decoded = Buffer.from(encoded, "base64").toString("utf8").trim();
+    return /\blocation="[^"]+"/.test(decoded) ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
+export function parseOfficialCurrentStatus(
+  html: string
+): { closed: boolean; label: string } | null {
+  const $ = cheerio.load(html);
+  const status = $(".mb-bhi-display").first();
+  if (!status.length) return null;
+
+  const isClosed = status.hasClass("mb-bhi-closed");
+  const isOpen = status.hasClass("mb-bhi-open");
+  if (!isClosed && !isOpen) return null;
+
+  return {
+    closed: isClosed,
+    label: isClosed ? "Currently closed" : "Currently open",
+  };
+}
+
+async function getOfficialCurrentStatus(
+  configured: ConfiguredLocation
+): Promise<{ closed: boolean; label: string } | null> {
+  const pageHtml = await fetchDiningHoursPage(configured.hoursPageSlug);
+  const activeOptions = parseActiveMbhiOptions(pageHtml);
+  if (!activeOptions) return null;
+
+  const statusHtml = await fetchMbhiHtml(buildMbhiRequestUrl(activeOptions, "mbhi"));
+  return parseOfficialCurrentStatus(statusHtml);
 }
 
 function parseSpecialEntries(html: string): Record<string, SpecialHoursOverride> {
@@ -545,15 +622,64 @@ function buildUnavailableSchedule(meals: PublishedMeal[]): {
   };
 }
 
+async function buildUnpublishedMenuSchedule(
+  configured: ConfiguredLocation | null,
+  date: string
+): Promise<{
+  serviceSchedule: DiningServiceSchedule;
+  recommendedPublishedMealId: null;
+}> {
+  const isToday = date === todayInPacific();
+  let officialStatus: { closed: boolean; label: string } | null = null;
+
+  if (isToday && configured) {
+    try {
+      officialStatus = await getOfficialCurrentStatus(configured);
+    } catch (error) {
+      console.warn(
+        `Unable to load the live UCSC dining status for location ${configured.locationId}:`,
+        error
+      );
+    }
+  }
+
+  const currentStatusLabel = officialStatus
+    ? officialStatus.closed
+      ? "Currently closed"
+      : "Currently open, but no menu is published"
+    : isToday
+      ? "No menu is published today"
+      : "No menu is published for this date";
+
+  return {
+    serviceSchedule: {
+      source: officialStatus ? "official-live" : "unavailable",
+      closed: officialStatus?.closed ?? false,
+      periods: [],
+      activePeriodId: null,
+      currentStatusLabel,
+      note:
+        "UCSC FoodPro reports no menu data for this location and date. The location may be closed or its menu may not be published yet.",
+      specialHours: null,
+    },
+    recommendedPublishedMealId: null,
+  };
+}
+
 export async function resolveDiningSchedule(input: {
   locationId: string;
   date: string;
   meals: PublishedMeal[];
+  menuPublished?: boolean;
 }): Promise<{
   serviceSchedule: DiningServiceSchedule;
   recommendedPublishedMealId: string | null;
 }> {
   const configured = getConfiguredLocation(input.locationId);
+  if (input.menuPublished === false) {
+    return buildUnpublishedMenuSchedule(configured, input.date);
+  }
+
   if (!configured) {
     return buildUnavailableSchedule(input.meals);
   }

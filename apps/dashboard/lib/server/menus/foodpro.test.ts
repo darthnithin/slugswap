@@ -4,6 +4,7 @@ import {
   describeFoodProError,
   FoodProError,
   isFoodProCertificateError,
+  parseFoodProMenuPage,
 } from "./foodpro";
 
 test("describeFoodProError reports a safe chain of error causes", () => {
@@ -52,4 +53,26 @@ test("isFoodProCertificateError finds a nested TLS chain error", () => {
     })),
     false
   );
+});
+
+test("recognizes FoodPro's explicit no-data page as a valid empty menu", () => {
+  const parsed = parseFoodProMenuPage(
+    `
+      <div class="shortmenutitle">Menus for Wednesday, August 19, 2026</div>
+      <select>
+        <option value="shortmenu.aspx?dtdate=8/19/2026">Wednesday, August 19</option>
+      </select>
+      <div class="shortmenuinstructs">No Data Available</div>
+    `,
+    "2026-08-19"
+  );
+
+  assert.deepEqual(parsed, {
+    sourceDateLabel: "Menus for Wednesday, August 19, 2026",
+    availableDates: [
+      { date: "2026-08-19", label: "Wednesday, August 19" },
+    ],
+    meals: [],
+    noDataAvailable: true,
+  });
 });

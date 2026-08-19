@@ -554,7 +554,9 @@ export default function MenuScreen() {
       ) : (
         <EmptyState
           message={
-            menu
+            menu?.meals.length === 0
+              ? 'No menu has been published for this location and date.'
+              : menu
               ? 'No menu items are listed for this meal.'
               : 'No menu data is available yet.'
           }

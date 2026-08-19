@@ -269,7 +269,7 @@ export type DiningMenu = {
   availableDates: Array<{ date: string; label: string }>;
   recommendedPublishedMealId: string | null;
   serviceSchedule: {
-    source: 'regular' | 'special-override' | 'unavailable';
+    source: 'regular' | 'special-override' | 'official-live' | 'unavailable';
     closed: boolean;
     periods: Array<{
       id: string;
