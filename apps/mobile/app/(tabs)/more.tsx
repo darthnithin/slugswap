@@ -164,18 +164,8 @@ export default function MoreScreen() {
             icon="people"
             iconBackground="#4E725D"
             locked={!user}
-            onPress={() => openPersonalRoute('/point-sharing' as Href)}
-          />
-          <MoreRow
-            label="Notifications"
-            icon="notifications"
-            iconBackground={colors.coral}
-            locked={!user}
             isLast
-            onPress={() => {
-              if (!user) router.push('/auth/sign-in');
-              else void Linking.openSettings();
-            }}
+            onPress={() => openPersonalRoute('/point-sharing' as Href)}
           />
         </Section>
 

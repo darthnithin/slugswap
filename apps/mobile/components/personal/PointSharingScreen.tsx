@@ -474,19 +474,21 @@ export default function DonorScreen() {
 
   const setLocalNotificationPreference = useCallback(
     (enabled: boolean) => {
-      setImpact((currentImpact) => {
-        const nextImpact = { ...currentImpact, notifyOnSpend: enabled };
-        const currentSnapshot = shareSnapshotRef.current;
-        if (currentSnapshot) {
-          updateShareSnapshot({ ...currentSnapshot, impact: nextImpact });
-        }
-        return nextImpact;
-      });
+      setImpact((currentImpact) => ({ ...currentImpact, notifyOnSpend: enabled }));
+
+      const currentSnapshot = shareSnapshotRef.current;
+      if (currentSnapshot) {
+        updateShareSnapshot({
+          ...currentSnapshot,
+          impact: { ...currentSnapshot.impact, notifyOnSpend: enabled },
+        });
+      }
     },
     [updateShareSnapshot]
   );
 
-  const enableSpendNotifications = useCallback(async () => {
+  const enableSpendNotifications = useCallback(async (options?: { alertOnFailure?: boolean }) => {
+    const alertOnFailure = options?.alertOnFailure ?? true;
     setNotificationsSyncing(true);
     try {
       const result = await enablePushNotificationsAsync();
@@ -498,6 +500,8 @@ export default function DonorScreen() {
       }
 
       setNotificationsEnabled(false);
+      if (!alertOnFailure) return false;
+
       if (result.status === 'denied') {
         Alert.alert(
           'Notifications are off',
@@ -512,7 +516,9 @@ export default function DonorScreen() {
     } catch (error) {
       console.error('Failed to enable spend notifications:', error);
       setNotificationsEnabled(false);
-      Alert.alert('Could not enable notifications', 'Please try again in a moment.');
+      if (alertOnFailure) {
+        Alert.alert('Could not enable notifications', 'Please try again in a moment.');
+      }
       return false;
     } finally {
       setNotificationsSyncing(false);
@@ -564,26 +570,12 @@ export default function DonorScreen() {
       } else if (Platform.OS === 'web') {
         Alert.alert('Success', 'Your contribution has been set!');
       } else {
+        const notificationsReady = await enableSpendNotifications({ alertOnFailure: false });
         Alert.alert(
           'Sharing started',
-          'Would you like a notification whenever someone spends your donated SlugPoints?',
-          [
-            {
-              text: 'Not now',
-              style: 'cancel',
-              onPress: () => {
-                void updateDonorSpendNotificationPreference(false)
-                  .then(() => setLocalNotificationPreference(false))
-                  .catch((error) => console.warn('Failed to disable notification preference:', error));
-              },
-            },
-            {
-              text: 'Enable',
-              onPress: () => {
-                void enableSpendNotifications();
-              },
-            },
-          ]
+          notificationsReady
+            ? 'Your contribution is active. Spend notifications are on by default.'
+            : 'Your contribution is active. Spend notifications could not be enabled, but you can try again below.'
         );
       }
     } catch (error) {

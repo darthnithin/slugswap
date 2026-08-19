@@ -5,7 +5,9 @@ import { Platform } from 'react-native';
 import { registerPushToken, unregisterPushToken } from './api';
 
 const STORED_PUSH_TOKEN_KEY = 'slugswap:expo-push-token:v1';
+const PUSH_TOKEN_TIMEOUT_MS = 15_000;
 let handlerConfigured = false;
+let pushRegistrationPromise: Promise<RegistrationResult> | null = null;
 
 type RegistrationResult =
   | { status: 'registered'; token: string }
@@ -23,6 +25,52 @@ function getProjectId(): string | null {
 
 function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : 'Unable to configure notifications';
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      }
+    );
+  });
+}
+
+function registerForPushAsync(
+  Notifications: typeof import('expo-notifications'),
+  projectId: string
+): Promise<RegistrationResult> {
+  if (pushRegistrationPromise) return pushRegistrationPromise;
+
+  const registration = (async (): Promise<RegistrationResult> => {
+    try {
+      const expoToken = await withTimeout(
+        Notifications.getExpoPushTokenAsync({ projectId }),
+        PUSH_TOKEN_TIMEOUT_MS,
+        'Notification setup took too long. Check your connection and try again.'
+      );
+      await registerPushToken(expoToken.data, Platform.OS as 'ios' | 'android');
+      await AsyncStorage.setItem(STORED_PUSH_TOKEN_KEY, expoToken.data);
+      return { status: 'registered', token: expoToken.data };
+    } catch (error) {
+      return { status: 'failed', message: messageFromError(error) };
+    }
+  })().finally(() => {
+    if (pushRegistrationPromise === registration) {
+      pushRegistrationPromise = null;
+    }
+  });
+
+  pushRegistrationPromise = registration;
+  return registration;
 }
 
 function notificationsAreAllowed(
@@ -94,10 +142,7 @@ async function getPushTokenAsync(requestPermission: boolean): Promise<Registrati
       return { status: 'failed', message: 'EAS project ID is missing' };
     }
 
-    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-    await registerPushToken(token, Platform.OS);
-    await AsyncStorage.setItem(STORED_PUSH_TOKEN_KEY, token);
-    return { status: 'registered', token };
+    return await registerForPushAsync(Notifications, projectId);
   } catch (error) {
     return { status: 'failed', message: messageFromError(error) };
   }

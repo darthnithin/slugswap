@@ -113,7 +113,6 @@ export default function WalletScreen() {
   const [displayName, setDisplayName] = useState('My GET');
   const [accounts, setAccounts] = useState<GetAccountBalance[]>([]);
   const [barcodeCode, setBarcodeCode] = useState<string | null>(null);
-  const [barcodeFetchedAt, setBarcodeFetchedAt] = useState<string | null>(null);
   const [barcodeRefreshError, setBarcodeRefreshError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -149,7 +148,6 @@ export default function WalletScreen() {
       const barcode = await getGetBarcode();
       if (barcodeWriteIdRef.current !== writeId) return;
       setBarcodeCode(barcode.code);
-      setBarcodeFetchedAt(barcode.fetchedAt);
       setBarcodeRefreshError(null);
     } catch (error: any) {
       if (barcodeWriteIdRef.current !== writeId) return;
@@ -200,7 +198,6 @@ export default function WalletScreen() {
         barcodeWriteIdRef.current += 1;
         setAccounts([]);
         setBarcodeCode(null);
-        setBarcodeFetchedAt(null);
         setBarcodeRefreshError(null);
         return;
       }
@@ -211,7 +208,6 @@ export default function WalletScreen() {
       setAccounts(wallet.accounts || []);
       if (barcodeWriteIdRef.current === barcodeWriteId) {
         setBarcodeCode(wallet.barcode.code);
-        setBarcodeFetchedAt(wallet.barcode.fetchedAt);
         setBarcodeRefreshError(null);
       }
     } catch (error: any) {
@@ -273,13 +269,6 @@ export default function WalletScreen() {
   const linkedDateLabel = linkedAt
     ? `Linked ${new Date(linkedAt).toLocaleDateString()}`
     : 'GET linked';
-  const barcodeUpdatedLabel = barcodeFetchedAt
-    ? `Updated ${new Date(barcodeFetchedAt).toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit',
-      })}`
-    : 'Waiting for first refresh';
-
   if (loading) {
     return (
       <View style={styles.loadingScreen}>
@@ -332,19 +321,15 @@ export default function WalletScreen() {
                 </View>
               )}
             </View>
-            {isGetLinked ? (
+            {isGetLinked && barcodeRefreshError ? (
               <View style={styles.codeMetaPanel}>
                 <View style={styles.codeMetaStatus}>
-                  <View style={[styles.liveDot, barcodeRefreshError && styles.warningDot]} />
-                  <Text style={styles.codeMeta}>
-                    {barcodeRefreshError ? 'Scan code refresh delayed' : `Ready to scan · ${barcodeUpdatedLabel}`}
-                  </Text>
+                  <View style={styles.warningDot} />
+                  <Text style={styles.codeMeta}>Scan code refresh delayed</Text>
                 </View>
-                {barcodeRefreshError ? (
-                  <Text accessibilityLiveRegion="polite" style={styles.codeRefreshWarning}>
-                    Check your connection before scanning.
-                  </Text>
-                ) : null}
+                <Text accessibilityLiveRegion="polite" style={styles.codeRefreshWarning}>
+                  Check your connection before scanning.
+                </Text>
               </View>
             ) : null}
           </View>
@@ -543,8 +528,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7,
   },
-  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.gold },
-  warningDot: { backgroundColor: colors.coral },
+  warningDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.coral },
   codeMeta: {
     flex: 1,
     ...typeScale.caption,
