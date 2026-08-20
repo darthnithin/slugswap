@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth-context';
 import type { ProtectedPostAuthRoute } from '@/lib/auth-navigation';
+import { deleteAccount } from '@/lib/api';
 import { buttonOpacity, campusFonts, stealthTheme } from '@/lib/stealth-theme';
 
 const colors = stealthTheme.colors;
@@ -16,7 +17,9 @@ type MoreRowProps = {
   iconBackground: string;
   iconColor?: string;
   locked?: boolean;
+  disabled?: boolean;
   isLast?: boolean;
+  labelColor?: string;
   subtitle?: string;
   onPress: () => void;
 };
@@ -27,7 +30,9 @@ function MoreRow({
   iconBackground,
   iconColor = colors.softWhite,
   locked,
+  disabled,
   isLast,
+  labelColor,
   subtitle,
   onPress,
 }: MoreRowProps) {
@@ -35,14 +40,19 @@ function MoreRow({
     <Pressable
       accessibilityHint={locked ? 'Sign in is required for this tool' : undefined}
       accessibilityRole="button"
+      disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.row, !isLast && styles.rowBorder, { opacity: buttonOpacity(pressed) }]}
+      style={({ pressed }) => [
+        styles.row,
+        !isLast && styles.rowBorder,
+        { opacity: buttonOpacity(pressed, disabled) },
+      ]}
     >
       <View style={[styles.rowIcon, { backgroundColor: iconBackground }]}>
         <Ionicons name={icon} size={22} color={iconColor} />
       </View>
       <View style={styles.rowCopy}>
-        <Text style={styles.rowLabel}>{label}</Text>
+        <Text style={[styles.rowLabel, labelColor ? { color: labelColor } : null]}>{label}</Text>
         {subtitle ? <Text numberOfLines={1} style={styles.rowSubtitle}>{subtitle}</Text> : null}
       </View>
       {locked ? (
@@ -74,8 +84,9 @@ function fullNameFromUser(user: ReturnType<typeof useAuth>['user']): string {
 
 export default function MoreScreen() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, signOut, completeAccountDeletion } = useAuth();
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const name = fullNameFromUser(user);
   const avatarLetter = user ? name.charAt(0).toUpperCase() : null;
 
@@ -117,6 +128,53 @@ export default function MoreScreen() {
     Alert.alert(
       'About SlugSwap',
       'A student-built collection of useful UCSC tools—dining, rooms, maps, GET, and point sharing in one place.',
+    );
+  };
+
+  const handleDeleteAccount = async () => {
+    if (isDeletingAccount) return;
+
+    setIsDeletingAccount(true);
+    try {
+      await deleteAccount();
+      await completeAccountDeletion();
+      Alert.alert('Account deleted', 'Your SlugSwap account and personal data were deleted.');
+    } catch (error) {
+      console.warn('Failed to delete account:', error);
+      Alert.alert(
+        'Could not delete account',
+        error instanceof Error
+          ? error.message
+          : 'SlugSwap could not delete your account. Check your connection and try again.'
+      );
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  const confirmPermanentDeletion = () => {
+    Alert.alert(
+      'This cannot be undone',
+      'Your SlugSwap profile, GET connection, donation settings, claim history, and notification data will be permanently removed.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete permanently',
+          style: 'destructive',
+          onPress: () => void handleDeleteAccount(),
+        },
+      ]
+    );
+  };
+
+  const confirmDeleteAccount = () => {
+    Alert.alert(
+      'Delete your SlugSwap account?',
+      'This deletes your SlugSwap account only. It does not delete your Google or UCSC GET account.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Continue', style: 'destructive', onPress: confirmPermanentDeletion },
+      ]
     );
   };
 
@@ -177,6 +235,12 @@ export default function MoreScreen() {
             onPress={showAbout}
           />
           <MoreRow
+            label="Privacy policy"
+            icon="shield-checkmark"
+            iconBackground="#4E725D"
+            onPress={() => void Linking.openURL('https://slugswap.vercel.app/privacy')}
+          />
+          <MoreRow
             label="Send feedback"
             icon="chatbubble"
             iconBackground={colors.gold}
@@ -185,6 +249,21 @@ export default function MoreScreen() {
             onPress={() => void Linking.openURL('https://github.com/darthnithin/slugswap/issues/new')}
           />
         </Section>
+
+        {user ? (
+          <Section title="Account">
+            <MoreRow
+              label={isDeletingAccount ? 'Deleting account…' : 'Delete account'}
+              subtitle="Permanently remove your SlugSwap data"
+              icon="trash"
+              iconBackground="#A74835"
+              labelColor="#A74835"
+              disabled={isDeletingAccount}
+              isLast
+              onPress={confirmDeleteAccount}
+            />
+          </Section>
+        ) : null}
 
         <Pressable
           accessibilityRole="button"

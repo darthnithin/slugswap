@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { Session, User } from '@supabase/supabase-js';
 import { useGlobalSearchParams, usePathname, useRouter, useSegments } from 'expo-router';
 import { getSafePostAuthRoute } from './auth-navigation';
-import { unregisterStoredPushTokenAsync } from './notifications';
+import { isMarketingScreenshotMode } from './marketing-screenshot';
+import { clearStoredPushTokenAsync, unregisterStoredPushTokenAsync } from './notifications';
 import { supabase } from './supabase';
 
 type AuthContextType = {
@@ -10,6 +11,7 @@ type AuthContextType = {
   user: User | null;
   isLoading: boolean;
   signOut: () => Promise<void>;
+  completeAccountDeletion: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -69,7 +71,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const inAuthGroup = segments[0] === 'auth';
     const isRootRoute = pathname === '/' && segments.join('/') === '';
     const isPublicTab = ['/home', '/menu', '/explore', '/more'].includes(pathname);
-    const isPublicUtilityRoute = pathname === '/rooms' || segments[0] === 'rooms';
+    const isPublicUtilityRoute =
+      pathname === '/rooms' ||
+      segments[0] === 'rooms' ||
+      (isMarketingScreenshotMode && pathname === '/point-sharing');
     const isPublicRoute = inAuthGroup || isPublicTab || isPublicUtilityRoute;
 
     if (!session && !isPublicRoute && !isRootRoute) {
@@ -87,8 +92,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.replace('/auth/sign-in');
   };
 
+  const completeAccountDeletion = async () => {
+    await clearStoredPushTokenAsync();
+    await supabase.auth.signOut({ scope: 'local' });
+    router.replace('/auth/sign-in');
+  };
+
   return (
-    <AuthContext.Provider value={{ session, user, isLoading, signOut }}>
+    <AuthContext.Provider
+      value={{ session, user, isLoading, signOut, completeAccountDeletion }}
+    >
       {children}
     </AuthContext.Provider>
   );

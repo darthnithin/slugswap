@@ -432,6 +432,23 @@ export async function unregisterPushToken(token: string) {
   }
 }
 
+export async function deleteAccount() {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/users/delete-account`, {
+    method: 'DELETE',
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to delete account'));
+  }
+
+  return readApiJson<{ success: boolean }>(
+    response,
+    'Failed to read account deletion response'
+  );
+}
+
 export async function updateDonorSpendNotificationPreference(enabled: boolean) {
   const headers = await getAuthHeaders();
   const response = await fetchWithFallback(`${API_BASE_URL}/api/notifications/preference`, {

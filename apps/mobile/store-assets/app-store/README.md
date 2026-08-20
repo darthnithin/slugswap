@@ -26,12 +26,12 @@ versioned.
 
 ## Regenerate
 
-1. Replace `source/01-home.png`, `source/02-dining.png`, and
-   `source/03-map.png` with clean Release-build screenshots. Inputs must be
-   exactly 1320×2868 and should already contain the iOS status bar and Dynamic
-   Island. The renderer deliberately suppresses those parts of the 3D model.
-   `04-rooms.png` and `05-launch.png` are retained as optional captures for a
-   future layout but are not used by the current panorama.
+1. Replace `source/01-home.png`, `source/02-dining.png`, `source/03-map.png`,
+   `source/04-rooms.png`, and `source/05-point-sharing.png` with clean
+   Release-build screenshots. Inputs must be exactly 1320×2868 and should
+   already contain the iOS status bar and Dynamic Island. The renderer
+   deliberately suppresses those parts of the 3D model. The launch capture is
+   retained for future layouts but is not used by the current panorama.
 2. From the repository root, run:
 
    ```bash
@@ -41,8 +41,27 @@ versioned.
 3. Review `panorama-preview.png` and `panorama-cut-guide.png`.
 4. Upload the files from `6.9-inch/` to App Store Connect in filename order.
 
+## Explore alternate art directions
+
+Run the following command to generate the Midnight Glass, Campus Editorial,
+and Banana Slug Poster variants without replacing the current `6.9-inch/`
+deliverables:
+
+```bash
+npm run app-store:generate:options
+```
+
+Review `options/style-options-preview.png`, then inspect each option’s
+`cut-guide.png` and `6.9-inch/` folder. The exploration outputs are ignored by
+Git until a direction is selected and promoted to the primary set.
+
 The generator validates source dimensions, re-renders stale phone mockups, and
 exports opaque PNGs. Edit the `PANELS` and `PHONES` configuration near the top
 of `scripts/app-store-screenshots/generate-app-store-screenshots.ts` for the
 next creative pass. Model attribution and licensing details are in
 `3d/iphone-17-pro-max/SOURCE.md`.
+
+The point-sharing screen has a deterministic marketing fixture so it can be
+captured without a personal account or live server state. It is enabled only
+when the app is built with `EXPO_PUBLIC_MARKETING_SCREENSHOTS=1`; ordinary
+development and production builds continue to use live data.

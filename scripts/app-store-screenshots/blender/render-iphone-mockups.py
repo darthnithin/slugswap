@@ -11,7 +11,11 @@ JOBS = {
     "home": {"source": "01-home.png", "angle": "left"},
     "dining": {"source": "02-dining.png", "angle": "front"},
     "map": {"source": "03-map.png", "angle": "right"},
+    "map-front": {"source": "03-map.png", "angle": "front"},
+    "rooms": {"source": "04-rooms.png", "angle": "front"},
+    "sharing": {"source": "05-point-sharing.png", "angle": "right"},
 }
+DEFAULT_JOBS = ("home", "dining", "rooms", "map-front", "sharing")
 
 
 def parse_args() -> argparse.Namespace:
@@ -408,7 +412,7 @@ def main() -> None:
     configure_lighting()
     configure_render(args.width, args.height, args.samples)
 
-    selected = args.only or list(JOBS)
+    selected = args.only or DEFAULT_JOBS
     for name in selected:
         render_job(name, source_dir, output_dir)
 

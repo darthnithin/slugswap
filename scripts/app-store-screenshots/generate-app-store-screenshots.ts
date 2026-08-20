@@ -72,38 +72,38 @@ interface PhoneConfig {
 const PANELS: StoryPanelConfig[] = [
   {
     eyebrow: "SLUGSWAP FOR UCSC",
-    title: "Campus life,",
-    accent: "less scattered.",
-    description: "Dining, maps, rooms, and GET—together.",
-    output: "01-campus-life.png",
-  },
-  {
-    eyebrow: "",
-    title: "",
-    accent: "",
-    description: "",
-    output: "02-campus-life-detail.png",
+    title: "UCSC tools.",
+    accent: "One app.",
+    description: "Dining, rooms, maps, GET, and point sharing.",
+    output: "01-overview.png",
   },
   {
     eyebrow: "DINING",
-    title: "Know what’s",
-    accent: "for lunch.",
-    description: "Live menus without the tab-hopping.",
-    output: "03-dining.png",
+    title: "Today’s menu,",
+    accent: "at a glance.",
+    description: "See what’s open and what’s being served.",
+    output: "02-dining.png",
+  },
+  {
+    eyebrow: "STUDY ROOMS",
+    title: "Reserve a",
+    accent: "study room.",
+    description: "See open times at McHenry and S&E.",
+    output: "03-room-reservations.png",
   },
   {
     eyebrow: "CAMPUS MAP",
     title: "Find anything",
     accent: "on campus.",
-    description: "Search the whole UCSC campus in one place.",
+    description: "Search buildings, dining, and study spots.",
     output: "04-campus-map.png",
   },
   {
-    eyebrow: "",
-    title: "",
-    accent: "",
-    description: "",
-    output: "05-campus-map-detail.png",
+    eyebrow: "POINT SHARING",
+    title: "Share extra",
+    accent: "meal points.",
+    description: "Choose a weekly limit. Pause anytime.",
+    output: "05-point-sharing.png",
   },
 ];
 
@@ -111,26 +111,42 @@ const PHONES: PhoneConfig[] = [
   {
     source: "01-home.png",
     render: "iphone-17-pro-max-home.png",
-    rotation: -7.2,
-    phoneX: 760,
-    phoneY: 250,
-    phoneWidth: 1160,
+    rotation: -8.5,
+    phoneX: 90,
+    phoneY: 690,
+    phoneWidth: 1120,
   },
   {
     source: "02-dining.png",
     render: "iphone-17-pro-max-dining.png",
-    rotation: 0.8,
-    phoneX: SCREEN_WIDTH * 2 + 220,
+    rotation: 0,
+    phoneX: SCREEN_WIDTH + 135,
     phoneY: 760,
-    phoneWidth: 880,
+    phoneWidth: 1050,
+  },
+  {
+    source: "04-rooms.png",
+    render: "iphone-17-pro-max-rooms.png",
+    rotation: 0,
+    phoneX: SCREEN_WIDTH * 2 + 135,
+    phoneY: 760,
+    phoneWidth: 1050,
   },
   {
     source: "03-map.png",
-    render: "iphone-17-pro-max-map.png",
-    rotation: 7.2,
-    phoneX: SCREEN_WIDTH * 3 + 800,
-    phoneY: 250,
-    phoneWidth: 1160,
+    render: "iphone-17-pro-max-map-front.png",
+    rotation: 0,
+    phoneX: SCREEN_WIDTH * 3 + 135,
+    phoneY: 760,
+    phoneWidth: 1050,
+  },
+  {
+    source: "05-point-sharing.png",
+    render: "iphone-17-pro-max-sharing.png",
+    rotation: 8.5,
+    phoneX: SCREEN_WIDTH * 4 + 170,
+    phoneY: 690,
+    phoneWidth: 1120,
   },
 ];
 
@@ -330,8 +346,18 @@ async function prepareRenderedPhone(
     throw new Error("Unable to read the prepared phone dimensions.");
   }
 
-  const padding = 96;
+  const shadowPadding = 96;
+  const shadowOffsetX = 24;
+  const shadowOffsetY = 38;
+  const padding = shadowPadding + shadowOffsetY + 24;
   const shadow = await sharp(await recolorAlpha(phone, "#020D15"))
+    .extend({
+      top: shadowPadding,
+      right: shadowPadding,
+      bottom: shadowPadding,
+      left: shadowPadding,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
     .blur(38)
     .png()
     .toBuffer();
@@ -345,7 +371,11 @@ async function prepareRenderedPhone(
     },
   })
     .composite([
-      { input: shadow, left: padding + 24, top: padding + 38 },
+      {
+        input: shadow,
+        left: padding + shadowOffsetX - shadowPadding,
+        top: padding + shadowOffsetY - shadowPadding,
+      },
       { input: phone, left: padding, top: padding },
     ])
     .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 } })
