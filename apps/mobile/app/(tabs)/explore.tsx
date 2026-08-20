@@ -1,13 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { AppleMaps } from 'expo-maps';
-import { AppleMapsMapStyleEmphasis } from 'expo-maps/build/apple/AppleMaps.types';
+import {
+  AppleMapsMapStyleEmphasis,
+  type AppleMapsPolygon,
+  type AppleMapsPolyline,
+} from 'expo-maps/build/apple/AppleMaps.types';
 import { useRouter } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   Keyboard,
   Linking,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,12 +21,14 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import CampusMapLayersSheet from '@/components/campus/campus-map-layers-sheet';
 import {
   CAMPUS_CATEGORY_META,
   CAMPUS_PLACES,
   DEFAULT_CAMPUS_PLACE_ID,
   filterCampusPlaces,
   findCampusPlace,
+  searchCampusPlaces,
   type CampusPlace,
   type CampusPlaceCategory,
 } from '@/lib/campus-places';
@@ -30,6 +36,16 @@ import {
   buildAppleMapsPlaceUrl,
   buildGoogleMapsDirectionsUrl,
 } from '@/lib/campus-directions';
+import {
+  CAMPUS_MAP_LAYER_META,
+  CAMPUS_MAP_LAYER_ORDER,
+  type CampusMapFeature,
+  type CampusMapLayerId,
+} from '@/lib/ucsc-map-data';
+import {
+  useCampusBuildingSearch,
+  useCampusMapLayers,
+} from '@/lib/use-campus-map-data';
 import {
   buttonOpacity,
   campusFonts,
@@ -60,29 +76,85 @@ function placeIconName(category: CampusPlaceCategory): keyof typeof Ionicons.gly
 function actionLabel(place: CampusPlace): string {
   if (place.category === 'dining') return 'View menu';
   if (place.category === 'study') return 'Find a room';
-  if (Platform.OS === 'ios' && !CampusMaps) return 'Open in Maps';
+  if (process.env.EXPO_OS === 'ios' && !CampusMaps) return 'Open in Maps';
+  return 'Get directions';
+}
+
+type MapSelection = CampusPlace | CampusMapFeature;
+
+function isCampusPlace(selection: MapSelection): selection is CampusPlace {
+  return 'category' in selection;
+}
+
+function selectionTint(selection: MapSelection): string {
+  if (isCampusPlace(selection)) {
+    return CAMPUS_CATEGORY_META[selection.category].tintColor;
+  }
+  if (selection.layerId) return CAMPUS_MAP_LAYER_META[selection.layerId].color;
+  return colors.forest;
+}
+
+function selectionLabel(selection: MapSelection): string {
+  if (isCampusPlace(selection)) {
+    return CAMPUS_CATEGORY_META[selection.category].singularLabel;
+  }
+  if (selection.kind === 'building') return 'Campus building';
+  if (selection.kind === 'transit-stop') return 'Transit stop';
+  if (selection.kind === 'parking-lot') return 'Parking';
+  if (selection.kind === 'restroom') return 'All-gender restroom';
+  if (selection.kind === 'lactation') return 'Lactation space';
+  if (selection.kind === 'bike-repair') return 'Bike repair';
+  if (selection.kind === 'emergency-phone') return 'Emergency phone';
+  if (selection.kind === 'construction') return 'Construction impact';
+  if (selection.kind === 'garden') return 'Campus garden';
+  if (selection.kind === 'recreation') return 'Recreation';
+  return 'Point of interest';
+}
+
+function searchIconName(
+  selection: MapSelection,
+): keyof typeof Ionicons.glyphMap {
+  if (isCampusPlace(selection)) return placeIconName(selection.category);
+  if (selection.kind === 'building') return 'business';
+  if (selection.kind === 'transit-stop') return 'bus';
+  if (selection.kind === 'parking-lot') return 'car';
+  if (selection.kind === 'construction') return 'hammer';
+  if (selection.kind === 'garden' || selection.kind === 'recreation') return 'leaf';
+  return 'location';
+}
+
+function featureActionLabel(feature: CampusMapFeature): string {
+  if (process.env.EXPO_OS === 'ios' && !CampusMaps) return 'Open in Maps';
   return 'Get directions';
 }
 
 type MapHeaderProps = {
   activeCategory: CampusPlaceCategory;
   query: string;
-  visiblePlaces: CampusPlace[];
+  searchResults: MapSelection[];
+  searchStatus: 'idle' | 'loading' | 'ready' | 'error';
+  searchError: string | null;
+  activeLayerCount: number;
   topInset: number;
   onCategoryChange: (category: CampusPlaceCategory) => void;
   onQueryChange: (value: string) => void;
-  onPlacePress: (place: CampusPlace) => void;
+  onSelectionPress: (selection: MapSelection) => void;
+  onLayersPress: () => void;
   onMorePress: () => void;
 };
 
 function MapHeader({
   activeCategory,
   query,
-  visiblePlaces,
+  searchResults,
+  searchStatus,
+  searchError,
+  activeLayerCount,
   topInset,
   onCategoryChange,
   onQueryChange,
-  onPlacePress,
+  onSelectionPress,
+  onLayersPress,
   onMorePress,
 }: MapHeaderProps) {
   const showResults = query.trim().length > 0;
@@ -99,15 +171,40 @@ function MapHeader({
           />
           <Text style={styles.wordmark}>SlugSwap</Text>
         </View>
-        <Pressable
-          accessibilityLabel="Open more campus tools"
-          accessibilityRole="button"
-          hitSlop={10}
-          onPress={onMorePress}
-          style={({ pressed }) => [styles.moreButton, { opacity: buttonOpacity(pressed) }]}
-        >
-          <Ionicons name="menu" size={30} color={colors.ink} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            accessibilityLabel="Choose campus map layers"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onLayersPress}
+            style={({ pressed }) => [
+              styles.headerActionButton,
+              activeLayerCount > 0 ? styles.headerActionButtonActive : null,
+              { opacity: buttonOpacity(pressed) },
+            ]}
+          >
+            <Ionicons
+              name="layers-outline"
+              size={23}
+              color={activeLayerCount > 0 ? colors.softWhite : colors.ink}
+            />
+            {activeLayerCount > 0 ? (
+              <Text style={styles.activeLayerCount}>{activeLayerCount}</Text>
+            ) : null}
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Open more campus tools"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onMorePress}
+            style={({ pressed }) => [
+              styles.headerActionButton,
+              { opacity: buttonOpacity(pressed) },
+            ]}
+          >
+            <Ionicons name="menu" size={28} color={colors.ink} />
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.searchField}>
@@ -118,7 +215,7 @@ function MapHeader({
           autoCorrect={false}
           clearButtonMode="while-editing"
           onChangeText={onQueryChange}
-          placeholder="Search campus"
+          placeholder="Search buildings and places"
           placeholderTextColor={colors.textMuted}
           returnKeyType="search"
           style={styles.searchInput}
@@ -166,12 +263,12 @@ function MapHeader({
 
       {showResults ? (
         <View style={styles.searchResults}>
-          {visiblePlaces.length > 0 ? (
-            visiblePlaces.slice(0, 4).map((place, index) => (
+          {searchResults.length > 0 ? (
+            searchResults.slice(0, 8).map((selection, index) => (
               <Pressable
-                key={place.id}
+                key={selection.id}
                 accessibilityRole="button"
-                onPress={() => onPlacePress(place)}
+                onPress={() => onSelectionPress(selection)}
                 style={({ pressed }) => [
                   styles.searchResult,
                   index > 0 ? styles.searchResultBorder : null,
@@ -179,20 +276,32 @@ function MapHeader({
                 ]}
               >
                 <Ionicons
-                  name={placeIconName(place.category)}
+                  name={searchIconName(selection)}
                   size={18}
-                  color={CAMPUS_CATEGORY_META[place.category].tintColor}
+                  color={selectionTint(selection)}
                 />
-                <Text numberOfLines={1} style={styles.searchResultLabel}>
-                  {place.shortName}
-                </Text>
+                <View style={styles.searchResultCopy}>
+                  <Text numberOfLines={1} style={styles.searchResultLabel}>
+                    {selection.shortName}
+                  </Text>
+                  <Text numberOfLines={1} style={styles.searchResultDescription}>
+                    {selection.description}
+                  </Text>
+                </View>
                 <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
               </Pressable>
             ))
+          ) : searchStatus === 'loading' ? (
+            <View style={styles.searchStatusRow}>
+              <ActivityIndicator color={colors.forest} size="small" />
+              <Text style={styles.noResults}>Searching UCSC buildings…</Text>
+            </View>
+          ) : searchError ? (
+            <Text style={styles.noResults}>{searchError}</Text>
+          ) : query.trim().length < 2 ? (
+            <Text style={styles.noResults}>Keep typing to search campus buildings.</Text>
           ) : (
-            <Text style={styles.noResults}>
-              No {CAMPUS_CATEGORY_META[activeCategory].label.toLowerCase()} matches.
-            </Text>
+            <Text style={styles.noResults}>No campus buildings or places match.</Text>
           )}
         </View>
       ) : null}
@@ -201,45 +310,48 @@ function MapHeader({
 }
 
 function PlaceSheet({
-  place,
+  selection,
   onAction,
 }: {
-  place: CampusPlace;
-  onAction: (place: CampusPlace) => void;
+  selection: MapSelection;
+  onAction: (selection: MapSelection) => void;
 }) {
-  const category = CAMPUS_CATEGORY_META[place.category];
+  const tintColor = selectionTint(selection);
+  const useDarkIcon = isCampusPlace(selection) && selection.category === 'study';
 
   return (
     <View style={styles.sheet}>
       <View style={styles.sheetHandle} />
       <View style={styles.sheetContent}>
         <View style={styles.pinWrap}>
-          <View style={[styles.placePin, { backgroundColor: category.tintColor }]}>
+          <View style={[styles.placePin, { backgroundColor: tintColor }]}>
             <View style={styles.placePinIcon}>
               <Ionicons
-                name={placeIconName(place.category)}
+                name={searchIconName(selection)}
                 size={24}
-                color={place.category === 'study' ? colors.ink : colors.softWhite}
+                color={useDarkIcon ? colors.ink : colors.softWhite}
               />
             </View>
           </View>
         </View>
         <View style={styles.placeCopy}>
-          <Text style={styles.placeEyebrow}>{category.singularLabel}</Text>
+          <Text style={styles.placeEyebrow}>{selectionLabel(selection)}</Text>
           <Text numberOfLines={2} style={styles.placeTitle}>
-            {place.shortName}
+            {selection.shortName}
           </Text>
           <Text numberOfLines={2} style={styles.placeDescription}>
-            {place.description}
+            {selection.description}
           </Text>
         </View>
       </View>
       <Pressable
         accessibilityRole="button"
-        onPress={() => onAction(place)}
+        onPress={() => onAction(selection)}
         style={({ pressed }) => [styles.sheetAction, { opacity: buttonOpacity(pressed) }]}
       >
-        <Text style={styles.sheetActionLabel}>{actionLabel(place)}</Text>
+        <Text style={styles.sheetActionLabel}>
+          {isCampusPlace(selection) ? actionLabel(selection) : featureActionLabel(selection)}
+        </Text>
         <Ionicons name="arrow-forward" size={23} color={colors.softWhite} />
       </Pressable>
     </View>
@@ -247,12 +359,12 @@ function PlaceSheet({
 }
 
 function FallbackPlaceList({
-  places,
-  onPlacePress,
+  selections,
+  onSelectionPress,
   bottomInset,
 }: {
-  places: CampusPlace[];
-  onPlacePress: (place: CampusPlace) => void;
+  selections: MapSelection[];
+  onSelectionPress: (selection: MapSelection) => void;
   bottomInset: number;
 }) {
   return (
@@ -263,32 +375,33 @@ function FallbackPlaceList({
     >
       <Text style={styles.fallbackTitle}>Places on campus</Text>
       <Text style={styles.fallbackSubtitle}>
-        Choose a place for menus, room reservations, or directions.
+        Choose a place for campus tools or directions.
       </Text>
-      {places.length > 0 ? (
-        places.map((place) => {
-          const category = CAMPUS_CATEGORY_META[place.category];
+      {selections.length > 0 ? (
+        selections.map((selection) => {
+          const tintColor = selectionTint(selection);
+          const useDarkIcon = isCampusPlace(selection) && selection.category === 'study';
           return (
             <Pressable
-              key={place.id}
+              key={selection.id}
               accessibilityRole="button"
-              onPress={() => onPlacePress(place)}
+              onPress={() => onSelectionPress(selection)}
               style={({ pressed }) => [
                 styles.fallbackCard,
                 { opacity: buttonOpacity(pressed) },
               ]}
             >
-              <View style={[styles.fallbackIcon, { backgroundColor: category.tintColor }]}>
+              <View style={[styles.fallbackIcon, { backgroundColor: tintColor }]}>
                 <Ionicons
-                  name={placeIconName(place.category)}
+                  name={searchIconName(selection)}
                   size={23}
-                  color={place.category === 'study' ? colors.ink : colors.softWhite}
+                  color={useDarkIcon ? colors.ink : colors.softWhite}
                 />
               </View>
               <View style={styles.fallbackCopy}>
-                <Text style={styles.fallbackCardTitle}>{place.shortName}</Text>
+                <Text style={styles.fallbackCardTitle}>{selection.shortName}</Text>
                 <Text numberOfLines={2} style={styles.fallbackCardDescription}>
-                  {place.description}
+                  {selection.description}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.ink} />
@@ -312,67 +425,140 @@ export default function ExploreScreen() {
   const mapRef = useRef<AppleMaps.MapView>(null);
   const [activeCategory, setActiveCategory] = useState<CampusPlaceCategory>('dining');
   const [query, setQuery] = useState('');
-  const [selectedPlace, setSelectedPlace] = useState<CampusPlace | null>(() =>
+  const [selectedSelection, setSelectedSelection] = useState<MapSelection | null>(() =>
     findCampusPlace(DEFAULT_CAMPUS_PLACE_ID),
   );
+  const [activeLayerIds, setActiveLayerIds] = useState<Set<CampusMapLayerId>>(
+    () => new Set(),
+  );
+  const [layersVisible, setLayersVisible] = useState(false);
+  const { states: layerStates, loadLayer, retryLayer } = useCampusMapLayers();
+  const buildingSearch = useCampusBuildingSearch(query);
 
-  const visiblePlaces = useMemo(
-    () => filterCampusPlaces(activeCategory, query),
-    [activeCategory, query],
+  const browsePlaces = useMemo(
+    () => filterCampusPlaces(activeCategory, ''),
+    [activeCategory],
+  );
+
+  const localSearchResults = useMemo(() => searchCampusPlaces(query), [query]);
+  const searchResults = useMemo<MapSelection[]>(() => {
+    const curatedNames = new Set(
+      localSearchResults.flatMap((place) => [place.name, place.shortName]).map((name) =>
+        name.toLocaleLowerCase(),
+      ),
+    );
+    const buildings = buildingSearch.results.filter(
+      (building) => !curatedNames.has(building.name.toLocaleLowerCase()),
+    );
+    return [...localSearchResults, ...buildings].slice(0, 8);
+  }, [buildingSearch.results, localSearchResults]);
+
+  const activeLayerFeatures = useMemo(
+    () =>
+      CAMPUS_MAP_LAYER_ORDER.filter((layerId) => activeLayerIds.has(layerId)).flatMap(
+        (layerId) => layerStates[layerId]?.data.features ?? [],
+      ),
+    [activeLayerIds, layerStates],
+  );
+
+  const markerSelections = useMemo<MapSelection[]>(() => {
+    const selections = new Map<string, MapSelection>();
+    browsePlaces.forEach((place) => selections.set(place.id, place));
+    activeLayerFeatures.forEach((feature) => selections.set(feature.id, feature));
+    if (selectedSelection && !isCampusPlace(selectedSelection)) {
+      selections.set(selectedSelection.id, selectedSelection);
+    }
+    return [...selections.values()];
+  }, [activeLayerFeatures, browsePlaces, selectedSelection]);
+
+  const selectionsById = useMemo(
+    () => new Map(markerSelections.map((selection) => [selection.id, selection])),
+    [markerSelections],
   );
 
   const markers = useMemo<AppleMaps.Marker[]>(
     () =>
-      visiblePlaces.map((place) => ({
-        id: place.id,
-        title: place.shortName,
-        systemImage: place.systemImage,
-        tintColor: CAMPUS_CATEGORY_META[place.category].tintColor,
-        coordinates: place.coordinates,
+      markerSelections.map((selection) => ({
+        id: selection.id,
+        title: selection.shortName,
+        systemImage: selection.systemImage,
+        tintColor: selectionTint(selection),
+        coordinates: selection.coordinates,
       })),
-    [visiblePlaces],
+    [markerSelections],
   );
 
-  const selectPlace = (place: CampusPlace) => {
+  const polylines = useMemo<AppleMapsPolyline[]>(
+    () =>
+      CAMPUS_MAP_LAYER_ORDER.filter((layerId) => activeLayerIds.has(layerId)).flatMap(
+        (layerId) =>
+          (layerStates[layerId]?.data.polylines ?? []).map((polyline) => ({
+            id: polyline.id,
+            coordinates: polyline.coordinates,
+            color: CAMPUS_MAP_LAYER_META[layerId].color,
+            width: 3,
+          })),
+      ),
+    [activeLayerIds, layerStates],
+  );
+
+  const polygons = useMemo<AppleMapsPolygon[]>(
+    () =>
+      CAMPUS_MAP_LAYER_ORDER.filter((layerId) => activeLayerIds.has(layerId)).flatMap(
+        (layerId) =>
+          (layerStates[layerId]?.data.polygons ?? []).map((polygon) => ({
+            id: polygon.id,
+            coordinates: polygon.coordinates,
+            color: `${CAMPUS_MAP_LAYER_META[layerId].color}26`,
+            lineColor: CAMPUS_MAP_LAYER_META[layerId].color,
+            lineWidth: 2,
+          })),
+      ),
+    [activeLayerIds, layerStates],
+  );
+
+  const selectSelection = (selection: MapSelection) => {
     Keyboard.dismiss();
-    setSelectedPlace(place);
+    setSelectedSelection(selection);
     setQuery('');
-    mapRef.current?.setCameraPosition({ coordinates: place.coordinates, zoom: 16 });
-    mapRef.current?.selectMarker(place.id, { moveCamera: false });
+    mapRef.current?.setCameraPosition({ coordinates: selection.coordinates, zoom: 16 });
+    requestAnimationFrame(() => {
+      mapRef.current?.selectMarker(selection.id, { moveCamera: false });
+    });
   };
 
   const changeCategory = (category: CampusPlaceCategory) => {
     setActiveCategory(category);
     setQuery('');
     const firstPlace = CAMPUS_PLACES.find((place) => place.category === category) ?? null;
-    setSelectedPlace(firstPlace);
+    setSelectedSelection(firstPlace);
     if (firstPlace) {
       mapRef.current?.setCameraPosition({ coordinates: firstPlace.coordinates, zoom: 14.5 });
     }
   };
 
-  const openPlace = async (place: CampusPlace) => {
-    if (place.category === 'dining' && place.diningLocationId) {
+  const openSelection = async (selection: MapSelection) => {
+    if (isCampusPlace(selection) && selection.category === 'dining' && selection.diningLocationId) {
       router.push({
         pathname: '/(tabs)/menu',
-        params: { locationId: place.diningLocationId },
+        params: { locationId: selection.diningLocationId },
       });
       return;
     }
 
-    if (place.category === 'study' && place.libraryId) {
+    if (isCampusPlace(selection) && selection.category === 'study' && selection.libraryId) {
       router.push({
         pathname: '/rooms',
-        params: { library: place.libraryId },
+        params: { library: selection.libraryId },
       });
       return;
     }
 
-    const { latitude, longitude } = place.coordinates;
-    if (Platform.OS === 'ios' && CampusMaps) {
+    const { latitude, longitude } = selection.coordinates;
+    if (process.env.EXPO_OS === 'ios' && CampusMaps) {
       try {
         const didOpen = await CampusMaps.openDirectionsAsync(
-          place.name,
+          selection.name,
           latitude,
           longitude,
         );
@@ -383,9 +569,9 @@ export default function ExploreScreen() {
     }
 
     const directionsUrl =
-      Platform.OS === 'ios'
-        ? buildAppleMapsPlaceUrl(place)
-        : buildGoogleMapsDirectionsUrl(place);
+      process.env.EXPO_OS === 'ios'
+        ? buildAppleMapsPlaceUrl(selection)
+        : buildGoogleMapsDirectionsUrl(selection);
 
     try {
       await Linking.openURL(directionsUrl);
@@ -394,20 +580,53 @@ export default function ExploreScreen() {
     }
   };
 
+  const toggleLayer = (layerId: CampusMapLayerId, active: boolean) => {
+    setActiveLayerIds((current) => {
+      const next = new Set(current);
+      if (active) next.add(layerId);
+      else next.delete(layerId);
+      return next;
+    });
+
+    if (active) {
+      void loadLayer(layerId);
+      return;
+    }
+
+    if (
+      selectedSelection &&
+      !isCampusPlace(selectedSelection) &&
+      selectedSelection.layerId === layerId
+    ) {
+      setSelectedSelection(findCampusPlace(DEFAULT_CAMPUS_PLACE_ID));
+    }
+  };
+
+  const fallbackSelections = query.trim()
+    ? searchResults
+    : [...browsePlaces, ...activeLayerFeatures].slice(0, 100);
+
   return (
     <View style={styles.screen}>
       <MapHeader
         activeCategory={activeCategory}
         query={query}
-        visiblePlaces={visiblePlaces}
+        searchResults={searchResults}
+        searchStatus={buildingSearch.status}
+        searchError={buildingSearch.error}
+        activeLayerCount={activeLayerIds.size}
         topInset={insets.top}
         onCategoryChange={changeCategory}
         onQueryChange={setQuery}
-        onPlacePress={selectPlace}
+        onSelectionPress={(selection) => {
+          if (process.env.EXPO_OS === 'ios') selectSelection(selection);
+          else void openSelection(selection);
+        }}
+        onLayersPress={() => setLayersVisible(true)}
         onMorePress={() => router.push('/(tabs)/more')}
       />
 
-      {Platform.OS === 'ios' ? (
+      {process.env.EXPO_OS === 'ios' ? (
         <View style={styles.mapShell}>
           <AppleMaps.View
             ref={mapRef}
@@ -415,13 +634,16 @@ export default function ExploreScreen() {
             cameraPosition={CAMPUS_CAMERA}
             colorScheme={AppleMaps.MapColorScheme.LIGHT}
             markers={markers}
+            polygons={polygons}
+            polylines={polylines}
             onMapClick={() => {
               Keyboard.dismiss();
               setQuery('');
             }}
             onMarkerClick={(marker) => {
-              const place = findCampusPlace(marker.id);
-              if (place) selectPlace(place);
+              if (!marker.id) return;
+              const selection = selectionsById.get(marker.id);
+              if (selection) selectSelection(selection);
             }}
             properties={{
               elevation: AppleMaps.MapStyleElevation.FLAT,
@@ -436,15 +658,26 @@ export default function ExploreScreen() {
               togglePitchEnabled: false,
             }}
           />
-          {selectedPlace ? <PlaceSheet place={selectedPlace} onAction={openPlace} /> : null}
+          {selectedSelection ? (
+            <PlaceSheet selection={selectedSelection} onAction={openSelection} />
+          ) : null}
         </View>
       ) : (
         <FallbackPlaceList
-          places={visiblePlaces}
-          onPlacePress={openPlace}
+          selections={fallbackSelections}
+          onSelectionPress={openSelection}
           bottomInset={insets.bottom}
         />
       )}
+
+      <CampusMapLayersSheet
+        visible={layersVisible}
+        activeLayerIds={activeLayerIds}
+        states={layerStates}
+        onClose={() => setLayersVisible(false)}
+        onToggle={toggleLayer}
+        onRetry={retryLayer}
+      />
     </View>
   );
 }
@@ -485,11 +718,31 @@ const styles = StyleSheet.create({
     lineHeight: 30,
     letterSpacing: -1.15,
   },
-  moreButton: {
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerActionButton: {
     width: 42,
     height: 42,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 2,
+    borderRadius: 21,
+  },
+  headerActionButtonActive: {
+    width: 52,
+    paddingHorizontal: 8,
+    backgroundColor: colors.forest,
+  },
+  activeLayerCount: {
+    color: colors.softWhite,
+    fontFamily: campusFonts.sansSemibold,
+    fontSize: 12,
+    lineHeight: 16,
+    fontVariant: ['tabular-nums'],
   },
   searchField: {
     height: 44,
@@ -543,22 +796,38 @@ const styles = StyleSheet.create({
     ...cardShadow('surface'),
   },
   searchResult: {
-    minHeight: 44,
+    minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingHorizontal: 12,
+    paddingVertical: 7,
   },
   searchResultBorder: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
-  searchResultLabel: {
+  searchResultCopy: {
     flex: 1,
+  },
+  searchResultLabel: {
     color: colors.ink,
     fontFamily: campusFonts.sansMedium,
     fontSize: 15,
     lineHeight: 19,
+  },
+  searchResultDescription: {
+    color: colors.textMuted,
+    fontFamily: campusFonts.sans,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  searchStatusRow: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingLeft: 13,
   },
   noResults: {
     paddingHorizontal: 13,
