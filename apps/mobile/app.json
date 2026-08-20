@@ -2,7 +2,7 @@
   "expo": {
     "name": "SlugSwap",
     "slug": "slugswap",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "orientation": "portrait",
     "icon": "./assets/src/brand/slug-swap-app-icon-1024.png",
     "userInterfaceStyle": "light",
@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.slugswap",
-      "buildNumber": "57",
+      "buildNumber": "69",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }

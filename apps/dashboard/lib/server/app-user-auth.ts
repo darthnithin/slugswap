@@ -14,6 +14,15 @@ function getSupabaseServiceClient() {
   return createClient(supabaseUrl, serviceRoleKey);
 }
 
+export async function deleteAppUserIdentity(userId: string): Promise<void> {
+  const supabase = getSupabaseServiceClient();
+  const { error } = await supabase.auth.admin.deleteUser(userId);
+
+  if (error) {
+    throw new Error(`Failed to delete Supabase user: ${error.message}`);
+  }
+}
+
 export function unauthorizedAppUserResponse(message = "Unauthorized") {
   return NextResponse.json({ error: message }, { status: 401 });
 }

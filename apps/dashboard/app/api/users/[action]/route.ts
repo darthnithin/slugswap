@@ -2,8 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import {
   authenticateAppUser,
+  deleteAppUserIdentity,
   syncAuthenticatedUser,
 } from "@/lib/server/app-user-auth";
+import {
+  deleteStoredAccountData,
+  revokeLinkedGetAccount,
+  runAccountDeletion,
+} from "@/lib/server/account-deletion";
 import { db } from "@/lib/server/db";
 import { users } from "@/lib/server/schema";
 
@@ -127,6 +133,34 @@ async function dispatch(req: NextRequest, ctx: Ctx) {
     }
 
     return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+  }
+
+  if (action === "delete-account") {
+    if (req.method !== "DELETE") {
+      return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    try {
+      const auth = await authenticateAppUser(req);
+      if ("response" in auth) {
+        return auth.response;
+      }
+
+      const userId = auth.user.id;
+      await runAccountDeletion(
+        () => revokeLinkedGetAccount(userId),
+        () => deleteStoredAccountData(userId),
+        () => deleteAppUserIdentity(userId)
+      );
+
+      return NextResponse.json({ success: true }, { status: 200 });
+    } catch (error: any) {
+      console.error("Error deleting account:", error);
+      return NextResponse.json(
+        { error: error?.message || "Failed to delete account" },
+        { status: 500 }
+      );
+    }
   }
 
   if (!action) {

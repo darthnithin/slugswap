@@ -50,6 +50,7 @@ import {
   stealthTheme,
   typeScale,
 } from '@/lib/stealth-theme';
+import { isMarketingScreenshotMode } from '@/lib/marketing-screenshot';
 import { useFocusEffect, useRouter } from 'expo-router';
 
 const POOL_EMPTY_TITLE = 'No points available';
@@ -70,6 +71,36 @@ const EMPTY_IMPACT: DonorImpact = {
   weekStart: new Date().toISOString(),
   weekEnd: new Date().toISOString(),
   timezone: 'America/Los_Angeles',
+};
+
+const MARKETING_SHARE_SNAPSHOT: ShareTabSnapshot = {
+  userId: 'marketing-preview',
+  userEmail: 'slug@ucsc.edu',
+  weeklyAmount: '75',
+  isActive: true,
+  impact: {
+    isActive: true,
+    notifyOnSpend: false,
+    weeklyAmount: 75,
+    status: 'active',
+    peopleHelped: 6,
+    pointsContributed: 185,
+    capAmount: 75,
+    redeemedThisWeek: 30,
+    reservedThisWeek: 5,
+    remainingThisWeek: 40,
+    capReached: false,
+    weekStart: '2026-08-17T07:00:00.000Z',
+    weekEnd: '2026-08-24T07:00:00.000Z',
+    timezone: 'America/Los_Angeles',
+  },
+  isGetLinked: true,
+  getLinkedAt: '2026-08-01T19:00:00.000Z',
+  getAccounts: [],
+  requesterWeeklyLimit: 20,
+  requesterWeekEnd: '2026-08-24T07:00:00.000Z',
+  requesterDaysUntilReset: 4,
+  requesterPoolStatus: 'available',
 };
 
 function toSafeNumber(value: unknown, fallback = 0): number {
@@ -232,7 +263,10 @@ export default function DonorScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { shareSnapshot: cachedShareSnapshot, setShareSnapshot } = useTabCache();
-  const shareSnapshot = cachedShareSnapshot?.userId === user?.id ? cachedShareSnapshot : null;
+  const liveShareSnapshot = cachedShareSnapshot?.userId === user?.id ? cachedShareSnapshot : null;
+  const shareSnapshot = isMarketingScreenshotMode
+    ? MARKETING_SHARE_SNAPSHOT
+    : liveShareSnapshot;
   const hasShareSnapshot = !!shareSnapshot;
 
   const [weeklyAmount, setWeeklyAmount] = useState(shareSnapshot?.weeklyAmount ?? '');
@@ -433,6 +467,7 @@ export default function DonorScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (isMarketingScreenshotMode) return undefined;
       if (skipInitialFocusRefreshRef.current) {
         skipInitialFocusRefreshRef.current = false;
         return undefined;

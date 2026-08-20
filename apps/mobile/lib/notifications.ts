@@ -168,6 +168,10 @@ export async function unregisterStoredPushTokenAsync(): Promise<void> {
   await AsyncStorage.removeItem(STORED_PUSH_TOKEN_KEY);
 }
 
+export async function clearStoredPushTokenAsync(): Promise<void> {
+  await AsyncStorage.removeItem(STORED_PUSH_TOKEN_KEY);
+}
+
 export async function scheduleNotificationPreviewAsync(
   title: string,
   body: string

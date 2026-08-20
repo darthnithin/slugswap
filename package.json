@@ -36,6 +36,7 @@
     "story:generate": "bash scripts/instagram-stories/export-ig-stories.sh",
     "story:generate:svg": "npx dotenv-cli -e .env -- npx tsx scripts/instagram-stories/write-instagram-story-data.ts && npx tsx scripts/instagram-stories/generate-instagram-story.ts",
     "app-store:generate": "tsx scripts/app-store-screenshots/generate-app-store-screenshots.ts",
+    "app-store:generate:options": "npm run app-store:generate && tsx scripts/app-store-screenshots/generate-app-store-options.ts",
     "mobile:eas:init": "cd apps/mobile && npx eas-cli init",
     "mobile:eas:build:ios": "cd apps/mobile && npx eas-cli build --platform ios --profile production",
     "mobile:eas:build:ios:local": "cd apps/mobile && npx eas-cli build --platform ios --profile production --local",
