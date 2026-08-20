@@ -1,10 +1,22 @@
 "use client";
 
-import { motion, useAnimationControls } from "framer-motion";
-import { Apple, ArrowRight, MonitorDown, Smartphone } from "lucide-react";
+import {
+  ArrowRight,
+  Building2,
+  Check,
+  MapPinned,
+  Menu,
+  ShieldCheck,
+  Utensils,
+  WalletCards,
+  X,
+} from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
-import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+
+import brandLockup from "../../mobile/assets/src/brand/slug-swap-lockup.svg";
+import mobileHomeScreenshot from "../../mobile/store-assets/app-store/source/01-home.png";
 
 type LandingClientProps = {
   pointsDistributed: number;
@@ -15,50 +27,63 @@ type LandingClientProps = {
   androidStoreUrl: string | null;
 };
 
-const CHAOS_COLORS = ["#4ecdc4", "#f7dc6f", "#e74c3c", "#9b59b6", "#2ecc71"] as const;
-
-const CHAOS_BLOBS = [
-  { size: 180, left: "6%", top: "5%", color: "#4ecdc4", dx: -36, dy: 18, rotate: 120, scale: 0.8 },
-  { size: 130, left: "18%", top: "28%", color: "#f7dc6f", dx: 30, dy: -24, rotate: -80, scale: 1.1 },
-  { size: 220, left: "70%", top: "7%", color: "#e74c3c", dx: -22, dy: 20, rotate: 145, scale: 0.75 },
-  { size: 95, left: "83%", top: "33%", color: "#9b59b6", dx: 16, dy: -16, rotate: -160, scale: 1.2 },
-  { size: 150, left: "4%", top: "66%", color: "#2ecc71", dx: 24, dy: -12, rotate: 105, scale: 0.9 },
-  { size: 110, left: "40%", top: "80%", color: "#f7dc6f", dx: -20, dy: -14, rotate: -100, scale: 1.15 },
-  { size: 170, left: "76%", top: "68%", color: "#4ecdc4", dx: 28, dy: 22, rotate: 132, scale: 0.8 },
-  { size: 120, left: "54%", top: "16%", color: "#2ecc71", dx: -18, dy: 26, rotate: -124, scale: 1.05 },
-  { size: 200, left: "28%", top: "48%", color: "#9b59b6", dx: 22, dy: -24, rotate: 98, scale: 0.7 },
-  { size: 160, left: "62%", top: "44%", color: "#e74c3c", dx: -30, dy: 14, rotate: -140, scale: 0.95 },
+const campusTools = [
+  {
+    title: "Dining",
+    description: "Menus, hours, and what’s open now.",
+    href: "/app",
+    icon: Utensils,
+    tone: "forest",
+  },
+  {
+    title: "Study rooms",
+    description: "Find open library rooms by time.",
+    href: "/app",
+    icon: Building2,
+    tone: "gold",
+  },
+  {
+    title: "Campus map",
+    description: "Find buildings and hand off directions.",
+    href: "/app",
+    icon: MapPinned,
+    tone: "coral",
+  },
+  {
+    title: "My GET",
+    description: "Keep balances and your barcode close.",
+    href: "/app",
+    icon: WalletCards,
+    tone: "sage",
+  },
 ] as const;
 
-const FLOATERS = [
-  { size: 54, left: "11%", top: "14%", color: "#4ecdc4", round: true, drift: -22 },
-  { size: 68, left: "29%", top: "89%", color: "#f7dc6f", round: false, drift: -30 },
-  { size: 58, left: "44%", top: "11%", color: "#e74c3c", round: true, drift: -20 },
-  { size: 66, left: "62%", top: "85%", color: "#9b59b6", round: false, drift: -26 },
-  { size: 48, left: "86%", top: "17%", color: "#2ecc71", round: true, drift: -18 },
-  { size: 64, left: "79%", top: "51%", color: "#f7dc6f", round: false, drift: -24 },
-  { size: 56, left: "18%", top: "56%", color: "#2ecc71", round: true, drift: -28 },
-  { size: 50, left: "84%", top: "76%", color: "#e74c3c", round: true, drift: -16 },
+const sharingSteps = [
+  {
+    number: "01",
+    title: "Choose an amount",
+    description: "Donors set a weekly limit and always stay in control.",
+  },
+  {
+    number: "02",
+    title: "A student requests a meal",
+    description: "SlugSwap quietly matches the request with available points.",
+  },
+  {
+    number: "03",
+    title: "They scan at checkout",
+    description: "A short-lived claim code makes the handoff fast and private.",
+  },
 ] as const;
-
-type FloaterItem = (typeof FLOATERS)[number];
 
 function formatCount(value: number): string {
-  return value.toLocaleString("en-US");
+  return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
 function formatPoints(value: number): string {
-  if (Math.abs(value) >= 1000) {
-    return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
-  }
-
-  if (Number.isInteger(value)) {
-    return value.toLocaleString("en-US");
-  }
-
   return value.toLocaleString("en-US", {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 1,
+    maximumFractionDigits: Number.isInteger(value) ? 0 : 1,
   });
 }
 
@@ -66,125 +91,91 @@ function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(value);
 }
 
-function CtaButton({
-  href,
-  disabled,
-  bg,
-  text,
-  rotate,
-  children,
-}: {
-  href?: string;
-  disabled?: boolean;
-  bg: string;
-  text: string;
-  rotate: string;
-  children: ReactNode;
-}) {
-  const className = `inline-flex items-center justify-center gap-2 border-8 border-black font-black text-xl px-8 py-5 h-auto transform ${rotate} shadow-[8px_8px_0_#000]`;
-
-  if (!href || disabled) {
-    return (
-      <button
-        type="button"
-        disabled
-        className={`${className} ${bg} text-black opacity-55 cursor-not-allowed`}
-        style={{ fontFamily: "Impact, sans-serif" }}
-      >
-        {children}
-      </button>
-    );
-  }
-
-  const external = href.startsWith("http://") || href.startsWith("https://");
-
-  if (external) {
-    return (
-      <a
-        href={href}
-        target="_blank"
-        rel="noreferrer"
-        className={`${className} ${bg} ${text}`}
-        style={{ fontFamily: "Impact, sans-serif" }}
-      >
-        {children}
-      </a>
-    );
-  }
-
+function CampusScene() {
   return (
-    <Link href={href} className={`${className} ${bg} ${text}`} style={{ fontFamily: "Impact, sans-serif" }}>
-      {children}
-    </Link>
+    <svg
+      aria-hidden="true"
+      className="landing-campus-scene"
+      viewBox="0 0 760 560"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M86 555c83-76 196-81 240-166 43-83-38-127 14-213 43-71 143-69 185-146"
+        stroke="#E8DECC"
+        strokeWidth="48"
+        strokeLinecap="round"
+      />
+      <g transform="translate(305 58)">
+        <path d="M0 77 80 18l80 59H0Z" fill="#183D32" />
+        <rect x="18" y="76" width="124" height="92" rx="4" fill="#183D32" />
+        <rect x="38" y="94" width="17" height="56" rx="2" fill="#FFFDF7" />
+        <rect x="72" y="94" width="17" height="56" rx="2" fill="#FFFDF7" />
+        <rect x="106" y="94" width="17" height="56" rx="2" fill="#FFFDF7" />
+        <circle cx="80" cy="58" r="8" fill="#F4C332" />
+        <path d="M-18 168h196" stroke="#183D32" strokeWidth="14" strokeLinecap="round" />
+      </g>
+      <g transform="translate(84 285)">
+        <path d="M56 0C25 0 0 25 0 56c0 46 56 99 56 99s56-53 56-99C112 25 87 0 56 0Z" fill="#183D32" />
+        <circle cx="56" cy="52" r="19" fill="#F4C332" />
+        <path d="M-34 161c50-27 133-27 181 0" stroke="#7A9A83" strokeWidth="24" strokeLinecap="round" />
+      </g>
+      <g transform="translate(570 225)">
+        <path d="M46 0C21 0 0 21 0 46c0 38 46 81 46 81s46-43 46-81C92 21 71 0 46 0Z" fill="#183D32" />
+        <circle cx="46" cy="43" r="15" fill="#F4C332" />
+        <path d="M-34 134c42-23 120-23 160 0" stroke="#7A9A83" strokeWidth="23" strokeLinecap="round" />
+      </g>
+      <g fill="#7A9A83">
+        <circle cx="78" cy="250" r="30" />
+        <circle cx="112" cy="257" r="41" />
+        <circle cx="153" cy="250" r="28" />
+        <circle cx="616" cy="162" r="29" />
+        <circle cx="651" cy="172" r="42" />
+        <circle cx="695" cy="162" r="31" />
+      </g>
+    </svg>
   );
 }
 
-function CursorFloater({
-  item,
-  i,
-}: {
-  item: FloaterItem;
-  i: number;
-}) {
-  const controls = useAnimationControls();
+function AppleLogo() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 384 512" role="img">
+      <path
+        fill="currentColor"
+        d="M279.55 258.94c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-85.2-44.6-35.7-2.8-74.7 20.8-89 20.8-15.1 0-49.7-19.8-73-19-38.8.6-74.3 22.6-94.3 57.2-40.1 69.5-10.2 171.7 28.8 228.2 19.5 28.2 42.9 59.8 73.5 58.6 29.4-1.2 40.5-18.9 75.9-18.9s45.4 18.9 76.5 18.3c31.5-.6 51.5-28.7 70.8-57 22.5-32.8 31.8-64.6 32.3-66.2-.7-.3-61.9-23.8-62-94.3Zm-59.2-167.4c16.2-19.4 27.1-46.5 24.2-73.5-23.3.9-51.5 15.5-67.9 34.9-14.8 17.1-27.8 44.7-24.3 71.2 26 2 51.8-13.2 68-32.6Z"
+      />
+    </svg>
+  );
+}
 
-  const triggerBounce = () =>
-    controls.start({
-      y: [0, 18, -22, 10, 0],
-      rotate: item.round ? [0, 0, 0, 0, 0] : [0, 22, -16, 8, 0],
-      transition: {
-        duration: 0.62,
-        times: [0, 0.2, 0.46, 0.72, 1],
-        ease: "easeOut",
-      },
-    });
+function AppStoreButton({ href, compact = false }: { href: string | null; compact?: boolean }) {
+  const content = (
+    <>
+      <AppleLogo />
+      <span>
+        <small>{href ? "Download on the" : "Coming soon to the"}</small>
+        App Store
+      </span>
+    </>
+  );
+
+  if (!href) {
+    return (
+      <span className={`landing-app-store-button is-disabled${compact ? " is-compact" : ""}`} aria-disabled="true">
+        {content}
+      </span>
+    );
+  }
 
   return (
-    <motion.div
-      className="absolute"
-      style={{
-        left: item.left,
-        top: item.top,
-      }}
-      animate={controls}
-      whileHover={{
-        scale: 1.14,
-        y: -14,
-        rotate: item.round ? 0 : 14,
-        transition: { type: "spring", stiffness: 360, damping: 18, mass: 0.28 },
-      }}
-      whileTap={{ scale: 0.9 }}
-      onHoverStart={() => {
-        void triggerBounce();
-      }}
-      onTapStart={() => {
-        void triggerBounce();
-      }}
-    >
-      <motion.div
-        className="border-4 border-black"
-        style={{
-          width: item.size,
-          height: item.size,
-          backgroundColor: item.color,
-          borderRadius: item.round ? "50%" : "0",
-        }}
-        animate={{
-          y: [0, item.drift, 0],
-          rotate: [0, 360],
-        }}
-        transition={{
-          duration: 6 + i,
-          repeat: Number.POSITIVE_INFINITY,
-          delay: i * 0.2,
-        }}
-      />
-    </motion.div>
+    <a className={`landing-app-store-button${compact ? " is-compact" : ""}`} href={href} target="_blank" rel="noreferrer">
+      {content}
+    </a>
   );
 }
 
@@ -196,6 +187,8 @@ export default function LandingClient({
   iosStoreUrl,
   androidStoreUrl,
 }: LandingClientProps) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -218,319 +211,188 @@ export default function LandingClient({
     }
   }, []);
 
+  useEffect(() => {
+    if (!isMenuOpen) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsMenuOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isMenuOpen]);
+
   return (
-    <div className="relative min-h-screen overflow-x-clip bg-[#ff6b35] text-black">
-      <div className="absolute inset-0 opacity-20">
-        {CHAOS_BLOBS.map((blob, i) => (
-          <motion.div
-            key={`${blob.left}-${blob.top}`}
-            className="absolute rounded-full"
-            style={{
-              width: blob.size,
-              height: blob.size,
-              left: blob.left,
-              top: blob.top,
-              background: blob.color,
-            }}
-            animate={{
-              x: [0, blob.dx],
-              y: [0, blob.dy],
-              rotate: [0, blob.rotate],
-              scale: [1, blob.scale, 1],
-            }}
-            transition={{
-              duration: 9 + i,
-              repeat: Number.POSITIVE_INFINITY,
-              ease: "linear",
-            }}
-          />
-        ))}
-      </div>
+    <div className="landing-root">
+      <header className="landing-header">
+        <Link className="landing-brand" href="/" aria-label="SlugSwap home">
+          <Image src={brandLockup} alt="SlugSwap" priority />
+        </Link>
 
-      <div
-        className="absolute inset-0 opacity-10"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(0,0,0,0.5) 35px, rgba(0,0,0,0.5) 70px)",
-        }}
-      />
+        <nav className="landing-nav" aria-label="Primary navigation">
+          <a href="#tools">Campus tools</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#point-sharing">Point sharing</a>
+          <a href="#about">About</a>
+        </nav>
 
-      <div className="relative z-10 px-6 py-12 md:px-12">
-        <motion.div
-          initial={{ opacity: 0, y: -50 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-12 flex flex-wrap items-start justify-between gap-4"
+        <div className="landing-header-actions">
+          <Link className="landing-web-link" href="/app">Open web app</Link>
+          {iosStoreUrl ? (
+            <a className="landing-header-cta" href={iosStoreUrl} target="_blank" rel="noreferrer">Get the app</a>
+          ) : (
+            <a className="landing-header-cta" href="#download">Get the app</a>
+          )}
+        </div>
+
+        <button
+          className="landing-menu-button"
+          type="button"
+          aria-expanded={isMenuOpen}
+          aria-controls="landing-mobile-nav"
+          aria-label={isMenuOpen ? "Close navigation" : "Open navigation"}
+          onClick={() => setIsMenuOpen((open) => !open)}
         >
-          <div className="flex items-center gap-4">
-            <h1 className="text-5xl font-black tracking-tighter text-black" style={{ fontFamily: "Impact, sans-serif" }}>
-              SLUGSWAP
-            </h1>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {["DONATE", "REQUEST", "LIVE STATS"].map((text, i) => (
-              <motion.div
-                key={text}
-                whileHover={{ scale: 1.1, rotate: -5 }}
-                className={`border-4 border-[#4ecdc4] bg-black px-4 py-2 text-sm font-black text-[#f7dc6f] ${i % 2 === 0 ? "-rotate-2" : "rotate-2"}`}
-                style={{ fontFamily: "Arial Black, sans-serif" }}
-              >
-                {text}
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
+          {isMenuOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
+        </button>
+      </header>
 
-        <div className="mx-auto mb-20 max-w-7xl">
-          <div className="relative mb-14">
-            <motion.div
-              initial={{ x: -100, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ duration: 0.8 }}
-              className="relative z-30"
-            >
-              <h2
-                className="relative -rotate-3 font-black leading-none tracking-tighter text-black [font-size:clamp(4.25rem,17vw,16rem)]"
-                style={{ fontFamily: "Impact, sans-serif", WebkitTextStroke: "4px #fff", paintOrder: "stroke fill" }}
-              >
-                SHARE
-              </h2>
-              <motion.div
-                animate={{ rotate: [0, 5, -5, 0] }}
-                transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
-                className="absolute right-3 top-3 z-0 h-20 w-20 rotate-45 border-8 border-black bg-[#f7dc6f] md:right-8 md:top-2 md:h-40 md:w-40"
-              />
-            </motion.div>
+      <div id="landing-mobile-nav" className={`landing-mobile-nav${isMenuOpen ? " is-open" : ""}`}>
+        <a href="#tools" onClick={() => setIsMenuOpen(false)}>Campus tools</a>
+        <a href="#how-it-works" onClick={() => setIsMenuOpen(false)}>How it works</a>
+        <a href="#point-sharing" onClick={() => setIsMenuOpen(false)}>Point sharing</a>
+        <a href="#about" onClick={() => setIsMenuOpen(false)}>About</a>
+        <Link href="/app" onClick={() => setIsMenuOpen(false)}>Open web app</Link>
+      </div>
 
-            <motion.div
-              initial={{ x: 100, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ duration: 0.8, delay: 0.1 }}
-              className="relative z-20 -mt-4 ml-6 md:-mt-20 md:ml-20"
-            >
-              <h2
-                className="rotate-2 font-black leading-none tracking-tighter text-[#4ecdc4] [font-size:clamp(4rem,16.2vw,15.8rem)]"
-                style={{ fontFamily: "Impact, sans-serif", WebkitTextStroke: "4px #000", paintOrder: "stroke fill" }}
-              >
-                DINING
-              </h2>
-            </motion.div>
-
-            <motion.div
-              initial={{ x: -100, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-              className="relative z-10 -mt-4 md:-mt-20"
-            >
-              <h2
-                className="-rotate-1 font-black leading-none tracking-tighter text-[#e74c3c] [font-size:clamp(3.95rem,15.8vw,15.5rem)]"
-                style={{ fontFamily: "Impact, sans-serif", WebkitTextStroke: "4px #fff", paintOrder: "stroke fill" }}
-              >
-                POINTS
-              </h2>
-              <motion.div
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY }}
-                className="absolute right-1 top-1/2 h-20 w-20 rounded-full border-8 border-black bg-[#9b59b6] md:right-16 md:h-32 md:w-32"
-              />
-            </motion.div>
-          </div>
-
-          <div className="mb-12 grid grid-cols-1 gap-8 md:grid-cols-3">
-            <motion.div
-              whileHover={{ rotate: -2, scale: 1.05 }}
-              className="relative rotate-1 overflow-hidden border-8 border-black bg-[#f7dc6f] p-8"
-            >
-              <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full border-4 border-black bg-[#e74c3c]" />
-              <h3 className="mb-4 text-6xl font-black" style={{ fontFamily: "Impact, sans-serif" }}>
-                {formatCurrency(pointsDistributed)}
-              </h3>
-              <p className="text-xl font-black" style={{ fontFamily: "Arial Black, sans-serif" }}>
-                WORTH OF POINTS DISTRIBUTED
-              </p>
-              <div className="absolute -bottom-2 -left-2 h-16 w-16 rotate-45 bg-black" />
-            </motion.div>
-
-            <motion.div
-              whileHover={{ rotate: 2, scale: 1.05 }}
-              className="relative -rotate-2 border-8 border-black bg-[#4ecdc4] p-8"
-            >
-              <div className="absolute right-0 top-0 h-0 w-0 border-l-[100px] border-l-transparent border-t-[100px] border-t-[#9b59b6]" />
-              <h3 className="relative z-10 mb-4 font-black leading-none" style={{ fontFamily: "Impact, sans-serif" }}>
-                <span className="block text-5xl md:text-6xl">${formatPoints(availablePointsThisWeek)}</span>
-                <span className="mt-2 block text-2xl md:text-3xl">POINTS AVAILABLE</span>
-              </h3>
-              <p className="relative z-10 text-lg font-black md:text-xl" style={{ fontFamily: "Arial Black, sans-serif" }}>
-                From {formatCount(activeDonors)} active donors.
-              </p>
-            </motion.div>
-
-            <motion.div
-              whileHover={{ rotate: -3, scale: 1.05 }}
-              className="relative rotate-3 border-8 border-black bg-[#2ecc71] p-8"
-            >
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 8, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
-                className="absolute -left-8 -top-8 h-24 w-24 border-4 border-black bg-[#f7dc6f]"
-              />
-              <h3 className="mb-4 text-6xl font-black" style={{ fontFamily: "Impact, sans-serif" }}>
-                {formatCount(totalUsers)}
-              </h3>
-              <p className="text-base font-black md:text-xl" style={{ fontFamily: "Arial Black, sans-serif" }}>
-                TOTAL USERS
-              </p>
-            </motion.div>
-          </div>
-
-          <div className="relative mb-12">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="relative z-20 -rotate-1 border-8 border-[#f7dc6f] bg-black p-8 text-white"
-            >
-              <p className="text-3xl font-black leading-tight md:text-5xl" style={{ fontFamily: "Impact, sans-serif" }}>
-                FAST. FAIR. SIMPLE.
-              </p>
-            </motion.div>
-            <div className="absolute left-4 top-4 z-10 h-full w-full rotate-2 border-8 border-black bg-[#e74c3c]" />
-            <div className="absolute left-8 top-8 z-0 h-full w-full -rotate-3 border-8 border-black bg-[#4ecdc4]" />
-          </div>
-
-          <div className="flex flex-wrap gap-6">
-            <motion.div whileHover={{ scale: 1.1, rotate: -5 }} whileTap={{ scale: 0.95 }}>
-              <CtaButton href={iosStoreUrl ?? undefined} disabled={!iosStoreUrl} bg="bg-[#e74c3c]" text="text-black" rotate="rotate-2">
-                <Apple className="h-6 w-6" />
-                {iosStoreUrl ? "IOS BETA" : "IOS SOON"}
-                <ArrowRight className="ml-1 h-6 w-6" />
-              </CtaButton>
-            </motion.div>
-
-            <motion.div whileHover={{ scale: 1.1, rotate: 5 }} whileTap={{ scale: 0.95 }}>
-              <CtaButton href="/app" bg="bg-[#f7dc6f]" text="text-black" rotate="-rotate-1">
-                <MonitorDown className="h-6 w-6" />
-                OPEN WEB APP
-              </CtaButton>
-            </motion.div>
-
-            <motion.div whileHover={{ scale: 1.1, rotate: -4 }} whileTap={{ scale: 0.95 }}>
-              <CtaButton
-                href={androidStoreUrl ?? undefined}
-                disabled={!androidStoreUrl}
-                bg="bg-[#9b59b6]"
-                text="text-black"
-                rotate="rotate-1"
-              >
-                <Smartphone className="h-6 w-6" />
-                {androidStoreUrl ? "ANDROID APP" : "ANDROID SOON"}
-              </CtaButton>
-            </motion.div>
-          </div>
-        </div>
-
-        <div className="mx-auto mb-20 max-w-7xl">
-          <div className="grid grid-cols-1 gap-12 md:grid-cols-2">
-            {[
-              {
-                title: "POOLED SUPPORT",
-                desc: "Your weekly contribution joins the shared pool. Everyone draws from the community fund.",
-                color: "#4ecdc4",
-                rotate: 2,
-              },
-              {
-                title: "FAIR ALLOWANCES",
-                desc: "Equal access to weekly allowance. Reset every week. First-come basis. No judgment.",
-                color: "#f7dc6f",
-                rotate: -3,
-              },
-              {
-                title: "INSTANT CODES",
-                desc: "Generate secure code via GET Tools. Redeem at any dining location. Expires in minutes.",
-                color: "#e74c3c",
-                rotate: 1,
-              },
-              {
-                title: "PRIVACY FIRST",
-                desc: "Donors do not see requesters. Anonymous giving and receiving with dignity.",
-                color: "#2ecc71",
-                rotate: -2,
-              },
-            ].map((feature, i) => (
-              <motion.div
-                key={feature.title}
-                initial={{ opacity: 0, y: 50 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                whileHover={{ scale: 1.05, rotate: 0 }}
-                className="relative"
-              >
-                <div
-                  className="relative z-10 border-8 border-black bg-white p-8"
-                  style={{ transform: `rotate(${feature.rotate}deg)` }}
-                >
-                  <div className="mb-6 h-20 w-20 rotate-45 border-8 border-black" style={{ backgroundColor: feature.color }} />
-                  <h3 className="mb-4 text-4xl font-black" style={{ fontFamily: "Impact, sans-serif" }}>
-                    {feature.title}
-                  </h3>
-                  <p className="text-xl font-bold leading-relaxed" style={{ fontFamily: "Arial Black, sans-serif" }}>
-                    {feature.desc}
-                  </p>
-                </div>
-                <div
-                  className="absolute left-4 top-4 z-0 h-full w-full border-8 border-black"
-                  style={{ backgroundColor: feature.color }}
-                />
-              </motion.div>
-            ))}
-          </div>
-        </div>
-
-        {/* Placeholder testimonials disabled for now. */}
-
-        <div className="mx-auto mb-20 mt-20 max-w-5xl text-center">
-          <motion.div initial={{ scale: 0 }} whileInView={{ scale: 1 }} viewport={{ once: true }} className="relative">
-            <div className="relative z-20 border-8 border-[#f7dc6f] bg-black p-16 text-white">
-              <h2 className="mb-8 text-5xl font-black md:text-8xl" style={{ fontFamily: "Impact, sans-serif" }}>
-                OPEN THE
-                <br />
-                WEB APP
-              </h2>
-              <p className="mb-12 text-xl font-bold md:text-2xl" style={{ fontFamily: "Arial Black, sans-serif" }}>
-                EVERY STUDENT DESERVES MEALS
-              </p>
-              <motion.div whileHover={{ scale: 1.15, rotate: 5 }}>
-                <Link
-                  href="/app"
-                  className="inline-flex items-center justify-center border-8 border-black bg-[#e74c3c] px-16 py-10 text-3xl font-black text-black shadow-[12px_12px_0_#f7dc6f]"
-                  style={{ fontFamily: "Impact, sans-serif" }}
-                >
-                  OPEN APP NOW!!!
-                </Link>
-              </motion.div>
-              <Link
-                href="/admin/login"
-                className="mt-6 inline-flex items-center justify-center border-4 border-white px-6 py-3 text-sm font-black tracking-[0.1em] text-white"
-                style={{ fontFamily: "Arial Black, sans-serif" }}
-              >
-                ADMIN LOGIN
-              </Link>
+      <main>
+        <section className="landing-hero" aria-labelledby="landing-title">
+          <div className="landing-hero-copy">
+            <h1 id="landing-title">Campus life,<br />less scattered.</h1>
+            <p className="landing-hero-description">Dining, rooms, maps, GET, and point sharing—made easier for UCSC students.</p>
+            <div className="landing-hero-actions">
+              <AppStoreButton href={iosStoreUrl} />
+              <Link className="landing-text-link" href="/app">Continue on the web <ArrowRight aria-hidden="true" /></Link>
             </div>
-            <div className="absolute left-8 top-8 z-10 h-full w-full rotate-3 border-8 border-black bg-[#4ecdc4]" />
-            <div className="absolute left-16 top-16 z-0 h-full w-full -rotate-2 border-8 border-black bg-[#f7dc6f]" />
-          </motion.div>
-        </div>
-      </div>
+            <p className="landing-trust-line"><Check aria-hidden="true" /> Built for students at UC Santa Cruz</p>
+          </div>
 
-      {FLOATERS.map((item, i) => (
-        <CursorFloater key={`${item.left}-${item.top}`} item={item} i={i} />
-      ))}
+          <div className="landing-hero-visual" aria-label="SlugSwap mobile app preview">
+            <CampusScene />
+            <div className="landing-phone-shadow" aria-hidden="true" />
+            <div className="landing-phone">
+              <div className="landing-phone-speaker" aria-hidden="true" />
+              <div className="landing-phone-screen">
+                <Image
+                  src={mobileHomeScreenshot}
+                  alt="SlugSwap home screen with dining, rooms, map, My GET, and point sharing"
+                  priority
+                  sizes="(max-width: 780px) 72vw, 340px"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
 
-      <div className="pointer-events-none absolute bottom-4 right-4 border-4 border-black bg-[#f7dc6f] px-4 py-2 text-xs font-black tracking-[0.1em] text-black md:text-sm" style={{ fontFamily: "Arial Black, sans-serif" }}>
-        LIVE METRICS: {formatCurrency(pointsDistributed)} DISTRIBUTED | {formatCount(activeDonors)} DONORS |{" "}
-        {formatCount(totalUsers)} USERS
-      </div>
+        <section className="landing-tools" id="tools" aria-labelledby="tools-title">
+          <div className="landing-section-heading is-centered">
+            <h2 id="tools-title">What do you need today?</h2>
+          </div>
+          <div className="landing-tool-grid">
+            {campusTools.map((tool) => {
+              const Icon = tool.icon;
+              return (
+                <Link key={tool.title} className="landing-tool-card" href={tool.href}>
+                  <span className={`landing-tool-icon is-${tool.tone}`}><Icon aria-hidden="true" /></span>
+                  <span className="landing-tool-copy"><strong>{tool.title}</strong><span>{tool.description}</span></span>
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              );
+            })}
+          </div>
+        </section>
 
-      <div className="sr-only">{CHAOS_COLORS.join(",")}</div>
+        <section className="landing-intro" id="about">
+          <div className="landing-intro-copy">
+            <h2>The useful parts of campus, gathered together.</h2>
+          </div>
+          <p>
+            SlugSwap started with dining points and grew into a calmer way to navigate everyday life at UCSC.
+            Public tools work without an account; sign in when you want your GET card or point sharing.
+          </p>
+        </section>
+
+        <section className="landing-feature-split" id="how-it-works" aria-label="Public and personal campus tools">
+          <article className="landing-feature-panel is-public">
+            <div>
+              <h2>Plan your day without signing in.</h2>
+              <ul>
+                <li><Check aria-hidden="true" /> Browse dining menus and hours</li>
+                <li><Check aria-hidden="true" /> Search campus buildings and directions</li>
+                <li><Check aria-hidden="true" /> Find available study rooms</li>
+              </ul>
+              <Link className="landing-text-link" href="/app">Explore campus tools <ArrowRight aria-hidden="true" /></Link>
+            </div>
+          </article>
+          <article className="landing-feature-panel is-personal">
+            <div>
+              <h2>Keep the things you reach for close.</h2>
+              <ul>
+                <li><Check aria-hidden="true" /> View your GET balances and barcode</li>
+                <li><Check aria-hidden="true" /> Share unused dining points</li>
+                <li><Check aria-hidden="true" /> Request a meal privately</li>
+              </ul>
+              <Link className="landing-text-link" href="/app">Sign in with UCSC <ArrowRight aria-hidden="true" /></Link>
+            </div>
+          </article>
+        </section>
+
+        <section className="landing-stats" aria-label="SlugSwap community statistics">
+          <dl>
+            <div><dt>{formatCurrency(pointsDistributed)}</dt><dd>points distributed</dd></div>
+            <div><dt>{formatPoints(availablePointsThisWeek)}</dt><dd>available this week</dd></div>
+            <div><dt>{formatCount(activeDonors)}</dt><dd>active donors</dd></div>
+            <div><dt>{formatCount(totalUsers)}</dt><dd>students joined</dd></div>
+          </dl>
+        </section>
+
+        <section className="landing-sharing" id="point-sharing" aria-labelledby="sharing-title">
+          <div className="landing-sharing-heading">
+            <div>
+              <h2 id="sharing-title">Share points.<br /><em>Keep your privacy.</em></h2>
+            </div>
+            <p>Give what you can, request when you need it. SlugSwap handles the match without exposing who helped whom.</p>
+          </div>
+          <ol className="landing-steps">
+            {sharingSteps.map((step) => (
+              <li key={step.number}><span>{step.number}</span><h3>{step.title}</h3><p>{step.description}</p></li>
+            ))}
+          </ol>
+          <div className="landing-privacy-note"><ShieldCheck aria-hidden="true" /><p><strong>Private by design.</strong> Donors never see who receives their points.</p></div>
+        </section>
+
+        <section className="landing-download" id="download">
+          <div className="landing-download-art" aria-hidden="true"><CampusScene /></div>
+          <div className="landing-download-copy">
+            <h2>Ready when you need it.</h2>
+            <p>Use SlugSwap on iPhone or keep going in your browser.</p>
+            <div className="landing-download-actions">
+              <AppStoreButton href={iosStoreUrl} compact />
+              <Link className="landing-light-button" href="/app">Open web app <ArrowRight aria-hidden="true" /></Link>
+            </div>
+            {!androidStoreUrl ? null : <a className="landing-android-link" href={androidStoreUrl} target="_blank" rel="noreferrer">Android app</a>}
+          </div>
+        </section>
+      </main>
+
+      <footer className="landing-footer">
+        <Link className="landing-brand" href="/" aria-label="SlugSwap home"><Image src={brandLockup} alt="SlugSwap" /></Link>
+        <p>Campus life, less scattered.</p>
+        <nav aria-label="Footer navigation">
+          <Link href="/privacy">Privacy</Link>
+          <a href="https://github.com/darthnithin/slugswap/issues/new" target="_blank" rel="noreferrer">Support</a>
+          <Link href="/admin/login">Admin</Link>
+        </nav>
+      </footer>
     </div>
   );
 }

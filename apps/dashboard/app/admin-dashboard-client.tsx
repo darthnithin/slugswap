@@ -1,8 +1,24 @@
 "use client";
 
+import {
+  Activity,
+  CircleGauge,
+  HeartHandshake,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  ReceiptText,
+  RefreshCw,
+  SlidersHorizontal,
+  TerminalSquare,
+  UsersRound,
+} from "lucide-react";
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiQuerySection } from "./api-query-section";
+
+import brandLockup from "../../mobile/assets/src/brand/slug-swap-lockup-inverse.svg";
 
 type NavSection = "overview" | "pool" | "claims" | "config" | "donors" | "api" | "users";
 type ClaimStatus = "redeemed" | "pending" | "active" | "expired" | "cancelled";
@@ -1170,10 +1186,8 @@ export default function DashboardHomePage() {
       <div className="app">
         <aside className={`sidebar${isSidebarOpen ? " open" : ""}`}>
           <div className="sidebar-brand">
-            <h1>
-              Slug<span>Swap</span>
-            </h1>
-            <p>Control Deck</p>
+            <Image src={brandLockup} alt="SlugSwap" priority />
+            <p>Admin</p>
           </div>
 
           <nav className="sidebar-nav">
@@ -1183,7 +1197,7 @@ export default function DashboardHomePage() {
               className={`nav-item${activeSection === "overview" ? " active" : ""}`}
               onClick={() => handleNavClick("overview")}
             >
-              <span className="nav-icon">◈</span>
+              <span className="nav-icon"><LayoutDashboard aria-hidden="true" /></span>
               Overview
             </button>
             <button
@@ -1191,7 +1205,7 @@ export default function DashboardHomePage() {
               className={`nav-item${activeSection === "pool" ? " active" : ""}`}
               onClick={() => handleNavClick("pool")}
             >
-              <span className="nav-icon">◓</span>
+              <span className="nav-icon"><CircleGauge aria-hidden="true" /></span>
               Pool Health
             </button>
             <button
@@ -1199,7 +1213,7 @@ export default function DashboardHomePage() {
               className={`nav-item${activeSection === "claims" ? " active" : ""}`}
               onClick={() => handleNavClick("claims")}
             >
-              <span className="nav-icon">❖</span>
+              <span className="nav-icon"><ReceiptText aria-hidden="true" /></span>
               Claims
             </button>
 
@@ -1209,7 +1223,7 @@ export default function DashboardHomePage() {
               className={`nav-item${activeSection === "config" ? " active" : ""}`}
               onClick={() => handleNavClick("config")}
             >
-              <span className="nav-icon">⚙</span>
+              <span className="nav-icon"><SlidersHorizontal aria-hidden="true" /></span>
               Configuration
             </button>
             <button
@@ -1217,7 +1231,7 @@ export default function DashboardHomePage() {
               className={`nav-item${activeSection === "users" ? " active" : ""}`}
               onClick={() => handleNavClick("users")}
             >
-              <span className="nav-icon">👤</span>
+              <span className="nav-icon"><UsersRound aria-hidden="true" /></span>
               User Allowances
             </button>
             <button
@@ -1225,7 +1239,7 @@ export default function DashboardHomePage() {
               className={`nav-item${activeSection === "donors" ? " active" : ""}`}
               onClick={() => handleNavClick("donors")}
             >
-              <span className="nav-icon">♥</span>
+              <span className="nav-icon"><HeartHandshake aria-hidden="true" /></span>
               Donors
             </button>
 
@@ -1235,7 +1249,7 @@ export default function DashboardHomePage() {
               className={`nav-item${activeSection === "api" ? " active" : ""}`}
               onClick={() => handleNavClick("api")}
             >
-              <span className="nav-icon">⌘</span>
+              <span className="nav-icon"><TerminalSquare aria-hidden="true" /></span>
               API Query
             </button>
           </nav>
@@ -1267,7 +1281,7 @@ export default function DashboardHomePage() {
                   aria-label="Open sidebar"
                   onClick={() => setIsSidebarOpen(true)}
                 >
-                  ☰
+                  <Menu aria-hidden="true" />
                 </button>
                 <h2>{SECTION_TITLES[activeSection]}</h2>
               </div>
@@ -1277,12 +1291,13 @@ export default function DashboardHomePage() {
               <span className="auto-refresh-tag">{lastUpdated}</span>
               <button
                 type="button"
-                className="refresh-btn"
+                className="refresh-btn sign-out-btn"
                 onClick={() => {
                   void handleLogout();
                 }}
                 disabled={isLoggingOut}
               >
+                <LogOut aria-hidden="true" />
                 {isLoggingOut ? "Signing out..." : "Sign out"}
               </button>
               <button
@@ -1293,7 +1308,7 @@ export default function DashboardHomePage() {
                 }}
                 disabled={isRefreshing}
               >
-                <span className="refresh-icon">↻</span>
+                <RefreshCw className="refresh-icon" aria-hidden="true" />
                 Refresh
               </button>
             </div>
@@ -1328,7 +1343,7 @@ export default function DashboardHomePage() {
               <div className="metrics-grid">
                 <div className="metric-card">
                   <div className="metric-label">
-                    <span className="label-icon">◓</span>
+                    <span className="label-icon"><CircleGauge aria-hidden="true" /></span>
                     Pool Available
                   </div>
                   <div className="metric-value gold">{formatNum(statsData.pool.remainingAmount)}</div>
@@ -1346,7 +1361,7 @@ export default function DashboardHomePage() {
 
                 <div className="metric-card">
                   <div className="metric-label">
-                    <span className="label-icon">♥</span>
+                    <span className="label-icon"><HeartHandshake aria-hidden="true" /></span>
                     Active Donors
                   </div>
                   <div className="metric-value">{formatNum(statsData.donors.active)}</div>
@@ -1358,7 +1373,7 @@ export default function DashboardHomePage() {
 
                 <div className="metric-card">
                   <div className="metric-label">
-                    <span className="label-icon">❖</span>
+                    <span className="label-icon"><Activity aria-hidden="true" /></span>
                     Claims This Week
                   </div>
                   <div className="metric-value">{formatNum(statsData.claims.thisWeek.total)}</div>
@@ -1369,7 +1384,7 @@ export default function DashboardHomePage() {
 
                 <div className="metric-card">
                   <div className="metric-label">
-                    <span className="label-icon">☆</span>
+                    <span className="label-icon"><UsersRound aria-hidden="true" /></span>
                     Total Users
                   </div>
                   <div className="metric-value">{formatNum(statsData.users.total)}</div>

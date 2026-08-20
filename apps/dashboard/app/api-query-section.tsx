@@ -184,10 +184,10 @@ const API_ENDPOINTS: ApiEndpoint[] = [
 ];
 
 const METHOD_COLORS: Record<HttpMethod, { bg: string; text: string; border: string }> = {
-  GET: { bg: "#1e3a2f", text: "#5aab7b", border: "#2d4a38" },
-  POST: { bg: "#2f3140", text: "#7b8aab", border: "#3a3f52" },
-  PATCH: { bg: "#3a301e", text: "#c7833a", border: "#4a3520" },
-  DELETE: { bg: "#3a1e1e", text: "#c75c3a", border: "#4a2520" },
+  GET: { bg: "#dce8dc", text: "#24664c", border: "#b8cfba" },
+  POST: { bg: "#dfe8ec", text: "#315f72", border: "#bfd0d7" },
+  PATCH: { bg: "#f4e4cf", text: "#986026", border: "#dec39f" },
+  DELETE: { bg: "#f6ddd7", text: "#a84434", border: "#e4b5aa" },
 };
 
 function syntaxHighlightJson(json: string): string {

@@ -25,8 +25,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SlugSwap",
-  description: "Share dining points with fellow students",
+  title: "SlugSwap | Campus life, less scattered.",
+  description: "Dining, rooms, maps, GET, and point sharing—made easier for UC Santa Cruz students.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

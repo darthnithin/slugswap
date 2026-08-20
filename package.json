@@ -16,7 +16,7 @@
     "start": "npm run mobile:start",
     "dashboard:dev": "dotenv -e .env -- npm run dev -w @slugswap/dashboard --",
     "dashboard:build": "dotenv -e .env -- npm run build -w @slugswap/dashboard",
-    "dashboard:start": "npm run start -w @slugswap/dashboard --",
+    "dashboard:start": "dotenv -e .env -- npm run start -w @slugswap/dashboard --",
     "dashboard:deploy": "vercel",
     "dashboard:deploy:prod": "vercel --prod",
     "dashboard:typecheck": "npm run typecheck -w @slugswap/dashboard",
