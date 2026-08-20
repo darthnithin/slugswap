@@ -4,6 +4,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
+    "eas-build-pre-install": "node scripts/validate-public-env.mjs --when-production",
     "start": "expo start --dev-client",
     "android": "expo run:android",
     "ios": "expo run:ios",
@@ -12,7 +13,8 @@
     "web:build": "expo export --platform web",
     "web:preview": "npx serve dist -l 4173",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test lib/*.test.ts"
+    "test": "node --import tsx --test lib/*.test.ts scripts/*.test.mjs",
+    "validate:public-env": "node scripts/validate-public-env.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/figtree": "^0.4.1",
