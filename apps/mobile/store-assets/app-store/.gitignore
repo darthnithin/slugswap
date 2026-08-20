@@ -1,0 +1,9 @@
+# Generated review artifacts and Blender render cache
+panorama-preview.png
+panorama-cut-guide.png
+3d/iphone-17-pro-max/renders/
+
+# The CGTrader license permits rendered marketing output, but the source model
+# should be downloaded by each developer rather than redistributed in Git.
+3d/iphone-17-pro-max/*.blend
+3d/iphone-17-pro-max/*.fbx
