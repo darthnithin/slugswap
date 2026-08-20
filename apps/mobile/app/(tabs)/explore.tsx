@@ -465,7 +465,7 @@ export default function ExploreScreen() {
     const selections = new Map<string, MapSelection>();
     browsePlaces.forEach((place) => selections.set(place.id, place));
     activeLayerFeatures.forEach((feature) => selections.set(feature.id, feature));
-    if (selectedSelection && !isCampusPlace(selectedSelection)) {
+    if (selectedSelection) {
       selections.set(selectedSelection.id, selectedSelection);
     }
     return [...selections.values()];

@@ -133,9 +133,11 @@ export function useCampusBuildingSearch(query: string) {
     }
 
     const controller = new AbortController();
+    setResults([]);
+    setStatus('loading');
+    setError(null);
+
     const timer = setTimeout(() => {
-      setStatus('loading');
-      setError(null);
       void searchCampusBuildings(normalized, controller.signal)
         .then((nextResults) => {
           if (controller.signal.aborted) return;
