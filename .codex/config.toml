@@ -1,3 +1,5 @@
+web_search = "live"
+model_reasoning_summary = "detailed"
 [mcp_servers.vercel]
 type = "http"
 url = "https://mcp.vercel.com"
