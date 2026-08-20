@@ -167,3 +167,15 @@ export function filterCampusPlaces(
       .includes(normalizedQuery);
   });
 }
+
+export function searchCampusPlaces(query: string): CampusPlace[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return [];
+
+  return CAMPUS_PLACES.filter((place) =>
+    [place.name, place.shortName, place.description]
+      .join(' ')
+      .toLocaleLowerCase()
+      .includes(normalizedQuery),
+  );
+}

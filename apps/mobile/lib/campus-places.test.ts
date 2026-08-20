@@ -5,6 +5,7 @@ import {
   CAMPUS_PLACES,
   filterCampusPlaces,
   findCampusPlace,
+  searchCampusPlaces,
 } from './campus-places';
 import {
   buildAppleMapsPlaceUrl,
@@ -28,6 +29,10 @@ test('study locations retain the reservation API library id', () => {
 
 test('search never leaks places from another active category', () => {
   assert.deepEqual(filterCampusPlaces('study', 'Dining Hall'), []);
+});
+
+test('campus-wide search can find curated places outside the active category', () => {
+  assert.equal(searchCampusPlaces('Bay Tree')[0]?.id, 'essential-bay-tree');
 });
 
 test('Apple Maps fallback keeps the exact pin and its campus place label', () => {
