@@ -25,8 +25,30 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://slugswap.vercel.app"),
   title: "SlugSwap | Campus life, less scattered.",
   description: "Dining, rooms, maps, GET, and point sharing—made easier for UC Santa Cruz students.",
+  openGraph: {
+    title: "SlugSwap | Campus life, less scattered.",
+    description: "Dining, rooms, maps, GET, and point sharing—made easier for UC Santa Cruz students.",
+    url: "/",
+    siteName: "SlugSwap",
+    type: "website",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "SlugSwap campus tools for dining, study rooms, campus maps, and GET",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SlugSwap | Campus life, less scattered.",
+    description: "Dining, rooms, maps, GET, and point sharing—made easier for UC Santa Cruz students.",
+    images: ["/og-image.png"],
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
