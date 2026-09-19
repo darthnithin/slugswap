@@ -74,6 +74,13 @@ runtime. Opaque JPEG captures are in
 existing App Store screenshot collections. The unsigned simulator could not
 complete Apple authorization, so successful real-device login remains pending.
 
+Xcode Cloud build 77 succeeded on Xcode 26.3, including App Store signing and
+export. Version 2.0.2 (77) finished TestFlight processing and was assigned to the
+existing internal `testers` group. Its What to Test field contains the Apple
+login checks above. The App Store draft has version 2.0.2, build 77, updated
+screenshots, and review notes. Resubmission is pending the user's TestFlight
+login verification.
+
 ## References
 
 - [Supabase native Apple authentication](https://supabase.com/docs/guides/auth/social-login/auth-apple)
