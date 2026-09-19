@@ -7,9 +7,11 @@ date
 # cd out of ios/ci_scripts into main slugswap directory
 cd ../../../../
 
-# install node
-#HOMEBREW_NO_AUTO_UPDATE=1 brew install node
-time HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install node cocoapods
+# Keep Xcode Cloud within the Node versions supported by this workspace.
+time HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install node@22 cocoapods
+export PATH="$(brew --prefix node@22)/bin:$PATH"
+node --version
+npm --version
 
 # Xcode Cloud does not read eas.json. Required EXPO_PUBLIC_* values must be
 # assigned to this workflow through App Store Connect shared environment
