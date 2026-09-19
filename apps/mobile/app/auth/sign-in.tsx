@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto';
 import * as Linking from 'expo-linking';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,6 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CampusArtwork } from '@/components/campus/CampusArtwork';
+import { completeAppleSignIn, isAppleSignInCancelled } from '@/lib/apple-sign-in';
 import { getSafePostAuthRoute } from '@/lib/auth-navigation';
 import { supabase } from '@/lib/supabase';
 import { buttonOpacity, campusFonts, stealthTheme } from '@/lib/stealth-theme';
@@ -28,11 +31,54 @@ const colors = stealthTheme.colors;
 export default function SignIn() {
   const router = useRouter();
   const params = useLocalSearchParams<{ next?: string | string[] }>();
-  const [loading, setLoading] = useState(false);
+  const [loadingProvider, setLoadingProvider] = useState<'apple' | 'google' | null>(null);
+  const signInInProgress = useRef(false);
+  const loading = loadingProvider !== null;
+  const [appleAvailable, setAppleAvailable] = useState(false);
   const postAuthRoute = getSafePostAuthRoute(params.next);
 
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    let active = true;
+    AppleAuthentication.isAvailableAsync()
+      .then((available) => { if (active) setAppleAvailable(available); })
+      .catch(() => { if (active) setAppleAvailable(false); });
+    return () => { active = false; };
+  }, []);
+
+  const handleAppleSignIn = async () => {
+    if (signInInProgress.current) return;
+    signInInProgress.current = true;
+    setLoadingProvider('apple');
+    try {
+      const nonce = Crypto.randomUUID();
+      const hashedNonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, nonce);
+      const credential = await AppleAuthentication.signInAsync({
+        nonce: hashedNonce,
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      const { nameSaved } = await completeAppleSignIn(supabase.auth, credential, nonce);
+      if (!nameSaved) {
+        Alert.alert('Signed in', 'Your account is ready, but we could not save your display name.');
+      }
+      router.replace(postAuthRoute);
+    } catch (error: unknown) {
+      if (!isAppleSignInCancelled(error)) {
+        Alert.alert('Unable to sign in', error instanceof Error ? error.message : 'Please try again.');
+      }
+    } finally {
+      signInInProgress.current = false;
+      setLoadingProvider(null);
+    }
+  };
+
   const handleGoogleSignIn = async () => {
-    setLoading(true);
+    if (signInInProgress.current) return;
+    signInInProgress.current = true;
+    setLoadingProvider('google');
     try {
       const redirectUrl = (() => {
         if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -103,7 +149,8 @@ export default function SignIn() {
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to sign in');
     } finally {
-      setLoading(false);
+      signInInProgress.current = false;
+      setLoadingProvider(null);
     }
   };
 
@@ -133,6 +180,24 @@ export default function SignIn() {
           </View>
 
           <View style={styles.actions}>
+            {appleAvailable ? (
+              <View
+                style={styles.appleButtonWrap}
+                pointerEvents={loading ? 'none' : 'auto'}
+                accessibilityState={{ disabled: loading, busy: loadingProvider === 'apple' }}
+              >
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                  cornerRadius={15}
+                  style={styles.appleButton}
+                  onPress={handleAppleSignIn}
+                />
+              </View>
+            ) : null}
+            {loadingProvider === 'apple' ? (
+              <ActivityIndicator accessibilityLabel="Signing in with Apple" color={colors.forest} />
+            ) : null}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Continue with Google"
@@ -143,7 +208,7 @@ export default function SignIn() {
                 { opacity: buttonOpacity(pressed, loading) },
               ]}
             >
-              {loading ? (
+              {loadingProvider === 'google' ? (
                 <ActivityIndicator color={colors.forest} />
               ) : (
                 <>
@@ -240,6 +305,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderStrong,
     backgroundColor: colors.softWhite,
+  },
+  appleButtonWrap: {
+    width: '100%',
+  },
+  appleButton: {
+    width: '100%',
+    height: 58,
   },
   googleIcon: {
     width: 25,
