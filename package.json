@@ -41,7 +41,7 @@
     "mobile:eas:build:ios": "cd apps/mobile && npx eas-cli build --platform ios --profile production",
     "mobile:eas:build:ios:local": "cd apps/mobile && npx eas-cli build --platform ios --profile production --local",
     "mobile:eas:submit:ios": "cd apps/mobile && npx eas-cli submit --platform ios --profile production --latest",
-    "mobile:eas:testflight": "cd apps/mobile && npx eas-cli build -p ios --profile production --submit",
+    "mobile:eas:testflight": "cd apps/mobile && npx eas-cli build -p ios --profile production --auto-submit",
     "mobile:eas:update": "cd apps/mobile && npx eas-cli update --channel production",
     "mobile:eas:update:preview": "cd apps/mobile && npx eas-cli update --channel preview",
     "ci:check": "npm run typecheck && npm run db:migrations:check",
