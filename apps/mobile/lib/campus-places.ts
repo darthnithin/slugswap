@@ -1,4 +1,4 @@
-export type CampusPlaceCategory = 'dining' | 'study' | 'essentials';
+export type CampusPlaceCategory = 'dining' | 'vendors' | 'study' | 'essentials';
 
 export type CampusCoordinates = {
   latitude: number;
@@ -25,6 +25,11 @@ export const CAMPUS_CATEGORY_META: Record<
     label: 'Dining',
     singularLabel: 'Dining hall',
     tintColor: '#183D32',
+  },
+  vendors: {
+    label: 'Food vendors',
+    singularLabel: 'Food vendor',
+    tintColor: '#426C56',
   },
   study: {
     label: 'Study',

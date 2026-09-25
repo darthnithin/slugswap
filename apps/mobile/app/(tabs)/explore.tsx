@@ -1,12 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { AppleMaps } from 'expo-maps';
+import type { AppleMaps as AppleMapsTypes } from 'expo-maps';
 import {
   AppleMapsMapStyleEmphasis,
   type AppleMapsPolygon,
   type AppleMapsPolyline,
 } from 'expo-maps/build/apple/AppleMaps.types';
-import { useRouter } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -20,6 +20,10 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { FoodVendorStatus } from '@/components/dining/food-vendors';
+import { foodVendorPlaces } from '@/lib/food-vendors';
+import { useFoodVendors } from '@/lib/use-food-vendors';
 
 import CampusMapLayersSheet from '@/components/campus/campus-map-layers-sheet';
 import {
@@ -54,8 +58,12 @@ import {
 } from '@/lib/stealth-theme';
 import CampusMaps from '@/modules/campus-maps';
 
+// Expo Maps has no web native module; only load it on the iOS map path.
+const AppleMaps = process.env.EXPO_OS === 'ios'
+  ? (require('expo-maps') as typeof import('expo-maps')).AppleMaps
+  : null;
 const colors = stealthTheme.colors;
-const CATEGORY_ORDER: readonly CampusPlaceCategory[] = ['dining', 'study', 'essentials'];
+const CATEGORY_ORDER: readonly CampusPlaceCategory[] = ['dining', 'vendors', 'study', 'essentials'];
 const CAMPUS_CAMERA = {
   coordinates: { latitude: 36.9969, longitude: -122.0598 },
   zoom: 14,
@@ -63,12 +71,14 @@ const CAMPUS_CAMERA = {
 
 const CATEGORY_ICONS: Record<CampusPlaceCategory, keyof typeof Ionicons.glyphMap> = {
   dining: 'restaurant-outline',
+  vendors: 'storefront-outline',
   study: 'book-outline',
   essentials: 'bag-handle-outline',
 };
 
 function placeIconName(category: CampusPlaceCategory): keyof typeof Ionicons.glyphMap {
   if (category === 'dining') return 'restaurant';
+  if (category === 'vendors') return 'storefront';
   if (category === 'study') return 'book';
   return 'bag-handle';
 }
@@ -223,7 +233,12 @@ function MapHeader({
         />
       </View>
 
-      <View accessibilityRole="tablist" style={styles.chipRow}>
+      <ScrollView
+        horizontal
+        accessibilityRole="tablist"
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chipRow}
+      >
         {CATEGORY_ORDER.map((category) => {
           const meta = CAMPUS_CATEGORY_META[category];
           const active = activeCategory === category;
@@ -259,7 +274,7 @@ function MapHeader({
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
 
       {showResults ? (
         <View style={styles.searchResults}>
@@ -339,7 +354,7 @@ function PlaceSheet({
           <Text numberOfLines={2} style={styles.placeTitle}>
             {selection.shortName}
           </Text>
-          <Text numberOfLines={2} style={styles.placeDescription}>
+          <Text style={styles.placeDescription}>
             {selection.description}
           </Text>
         </View>
@@ -400,7 +415,7 @@ function FallbackPlaceList({
               </View>
               <View style={styles.fallbackCopy}>
                 <Text style={styles.fallbackCardTitle}>{selection.shortName}</Text>
-                <Text numberOfLines={2} style={styles.fallbackCardDescription}>
+                <Text numberOfLines={isCampusPlace(selection) && selection.category === 'vendors' ? undefined : 2} style={styles.fallbackCardDescription}>
                   {selection.description}
                 </Text>
               </View>
@@ -422,7 +437,12 @@ function FallbackPlaceList({
 export default function ExploreScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const mapRef = useRef<AppleMaps.MapView>(null);
+  const params = useLocalSearchParams<{ foodVendorStopId?: string | string[] }>();
+  const requestedStopId = Array.isArray(params.foodVendorStopId) ? params.foodVendorStopId[0] : params.foodVendorStopId;
+  const vendorFeed = useFoodVendors();
+  const vendorPlaces = useMemo(() => foodVendorPlaces(vendorFeed.data, vendorFeed.date), [vendorFeed.data, vendorFeed.date]);
+  const allPlaces = useMemo(() => [...CAMPUS_PLACES, ...vendorPlaces], [vendorPlaces]);
+  const mapRef = useRef<AppleMapsTypes.MapView>(null);
   const [activeCategory, setActiveCategory] = useState<CampusPlaceCategory>('dining');
   const [query, setQuery] = useState('');
   const [selectedSelection, setSelectedSelection] = useState<MapSelection | null>(() =>
@@ -436,11 +456,21 @@ export default function ExploreScreen() {
   const buildingSearch = useCampusBuildingSearch(query);
 
   const browsePlaces = useMemo(
-    () => filterCampusPlaces(activeCategory, ''),
-    [activeCategory],
+    () => activeCategory === 'vendors' ? vendorPlaces : filterCampusPlaces(activeCategory, ''),
+    [activeCategory, vendorPlaces],
   );
 
-  const localSearchResults = useMemo(() => searchCampusPlaces(query), [query]);
+  const localSearchResults = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized) return [];
+    return [...searchCampusPlaces(query), ...vendorPlaces.filter(place =>
+      `${place.name} ${place.description}`.toLocaleLowerCase().includes(normalized))];
+  }, [query, vendorPlaces]);
+
+  useEffect(() => {
+    setSelectedSelection(current => current && isCampusPlace(current) && current.category === 'vendors'
+      ? vendorPlaces.find(place => place.id === current.id) ?? null : current);
+  }, [vendorPlaces]);
   const searchResults = useMemo<MapSelection[]>(() => {
     const curatedNames = new Set(
       localSearchResults.flatMap((place) => [place.name, place.shortName]).map((name) =>
@@ -476,7 +506,7 @@ export default function ExploreScreen() {
     [markerSelections],
   );
 
-  const markers = useMemo<AppleMaps.Marker[]>(
+  const markers = useMemo<AppleMapsTypes.Marker[]>(
     () =>
       markerSelections.map((selection) => ({
         id: selection.id,
@@ -520,6 +550,7 @@ export default function ExploreScreen() {
   const selectSelection = (selection: MapSelection) => {
     Keyboard.dismiss();
     setSelectedSelection(selection);
+    if (isCampusPlace(selection) && selection.category === 'vendors') setActiveCategory('vendors');
     setQuery('');
     mapRef.current?.setCameraPosition({ coordinates: selection.coordinates, zoom: 16 });
     requestAnimationFrame(() => {
@@ -527,10 +558,25 @@ export default function ExploreScreen() {
     });
   };
 
+  useEffect(() => {
+    if (!requestedStopId) return;
+    const place = vendorPlaces.find(item => item.id === requestedStopId);
+    setActiveCategory('vendors');
+    if (!place) {
+      setSelectedSelection(null);
+      if (vendorFeed.data) router.setParams({ foodVendorStopId: undefined });
+      return;
+    }
+    setSelectedSelection(place);
+    setQuery('');
+    mapRef.current?.setCameraPosition({ coordinates: place.coordinates, zoom: 16 });
+    router.setParams({ foodVendorStopId: undefined });
+  }, [requestedStopId, router, vendorFeed.data, vendorPlaces]);
+
   const changeCategory = (category: CampusPlaceCategory) => {
     setActiveCategory(category);
     setQuery('');
-    const firstPlace = CAMPUS_PLACES.find((place) => place.category === category) ?? null;
+    const firstPlace = allPlaces.find((place) => place.category === category) ?? null;
     setSelectedSelection(firstPlace);
     if (firstPlace) {
       mapRef.current?.setCameraPosition({ coordinates: firstPlace.coordinates, zoom: 14.5 });
@@ -626,7 +672,21 @@ export default function ExploreScreen() {
         onMorePress={() => router.push('/(tabs)/more')}
       />
 
-      {process.env.EXPO_OS === 'ios' ? (
+      {activeCategory === 'vendors' || (query.trim() && localSearchResults.some(place => place.category === 'vendors')) ? (
+        <View style={styles.vendorStatus}>
+          <FoodVendorStatus feed={vendorFeed} />
+          {vendorFeed.data && !vendorPlaces.length ? (
+            <Text style={styles.vendorStatusText}>No vendor locations available on the map today.</Text>
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: '/(tabs)/menu', params: { section: 'vendors' } })}
+          >
+            <Text style={styles.vendorBrowse}>Browse all food vendors →</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {AppleMaps ? (
         <View style={styles.mapShell}>
           <AppleMaps.View
             ref={mapRef}
@@ -764,13 +824,15 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 21,
   },
+  vendorStatus: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: colors.cream },
+  vendorStatusText: { fontFamily: campusFonts.sans, fontSize: 13, color: colors.textMuted, paddingTop: 4 },
+  vendorBrowse: { fontFamily: campusFonts.sansSemibold, fontSize: 13, color: colors.forest, paddingVertical: 12 },
   chipRow: {
     flexDirection: 'row',
     gap: 8,
   },
   filterChip: {
-    minHeight: 38,
-    flex: 1,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

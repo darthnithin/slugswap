@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
@@ -11,6 +11,9 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import FoodVendors, { FoodVendorPreview } from '@/components/dining/food-vendors';
+import { useFoodVendors } from '@/lib/use-food-vendors';
 
 import {
   type DiningLocation,
@@ -159,7 +162,16 @@ function EmptyState({ message }: { message: string }) {
 
 export default function MenuScreen() {
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ locationId?: string | string[] }>();
+  const [diningSection, setDiningSection] = useState<'halls' | 'vendors'>('halls');
+  const vendors = useFoodVendors();
+  const router = useRouter();
+  const params = useLocalSearchParams<{ locationId?: string | string[]; section?: string }>();
+  useEffect(() => {
+    if (params.section === 'vendors') {
+      setDiningSection('vendors');
+      router.setParams({ section: undefined });
+    }
+  }, [params.section, router]);
   const requestedLocationId = firstParam(params.locationId);
   const [locations, setLocations] = useState<DiningLocation[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState(DEFAULT_LOCATION_ID);
@@ -366,6 +378,7 @@ export default function MenuScreen() {
       return;
     }
 
+    setDiningSection('halls');
     const locationId =
       chooseAvailableLocationId(locations, [requestedLocationId]) ??
       requestedLocationId;
@@ -467,8 +480,8 @@ export default function MenuScreen() {
       contentInsetAdjustmentBehavior="automatic"
       refreshControl={
         <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
+          refreshing={diningSection === 'vendors' ? vendors.loading : refreshing}
+          onRefresh={diningSection === 'vendors' ? () => void vendors.refresh() : onRefresh}
           tintColor={colors.brand}
         />
       }
@@ -488,6 +501,30 @@ export default function MenuScreen() {
         </Text>
       </View>
 
+      <View accessibilityRole="tablist" style={styles.segmented}>
+        {(['halls', 'vendors'] as const).map(section => (
+          <Pressable
+            key={section}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: diningSection === section }}
+            onPress={() => setDiningSection(section)}
+            style={({ pressed }) => [
+              styles.segment,
+              diningSection === section ? styles.segmentSelected : null,
+              { opacity: buttonOpacity(pressed) },
+            ]}
+          >
+            <Text style={[styles.segmentLabel, diningSection === section ? styles.segmentLabelSelected : null]}>
+              {section === 'halls' ? 'Dining halls' : 'Food vendors'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {diningSection === 'vendors' ? (
+        <FoodVendors feed={vendors} />
+      ) : <>
+        <FoodVendorPreview feed={vendors} onPress={() => setDiningSection('vendors')} />
       <View style={styles.locationBlock}>
         <View style={styles.locationIcon}>
           <Ionicons name="location" size={20} color={colors.surface} />
@@ -665,6 +702,7 @@ export default function MenuScreen() {
           {formatUpdatedAt(menu.fetchedAt)}. Menus can change without notice.
         </Text>
       ) : null}
+      </>}
     </ScrollView>
   );
 }
