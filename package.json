@@ -30,7 +30,7 @@
     "mobile:web:deploy": "npm run dashboard:deploy",
     "mobile:web:deploy:prod": "npm run dashboard:deploy:prod",
     "mobile:typecheck": "npm run typecheck -w @slugswap/mobile",
-    "test": "npm run test -w @slugswap/dashboard && npm run test -w @slugswap/mobile",
+    "test": "npm run occupancy:test && npm run test -w @slugswap/dashboard && npm run test -w @slugswap/mobile",
     "typecheck": "npm run root:typecheck && npm run dashboard:typecheck && npm run mobile:typecheck",
     "root:typecheck": "tsc --noEmit -p tsconfig.json",
     "story:generate": "bash scripts/instagram-stories/export-ig-stories.sh",
@@ -53,7 +53,8 @@
     "db:studio": "dotenv -e .env -- drizzle-kit studio",
     "mobile:ios:release": "dotenv -e .env -- npm run ios:release -w @slugswap/mobile --",
     "android": "npm run mobile:android",
-    "ios": "npm run mobile:ios"
+    "ios": "npm run mobile:ios",
+    "occupancy:test": "node --import tsx --test packages/occupancy/src/*.test.ts"
   },
   "devDependencies": {
     "@neondatabase/serverless": "^1.1.0",

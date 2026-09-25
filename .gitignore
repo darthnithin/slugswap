@@ -64,3 +64,6 @@ NOTES.md
 .agents/skills/neon-postgres/
 .claude/skills/neon-postgres
 .cursor/skills/neon-postgres
+
+# Supabase CLI local state
+supabase/.temp/

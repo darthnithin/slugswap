@@ -50,6 +50,13 @@
       "when": 1787166396478,
       "tag": "0006_premium_silver_samurai",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790295170123,
+      "tag": "0007_curious_vin_gonzales",
+      "breakpoints": true
     }
   ]
 }
