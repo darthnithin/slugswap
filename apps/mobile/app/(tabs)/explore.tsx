@@ -5,10 +5,11 @@ import {
   type AppleMapsPolygon,
   type AppleMapsPolyline,
 } from 'expo-maps/build/apple/AppleMaps.types';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Image,
   Keyboard,
   Linking,
@@ -59,9 +60,10 @@ import {
 import CampusMaps from '@/modules/campus-maps';
 
 // Expo Maps has no web native module; only load it on the iOS map path.
-const AppleMaps = process.env.EXPO_OS === 'ios'
-  ? (require('expo-maps') as typeof import('expo-maps')).AppleMaps
+const ExpoMaps = process.env.EXPO_OS === 'ios'
+  ? (require('expo-maps') as typeof import('expo-maps'))
   : null;
+const AppleMaps = ExpoMaps?.AppleMaps;
 const colors = stealthTheme.colors;
 const CATEGORY_ORDER: readonly CampusPlaceCategory[] = ['dining', 'vendors', 'study', 'essentials'];
 const CAMPUS_CAMERA = {
@@ -443,6 +445,48 @@ export default function ExploreScreen() {
   const vendorPlaces = useMemo(() => foodVendorPlaces(vendorFeed.data, vendorFeed.date), [vendorFeed.data, vendorFeed.date]);
   const allPlaces = useMemo(() => [...CAMPUS_PLACES, ...vendorPlaces], [vendorPlaces]);
   const mapRef = useRef<AppleMapsTypes.MapView>(null);
+  const [showUserLocation, setShowUserLocation] = useState(false);
+  const locationPermissionRequest = useRef<ReturnType<
+    typeof import('expo-maps').requestPermissionsAsync
+  > | null>(null);
+
+  useFocusEffect(useCallback(() => {
+    if (!ExpoMaps) return;
+    let active = true;
+    let checking = false;
+    const maps = ExpoMaps;
+
+    async function refreshLocationPermission() {
+      if (checking || AppState.currentState !== 'active') return;
+      checking = true;
+      try {
+        let permission = await maps.getPermissionsAsync();
+        if (!active) return;
+        if (permission.status === 'undetermined' && permission.canAskAgain) {
+          // Share an outstanding prompt across tab focus changes.
+          locationPermissionRequest.current ??= maps.requestPermissionsAsync()
+            .finally(() => { locationPermissionRequest.current = null; });
+          permission = await locationPermissionRequest.current;
+        }
+        if (active) setShowUserLocation(permission.granted);
+      } catch (error) {
+        if (active) setShowUserLocation(false);
+        console.warn('Could not read map location permission', error);
+      } finally {
+        checking = false;
+      }
+    }
+
+    void refreshLocationPermission();
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void refreshLocationPermission();
+    });
+    return () => {
+      active = false;
+      subscription.remove();
+      setShowUserLocation(false);
+    };
+  }, []));
   const [activeCategory, setActiveCategory] = useState<CampusPlaceCategory>('dining');
   const [query, setQuery] = useState('');
   const [selectedSelection, setSelectedSelection] = useState<MapSelection | null>(() =>
@@ -709,11 +753,12 @@ export default function ExploreScreen() {
               elevation: AppleMaps.MapStyleElevation.FLAT,
               emphasis: AppleMapsMapStyleEmphasis.MUTED,
               isTrafficEnabled: false,
+              isMyLocationEnabled: showUserLocation,
               selectionEnabled: false,
             }}
             uiSettings={{
               compassEnabled: true,
-              myLocationButtonEnabled: false,
+              myLocationButtonEnabled: showUserLocation,
               scaleBarEnabled: false,
               togglePitchEnabled: false,
             }}
