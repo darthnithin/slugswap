@@ -269,3 +269,40 @@ export const adminConfig = pgTable(
     ),
   ]
 );
+
+// Public UCSC recreation observations; independent of student/account data.
+export const occupancyCollectionRuns = pgTable("occupancy_collection_runs", {
+  slot: timestamp("slot", { withTimezone: true }).primaryKey(),
+  attemptId: uuid("attempt_id").notNull(),
+  status: text("status").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  httpStatus: integer("http_status"),
+  error: text("error"),
+  parserVersion: text("parser_version").notNull(),
+}, (table) => [
+  check("occupancy_run_status_valid", sql`${table.status} in ('running', 'success', 'partial', 'failed')`),
+]);
+
+export const facilityOccupancySamples = pgTable("facility_occupancy_samples", {
+  slot: timestamp("slot", { withTimezone: true }).notNull().references(() => occupancyCollectionRuns.slot),
+  facilityId: uuid("facility_id").notNull(),
+  status: text("status").notNull(),
+  occupancy: integer("occupancy"),
+  capacity: integer("capacity"),
+  ratio: decimal("ratio"),
+  error: text("error"),
+}, (table) => [
+  uniqueIndex("occupancy_samples_slot_facility_unique").on(table.slot, table.facilityId),
+  index("occupancy_samples_facility_slot_idx").on(table.facilityId, table.slot),
+  check("occupancy_sample_status_valid", sql`${table.status} in ('ok', 'missing', 'invalid')`),
+  check("occupancy_sample_values_valid", sql`(
+    ${table.status} = 'ok' and ${table.occupancy} is not null and ${table.occupancy} >= 0
+      and ${table.capacity} is not null and ${table.capacity} > 0
+      and ${table.ratio} is not null and ${table.ratio} >= 0
+  ) or (
+    ${table.status} in ('missing', 'invalid') and ${table.occupancy} is null
+      and ${table.capacity} is null and ${table.ratio} is null
+  )`),
+]);

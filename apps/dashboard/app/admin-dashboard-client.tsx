@@ -1217,6 +1217,11 @@ export default function DashboardHomePage() {
               Claims
             </button>
 
+            <a className="nav-item" href="/admin/occupancy">
+              <span className="nav-icon"><CircleGauge aria-hidden="true" /></span>
+              Facility occupancy
+            </a>
+
             <div className="nav-section-label">Manage</div>
             <button
               type="button"

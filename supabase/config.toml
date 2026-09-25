@@ -1,0 +1,5 @@
+project_id = "slugswap"
+
+[functions.facility-occupancy]
+verify_jwt = false
+entrypoint = "./functions/facility-occupancy/index.ts"

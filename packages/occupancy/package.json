@@ -1,0 +1,8 @@
+{
+  "name": "@slugswap/occupancy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {".": "./src/core.ts"},
+  "dependencies": {"@neondatabase/serverless": "1.1.0", "cheerio": "1.2.0"}
+}
