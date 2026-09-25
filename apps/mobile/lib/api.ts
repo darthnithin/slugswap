@@ -1,3 +1,4 @@
+import { isFoodVendorFeed } from './food-vendors';
 import { supabase } from './supabase';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
@@ -45,23 +46,17 @@ function resolveApiBaseUrl(): string {
   const configuredUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
   const expoDevHost = readExpoDevHost();
 
-  if (configuredUrl) {
-    if (
-      Platform.OS === 'web' &&
-      typeof window !== 'undefined' &&
-      window.location?.origin &&
-      window.location.pathname.startsWith('/app')
-    ) {
-      try {
-        const parsed = new URL(configuredUrl);
-        if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
-          return window.location.origin;
-        }
-      } catch {
-        // Fall through to the configured value when URL parsing fails.
-      }
-    }
+  // The hosted web app uses the API from its own deployment, including previews.
+  if (
+    Platform.OS === 'web' &&
+    typeof window !== 'undefined' &&
+    window.location?.origin &&
+    window.location.pathname.startsWith('/app')
+  ) {
+    return window.location.origin;
+  }
 
+  if (configuredUrl) {
     if (Platform.OS !== 'web' && expoDevHost) {
       return rewriteLocalhostUrl(configuredUrl, expoDevHost);
     }
@@ -737,4 +732,14 @@ export async function getLibraryRoomAvailability(
     response,
     'Failed to read room availability',
   );
+}
+
+export async function getFoodVendors(signal?: AbortSignal) {
+  const response = await fetchWithFallback(`${API_BASE_URL}/api/food-vendors`, {
+    cache: 'no-store', signal,
+  });
+  if (!response.ok) throw new Error(await readApiError(response, 'Failed to fetch food vendors'));
+  const data = readApiJson<unknown>(response, 'Failed to read food vendors');
+  if (!isFoodVendorFeed(data)) throw new Error('Food vendor data could not be read. Please try again.');
+  return data;
 }
