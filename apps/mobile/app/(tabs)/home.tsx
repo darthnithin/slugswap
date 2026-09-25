@@ -89,7 +89,6 @@ export default function HomeScreen() {
   const now = new Date();
   const firstName = displayFirstName(user);
   const greeting = greetingForHour(now.getHours());
-  const dayLabel = new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(now);
 
   const openTool = (tool: QuickTool) => {
     if (tool.personal && !user) {
@@ -112,7 +111,6 @@ export default function HomeScreen() {
           <Text style={styles.heading}>
             {greeting}{firstName ? `,\n${firstName}` : '.'}
           </Text>
-          <Text style={styles.dateLabel}>{dayLabel} at UCSC</Text>
         </View>
 
         {!user ? (
@@ -211,13 +209,6 @@ const styles = StyleSheet.create({
     fontSize: 43,
     lineHeight: 43,
     letterSpacing: -1,
-  },
-  dateLabel: {
-    marginTop: 8,
-    color: colors.textMuted,
-    fontFamily: campusFonts.sansMedium,
-    fontSize: 15,
-    lineHeight: 20,
   },
   guestBanner: {
     minHeight: 72,

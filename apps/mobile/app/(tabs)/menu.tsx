@@ -494,11 +494,7 @@ export default function MenuScreen() {
       ]}
     >
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>UCSC CAMPUS DINING</Text>
         <Text selectable style={styles.title}>Dining</Text>
-        <Text selectable style={styles.subtitle}>
-          Browse what’s being served across campus.
-        </Text>
       </View>
 
       <View accessibilityRole="tablist" style={styles.segmented}>
@@ -656,12 +652,7 @@ export default function MenuScreen() {
       {selectedMeal ? (
         <View style={styles.menuStack}>
           <View style={styles.menuHeadingRow}>
-            <View>
-              <Text selectable style={styles.menuEyebrow}>
-                {menu?.sourceDateLabel ?? formatDateLabel(selectedDate)}
-              </Text>
-              <Text selectable style={styles.menuHeading}>{selectedMeal.name}</Text>
-            </View>
+            <Text selectable style={styles.menuHeading}>{selectedMeal.name}</Text>
             <Ionicons name="restaurant-outline" size={24} color={colors.brand} />
           </View>
           {selectedMeal.sections.map((section) => (
@@ -720,20 +711,12 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingTop: 2,
   },
-  eyebrow: {
-    ...typeScale.eyebrow,
-    color: colors.brand,
-  },
   title: {
     fontFamily: campusFonts.serifSemibold,
     fontSize: 48,
     lineHeight: 52,
     letterSpacing: -0.8,
     color: colors.text,
-  },
-  subtitle: {
-    ...typeScale.body,
-    color: colors.textMuted,
   },
   locationBlock: {
     minHeight: 66,
@@ -876,11 +859,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingBottom: 2,
-  },
-  menuEyebrow: {
-    ...typeScale.eyebrow,
-    marginBottom: 2,
-    color: colors.textMuted,
   },
   menuHeading: {
     fontFamily: campusFonts.serifSemibold,

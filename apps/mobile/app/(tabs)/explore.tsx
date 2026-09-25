@@ -390,10 +390,6 @@ function FallbackPlaceList({
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
-      <Text style={styles.fallbackTitle}>Places on campus</Text>
-      <Text style={styles.fallbackSubtitle}>
-        Choose a place for campus tools or directions.
-      </Text>
       {selections.length > 0 ? (
         selections.map((selection) => {
           const tintColor = selectionTint(selection);
@@ -1040,21 +1036,7 @@ const styles = StyleSheet.create({
   fallbackContent: {
     gap: 10,
     paddingHorizontal: 16,
-    paddingTop: 22,
-  },
-  fallbackTitle: {
-    color: colors.ink,
-    fontFamily: campusFonts.serifSemibold,
-    fontSize: 34,
-    lineHeight: 38,
-    letterSpacing: -0.6,
-  },
-  fallbackSubtitle: {
-    marginBottom: 8,
-    color: colors.textMuted,
-    fontFamily: campusFonts.sans,
-    fontSize: 15,
-    lineHeight: 21,
+    paddingTop: 12,
   },
   fallbackCard: {
     minHeight: 82,

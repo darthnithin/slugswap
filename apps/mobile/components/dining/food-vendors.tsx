@@ -22,6 +22,8 @@ const colors = stealthTheme.colors;
 type FeedState = ReturnType<typeof useFoodVendors>;
 
 export function FoodVendorStatus({ feed }: { feed: FeedState }) {
+  if (feed.data && !feed.error && !feed.stale) return null;
+
   return (
     <View style={styles.status}>
       {feed.loading ? (
@@ -32,11 +34,7 @@ export function FoodVendorStatus({ feed }: { feed: FeedState }) {
           ? `${feed.data ? 'Showing saved schedule. ' : ''}${feed.error}`
           : feed.stale && feed.data
             ? 'Showing saved schedule. Check UCSC for updates.'
-            : feed.loading
-              ? 'Refreshing UCSC food vendors…'
-              : feed.data
-                ? `Updated ${new Date(feed.data.fetchedAt).toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' })} Pacific · Vendor-reported`
-                : 'Loading food vendors…'}
+            : 'Loading food vendors…'}
       </Text>
       {!feed.loading && (feed.error || feed.stale) ? (
         <Pressable
